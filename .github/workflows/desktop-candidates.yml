@@ -9,40 +9,42 @@ on:
         required: true
         type: string
 
+      target:
+        description: Native build target
+        required: true
+        default: all
+        type: choice
+        options:
+          - all
+          - darwin-arm64
+          - darwin-x64
+          - win32-x64
+          - linux-x64
+
 permissions:
   contents: read
 
 jobs:
+  targets:
+    runs-on: ubuntu-22.04
+    outputs:
+      matrix: ${{ steps.select.outputs.matrix }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - id: select
+        env:
+          BUILD_TARGET: ${{ inputs.target }}
+        run: node ci/select-targets.mjs
   build:
+    needs: targets
+    name: ${{ matrix.id }}
     timeout-minutes: 60
     strategy:
       fail-fast: false
       matrix:
-        include:
-          - os: macos-15
-            platform: darwin
-            arch: arm64
-            app: mac-arm64/Reader.app
-            executable: mac-arm64/Reader.app/Contents/MacOS/Reader
-            resources: mac-arm64/Reader.app/Contents/Resources
-          - os: macos-15-intel
-            platform: darwin
-            arch: x64
-            app: mac/Reader.app
-            executable: mac/Reader.app/Contents/MacOS/Reader
-            resources: mac/Reader.app/Contents/Resources
-          - os: windows-latest
-            platform: win32
-            arch: x64
-            app: win-unpacked
-            executable: win-unpacked/Reader.exe
-            resources: win-unpacked/resources
-          - os: ubuntu-22.04
-            platform: linux
-            arch: x64
-            app: linux-unpacked
-            executable: linux-unpacked/reader
-            resources: linux-unpacked/resources
+        include: ${{ fromJSON(needs.targets.outputs.matrix) }}
     runs-on: ${{ matrix.os }}
     defaults:
       run:

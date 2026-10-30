@@ -1,0 +1,38 @@
+[
+  {
+    "os": "macos-15",
+    "platform": "darwin",
+    "arch": "arm64",
+    "app": "mac-arm64/Reader.app",
+    "executable": "mac-arm64/Reader.app/Contents/MacOS/Reader",
+    "resources": "mac-arm64/Reader.app/Contents/Resources",
+    "id": "darwin-arm64"
+  },
+  {
+    "os": "macos-15-intel",
+    "platform": "darwin",
+    "arch": "x64",
+    "app": "mac/Reader.app",
+    "executable": "mac/Reader.app/Contents/MacOS/Reader",
+    "resources": "mac/Reader.app/Contents/Resources",
+    "id": "darwin-x64"
+  },
+  {
+    "os": "windows-latest",
+    "platform": "win32",
+    "arch": "x64",
+    "app": "win-unpacked",
+    "executable": "win-unpacked/Reader.exe",
+    "resources": "win-unpacked/resources",
+    "id": "win32-x64"
+  },
+  {
+    "os": "ubuntu-22.04",
+    "platform": "linux",
+    "arch": "x64",
+    "app": "linux-unpacked",
+    "executable": "linux-unpacked/reader",
+    "resources": "linux-unpacked/resources",
+    "id": "linux-x64"
+  }
+]

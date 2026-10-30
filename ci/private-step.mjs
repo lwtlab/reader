@@ -14,6 +14,8 @@ try {
   result = spawnSync(command, args, { cwd: path.resolve(workingDirectory),
     shell: process.platform === 'win32', stdio: ['ignore', fd, fd], env: process.env });
 } finally { closeSync(fd); }
+if (result.error) appendFileSync(log, `Spawn error: ${result.error.stack ?? result.error.message}\n`);
+appendFileSync(log, `Exit status: ${result.status}, signal: ${result.signal}\n`);
 if (result.error || result.status !== 0) {
   console.error(`${phase} failed; details are in the encrypted build log.`);
   process.exit(1);
