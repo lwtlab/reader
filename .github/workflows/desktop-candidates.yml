@@ -1,5 +1,5 @@
 name: Desktop candidate packages
-run-name: Desktop candidates
+run-name: Desktop ${{ inputs.target || 'all' }} candidates
 
 on:
   workflow_dispatch:
@@ -68,7 +68,7 @@ jobs:
           node-version: 22
 
       - name: Test public CI infrastructure
-        run: node --test ci/log-crypto.test.mjs
+        run: node --test ci/log-crypto.test.mjs ci/private-step.test.mjs
 
       - name: Checkout private source read-only
         uses: actions/checkout@v4
@@ -103,7 +103,7 @@ jobs:
       - name: Install private application dependencies
         env:
           READER_INSTALL_NETWORK: direct
-        run: node ci/private-step.mjs dependencies source/apps/reader bash --noprofile --norc -x scripts/install.sh --frozen-lockfile
+        run: node ci/private-step.mjs dependencies source/apps/reader bash --noprofile --norc scripts/install.sh --frozen-lockfile
 
       - name: Test desktop build contracts
         run: >-
