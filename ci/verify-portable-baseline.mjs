@@ -4,9 +4,9 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 export const baselines = JSON.parse(readFileSync(new URL('./portable-baselines.json', import.meta.url), 'utf8'));
-export function verifyBaseline(target, run, artifact, jobs) {
-  const baseline = baselines[target];
-  assert.ok(baseline, 'Unsupported portable target');
+export function verifyBaseline(target, run, artifact, jobs, approved = baselines) {
+  const baseline = approved[target];
+  assert.ok(baseline, 'Unsupported candidate target');
   assert.equal(run.id, baseline.run_id);
   assert.equal(run.status, 'completed');
   assert.equal(run.repository.full_name, 'lwtlab/reader');
@@ -27,9 +27,8 @@ export function verifyBaseline(target, run, artifact, jobs) {
   return baseline;
 }
 
-if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
-  const target = process.env.PORTABLE_TARGET;
-  const baseline = baselines[target];
+export async function verifyCandidateOnline(target, approved = baselines) {
+  const baseline = approved[target];
   assert.ok(baseline);
   assert.equal(process.env.GITHUB_REPOSITORY, 'lwtlab/reader');
   assert.ok(process.env.GITHUB_TOKEN);
@@ -46,6 +45,10 @@ if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.me
     get(`actions/artifacts/${baseline.artifact_id}`),
     get(`actions/runs/${baseline.run_id}/jobs?per_page=100`),
   ]);
-  verifyBaseline(target, run, artifact, jobs.jobs);
+  verifyBaseline(target, run, artifact, jobs.jobs, approved);
   console.log('Approved candidate identity, successful upload gate, archive digest and retention verified');
+}
+
+if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+  await verifyCandidateOnline(process.env.PORTABLE_TARGET);
 }

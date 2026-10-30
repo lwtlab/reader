@@ -26,3 +26,9 @@ node ci/decrypt-log.mjs reader-private-build.log.enc.json /secure/path/build-log
 ```
 
 Private checkout contents and raw build logs are not uploaded. Packaging removes source maps and the workflow audits the final application archive. Electron installers necessarily contain the JavaScript used to run the application; distributing binaries does not conceal that runtime code. Keep this workflow manually triggered and restrict repository write access, since workflow editors can change what the runner executes.
+
+## Cross-version candidate acceptance
+
+`desktop-candidates.yml` now verifies the explicitly approved previous artifacts in `ci/upgrade-baselines.json`, downloads them by immutable artifact ID, and runs actual installer upgrades before uploading the next candidate. The previous version is 0.1.0; the next private source must contain a strictly greater stable numeric app version (currently 0.1.1). Windows uses NSIS, Linux uses apt/dpkg, and macOS replaces the application copied from the DMG in an owned temporary directory. Synthetic text, PDF, notes, progress, settings, post-upgrade writes and reinstall access are checked. This is an unsigned engineering candidate check, not a signed auto-update or an assertion that database schema changed.
+
+Approved artifacts expire with their original 7-day retention. Expired, changed or failed baselines stop the build; maintainers must explicitly review and update the baseline records when advancing the test pair. Do not silently select latest, re-upload an old archive as a new build, or extend consent to user data. Private build/test output remains encrypted with the existing 3-day diagnostic retention. This workflow never publishes a Release.

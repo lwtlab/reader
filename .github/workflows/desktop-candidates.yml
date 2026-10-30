@@ -23,6 +23,7 @@ on:
 
 permissions:
   contents: read
+  actions: read
 
 jobs:
   targets:
@@ -68,7 +69,23 @@ jobs:
           node-version: 22
 
       - name: Test public CI infrastructure
-        run: node --test ci/log-crypto.test.mjs ci/private-step.test.mjs
+        run: node --test ci/log-crypto.test.mjs ci/private-step.test.mjs ci/verify-portable-baseline.test.mjs
+
+      - name: Verify approved upgrade baseline
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          BUILD_TARGET: ${{ matrix.id }}
+        run: node ci/verify-upgrade-baseline.mjs
+
+      - name: Download immutable previous candidate
+        uses: actions/download-artifact@v4
+        with:
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: ${{ matrix.baseline_run_id }}
+          artifact-ids: ${{ matrix.baseline_artifact_id }}
+          merge-multiple: true
+          path: baseline
 
       - name: Checkout private source read-only
         uses: actions/checkout@v4
@@ -113,6 +130,7 @@ jobs:
           scripts/desktop-source.test.mjs scripts/windows-native-signing.test.mjs
           scripts/desktop-source-maps.test.mjs
           scripts/desktop-installer-target.test.mjs
+          scripts/desktop-upgrade-pair.test.mjs
 
       - name: Test desktop lifecycle and browser assets
         run: node ci/private-step.mjs host-contracts source/apps/reader pnpm exec vitest run scripts/reader-module-preloads.test.ts electron/main lib/desktop app/api/health/route.test.ts
@@ -194,6 +212,24 @@ jobs:
         run: >-
           node ci/private-step.mjs portable source/apps/reader xvfb-run -a node scripts/smoke-desktop-portable.mjs
           release/core/${{ matrix.platform }}-${{ matrix.arch }}
+
+      - name: Verify actual installer version upgrade
+        if: runner.os != 'Linux'
+        timeout-minutes: 10
+        env:
+          READER_INSTALLER_TEST_DISPOSABLE: '1'
+        run: >-
+          node ci/private-step.mjs upgrade source/apps/reader node scripts/smoke-desktop-installers.mjs
+          ../../../baseline release/core/${{ matrix.platform }}-${{ matrix.arch }}
+
+      - name: Verify actual Linux installer version upgrade
+        if: runner.os == 'Linux'
+        timeout-minutes: 10
+        env:
+          READER_INSTALLER_TEST_DISPOSABLE: '1'
+        run: >-
+          node ci/private-step.mjs upgrade source/apps/reader xvfb-run -a node scripts/smoke-desktop-installers.mjs
+          ../../../baseline release/core/${{ matrix.platform }}-${{ matrix.arch }}
 
       - name: Upload verified candidate artifacts only
         uses: actions/upload-artifact@v4
