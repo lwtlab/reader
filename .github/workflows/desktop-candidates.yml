@@ -112,6 +112,7 @@ jobs:
           scripts/desktop-packaging.test.mjs scripts/desktop-artifacts.test.mjs
           scripts/desktop-source.test.mjs scripts/windows-native-signing.test.mjs
           scripts/desktop-source-maps.test.mjs
+          scripts/desktop-installer-target.test.mjs
 
       - name: Test desktop lifecycle and browser assets
         run: node ci/private-step.mjs host-contracts source/apps/reader pnpm exec vitest run scripts/reader-module-preloads.test.ts electron/main lib/desktop app/api/health/route.test.ts
@@ -152,6 +153,24 @@ jobs:
         run: |
           node ci/private-step.mjs checksums source/apps/reader node scripts/desktop-artifacts.mjs ${{ matrix.platform }} ${{ matrix.arch }} core
           node ci/private-step.mjs verify source/apps/reader node scripts/desktop-artifacts.mjs ${{ matrix.platform }} ${{ matrix.arch }} core --verify
+
+      - name: Validate actual installer lifecycle
+        if: runner.os != 'Linux'
+        timeout-minutes: 10
+        env:
+          READER_INSTALLER_TEST_DISPOSABLE: '1'
+        run: >-
+          node ci/private-step.mjs installer source/apps/reader node scripts/smoke-desktop-installers.mjs
+          release/core/${{ matrix.platform }}-${{ matrix.arch }}
+
+      - name: Validate actual Linux installer lifecycle
+        if: runner.os == 'Linux'
+        timeout-minutes: 10
+        env:
+          READER_INSTALLER_TEST_DISPOSABLE: '1'
+        run: >-
+          node ci/private-step.mjs installer source/apps/reader xvfb-run -a node scripts/smoke-desktop-installers.mjs
+          release/core/${{ matrix.platform }}-${{ matrix.arch }}
 
       - name: Upload verified candidate artifacts only
         uses: actions/upload-artifact@v4
