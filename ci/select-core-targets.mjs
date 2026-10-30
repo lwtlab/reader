@@ -1,0 +1,11 @@
+import assert from 'node:assert/strict';
+import { appendFileSync, readFileSync } from 'node:fs';
+const baselines = JSON.parse(readFileSync(new URL('./core-baselines.json', import.meta.url), 'utf8'));
+assert.match(process.env.QA_SOURCE_REF || '', /^[a-f0-9]{40}$/);
+const requested = process.env.CORE_TARGET;
+const requiredTargets = ['darwin-arm64', 'darwin-x64', 'win32-x64', 'linux-x64'];
+assert.ok(requested === 'all' || requiredTargets.includes(requested), 'Unsupported core target');
+if (requested === 'all') assert.deepEqual(Object.keys(baselines).sort(), [...requiredTargets].sort(), 'All four baselines must be approved');
+const matrix = Object.entries(baselines).filter(([id]) => requested === 'all' || requested === id).map(([id, baseline]) => ({id, ...baseline}));
+assert.ok(matrix.length, 'Unsupported core target');
+appendFileSync(process.env.GITHUB_OUTPUT, `matrix=${JSON.stringify(matrix)}\n`);

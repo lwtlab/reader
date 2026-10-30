@@ -4,7 +4,8 @@ import { readFileSync } from 'node:fs';
 import { baselines, verifyBaseline } from './verify-portable-baseline.mjs';
 
 const upgradeBaselines = JSON.parse(readFileSync(new URL('./upgrade-baselines.json', import.meta.url), 'utf8'));
-for (const [kind, approved] of [['portable', baselines], ['upgrade', upgradeBaselines]])
+const coreBaselines = JSON.parse(readFileSync(new URL('./core-baselines.json', import.meta.url), 'utf8'));
+for (const [kind, approved] of [['portable', baselines], ['upgrade', upgradeBaselines], ['core', coreBaselines]])
 for (const target of Object.keys(approved)) {
   test(`${kind} ${target}: rejects foreign, failed, expired or changed artifacts`, () => {
     const baseline = approved[target];

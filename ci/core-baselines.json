@@ -1,0 +1,38 @@
+{
+  "darwin-arm64": {
+    "os": "macos-15",
+    "run_id": 41141254713,
+    "artifact_id": 13019027336,
+    "artifact_name": "reader-darwin-arm64-candidate",
+    "archive_digest": "sha256:9ad171a2cff79c0e404905b601c24b9105370263f28c02d7b562c40a9c1dd74d",
+    "source_ref": "87fcb35c04dba75e7876489d998cc1bdce2c609d",
+    "workflow_ref": "c311a6fe08b5d4e0390cf389bae0ed7df8923ea9"
+  },
+  "linux-x64": {
+    "os": "ubuntu-22.04",
+    "run_id": 41141254713,
+    "artifact_id": 13019276392,
+    "artifact_name": "reader-linux-x64-candidate",
+    "archive_digest": "sha256:8309882db347564a92b28656ebab4c126e6c030afe4374a6d0ac21d4c75ff0aa",
+    "source_ref": "87fcb35c04dba75e7876489d998cc1bdce2c609d",
+    "workflow_ref": "c311a6fe08b5d4e0390cf389bae0ed7df8923ea9"
+  },
+  "darwin-x64": {
+    "os": "macos-15-intel",
+    "run_id": 41141254713,
+    "artifact_id": 13020389927,
+    "artifact_name": "reader-darwin-x64-candidate",
+    "archive_digest": "sha256:b99d7df5f6ae748c5bcf8bb9adfeee119b6d2df93587575e1924cb071f89f646",
+    "source_ref": "87fcb35c04dba75e7876489d998cc1bdce2c609d",
+    "workflow_ref": "c311a6fe08b5d4e0390cf389bae0ed7df8923ea9"
+  },
+  "win32-x64": {
+    "os": "windows-latest",
+    "run_id": 41144110539,
+    "artifact_id": 13020473865,
+    "artifact_name": "reader-win32-x64-candidate",
+    "archive_digest": "sha256:ef0953130ccf46acb683d285eabec820838a0796ee9089162f1442cf015c5f8b",
+    "source_ref": "b06c7eea7b68e6c8245292fe8907496b0196ca4a",
+    "workflow_ref": "c311a6fe08b5d4e0390cf389bae0ed7df8923ea9"
+  }
+}
