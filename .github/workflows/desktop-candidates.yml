@@ -112,6 +112,9 @@ jobs:
           scripts/desktop-source.test.mjs scripts/windows-native-signing.test.mjs
           scripts/desktop-source-maps.test.mjs
 
+      - name: Test browser asset packaging
+        run: node ci/private-step.mjs browser-assets source/apps/reader pnpm exec vitest run scripts/reader-module-preloads.test.ts
+
       - name: Build unsigned candidates without publishing
         env:
           CI: true
