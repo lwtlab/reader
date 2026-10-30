@@ -166,6 +166,7 @@ jobs:
             source/apps/reader/release/core/${{ matrix.platform }}-${{ matrix.arch }}/*.AppImage
             source/apps/reader/release/core/${{ matrix.platform }}-${{ matrix.arch }}/*.deb
             source/apps/reader/release/core/${{ matrix.platform }}-${{ matrix.arch }}/*.blockmap
+            source/apps/reader/release/core/${{ matrix.platform }}-${{ matrix.arch }}/desktop-*.yml
             source/apps/reader/release/core/${{ matrix.platform }}-${{ matrix.arch }}/desktop-artifacts.json
             source/apps/reader/release/core/${{ matrix.platform }}-${{ matrix.arch }}/SHA256SUMS
 

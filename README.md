@@ -11,6 +11,8 @@ Issues are created automatically from the app's **Report Bug** feature (Settings
 
 This repository contains build infrastructure only. Private source is checked out on ephemeral runners, built without signing, and tested using isolated application data. Successful jobs upload candidate installers and SHA-256 manifests for seven days. These are engineering candidates, without release signing, notarization or an installation/upgrade acceptance claim. No GitHub Release is published.
 
+Candidate artifacts also include desktop update metadata, checked against the matching package names, sizes and SHA-512 digests. Unsigned candidates keep online installation disabled. Update transport checks use an isolated local feed and inert synthetic payloads; they do not certify signed upgrades. Future desktop feeds use a dedicated `desktop-stable` release tag and separate platform/architecture/profile channels, independent of the mobile app's latest release.
+
 Build commands redirect detailed output to a temporary file, encrypted with the public key in `ci/build-logs-public.pem` before upload. Encrypted diagnostics expire after three days. The corresponding private key stays with the maintainer, outside GitHub. To inspect downloaded diagnostics locally:
 
 ```sh
