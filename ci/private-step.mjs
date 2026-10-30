@@ -9,10 +9,14 @@ appendFileSync(log, `\n--- ${phase} ---\n`, { mode: 0o600 });
 const fd = openSync(log, 'a', 0o600);
 let result;
 try {
-  // Workflow commands and arguments are fixed by trusted maintainers. A shell
-  // is necessary for pnpm.cmd on Windows; no workflow input enters this list.
-  result = spawnSync(command, args, { cwd: path.resolve(workingDirectory),
-    shell: process.platform === 'win32', stdio: ['ignore', fd, fd], env: process.env });
+  // Windows' system bash can resolve to the WSL launcher. Use Git Bash,
+  // the shell used by Actions, and spawn native executables without cmd.exe.
+  const executable = process.platform === 'win32' && command === 'bash'
+    ? path.join(process.env.ProgramFiles, 'Git', 'bin', 'bash.exe') : command;
+  // Only the fixed pnpm command needs its .cmd shim; no workflow input enters it.
+  result = spawnSync(executable, args, { cwd: path.resolve(workingDirectory),
+    shell: process.platform === 'win32' && command === 'pnpm',
+    stdio: ['ignore', fd, fd], env: process.env });
 } finally { closeSync(fd); }
 if (result.error) appendFileSync(log, `Spawn error: ${result.error.stack ?? result.error.message}\n`);
 appendFileSync(log, `Exit status: ${result.status}, signal: ${result.signal}\n`);
