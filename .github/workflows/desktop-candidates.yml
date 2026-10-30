@@ -1,0 +1,173 @@
+name: Desktop candidate packages
+run-name: Desktop candidates
+
+on:
+  workflow_dispatch:
+    inputs:
+      source_ref:
+        description: Full 40-character commit SHA in the private source repository
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-15
+            platform: darwin
+            arch: arm64
+            app: mac-arm64/Reader.app
+            executable: mac-arm64/Reader.app/Contents/MacOS/Reader
+            resources: mac-arm64/Reader.app/Contents/Resources
+          - os: macos-15-intel
+            platform: darwin
+            arch: x64
+            app: mac/Reader.app
+            executable: mac/Reader.app/Contents/MacOS/Reader
+            resources: mac/Reader.app/Contents/Resources
+          - os: windows-latest
+            platform: win32
+            arch: x64
+            app: win-unpacked
+            executable: win-unpacked/Reader.exe
+            resources: win-unpacked/resources
+          - os: ubuntu-22.04
+            platform: linux
+            arch: x64
+            app: linux-unpacked
+            executable: linux-unpacked/reader
+            resources: linux-unpacked/resources
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Validate immutable source revision
+        env:
+          SOURCE_REF: ${{ inputs.source_ref }}
+        run: |
+          if [[ ! "$SOURCE_REF" =~ ^[0-9a-fA-F]{40}$ ]]; then
+            echo 'A full commit SHA is required.'
+            exit 1
+          fi
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Test public CI infrastructure
+        run: node --test ci/log-crypto.test.mjs
+
+      - name: Checkout private source read-only
+        uses: actions/checkout@v4
+        with:
+          repository: lwtlab/lwt-core
+          ref: ${{ inputs.source_ref }}
+          path: source
+          ssh-key: ${{ secrets.PRIVATE_SOURCE_SSH_KEY }}
+          persist-credentials: false
+          submodules: false
+
+      - name: Initialize public Rust submodules
+        run: >-
+          node ci/private-step.mjs submodules source git
+          -c submodule.aspeak.url=https://github.com/XUJiahua/aspeak.git
+          -c submodule.srtparse.url=https://github.com/XUJiahua/srtparse.git
+          submodule update --init aspeak srtparse
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11.5.2
+          package_json_file: source/apps/reader/package.json
+
+      - name: Install Linux desktop runtime dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y libgtk-3-0 libnss3 libasound2 libgbm1 libxss1 libfuse2 xvfb xauth
+
+      - name: Install private application dependencies
+        env:
+          READER_INSTALL_NETWORK: direct
+        run: node ci/private-step.mjs dependencies source/apps/reader bash scripts/install.sh --frozen-lockfile
+
+      - name: Test desktop build contracts
+        run: >-
+          node ci/private-step.mjs contracts source/apps/reader node --test
+          scripts/desktop-packaging.test.mjs scripts/desktop-artifacts.test.mjs
+          scripts/desktop-source.test.mjs scripts/windows-native-signing.test.mjs
+          scripts/desktop-source-maps.test.mjs
+
+      - name: Build unsigned candidates without publishing
+        env:
+          CI: true
+          READER_BUILD_SHA: ${{ inputs.source_ref }}
+          APPIMAGE_EXTRACT_AND_RUN: '1'
+        run: node ci/private-step.mjs build source/apps/reader pnpm dist --profile=core --unsigned --${{ matrix.arch }} --publish never
+
+      - name: Audit packaged source maps
+        run: node ci/private-step.mjs audit source node ../ci/audit-package.mjs apps/reader/release/core/${{ matrix.platform }}-${{ matrix.arch }}/${{ matrix.app }}
+
+      - name: Validate isolated packaged service
+        run: >-
+          node ci/private-step.mjs service source/apps/reader node scripts/smoke-desktop-package.mjs
+          release/core/${{ matrix.platform }}-${{ matrix.arch }}/${{ matrix.executable }}
+          release/core/${{ matrix.platform }}-${{ matrix.arch }}/${{ matrix.resources }}
+
+      - name: Validate installed desktop window
+        if: runner.os != 'Linux'
+        run: >-
+          node ci/private-step.mjs window source/apps/reader node scripts/smoke-desktop-window.mjs
+          release/core/${{ matrix.platform }}-${{ matrix.arch }}/${{ matrix.executable }}
+
+      - name: Validate Linux desktop window
+        if: runner.os == 'Linux'
+        run: >-
+          node ci/private-step.mjs window source/apps/reader xvfb-run -a node scripts/smoke-desktop-window.mjs
+          release/core/${{ matrix.platform }}-${{ matrix.arch }}/${{ matrix.executable }}
+
+      - name: Prepare checksums
+        run: |
+          node ci/private-step.mjs checksums source/apps/reader node scripts/desktop-artifacts.mjs ${{ matrix.platform }} ${{ matrix.arch }} core
+          node ci/private-step.mjs verify source/apps/reader node scripts/desktop-artifacts.mjs ${{ matrix.platform }} ${{ matrix.arch }} core --verify
+
+      - name: Upload verified candidate artifacts only
+        uses: actions/upload-artifact@v4
+        with:
+          name: reader-${{ matrix.platform }}-${{ matrix.arch }}-candidate
+          retention-days: 7
+          if-no-files-found: error
+          path: |
+            source/apps/reader/release/core/${{ matrix.platform }}-${{ matrix.arch }}/*.dmg
+            source/apps/reader/release/core/${{ matrix.platform }}-${{ matrix.arch }}/*.zip
+            source/apps/reader/release/core/${{ matrix.platform }}-${{ matrix.arch }}/*.exe
+            source/apps/reader/release/core/${{ matrix.platform }}-${{ matrix.arch }}/*.AppImage
+            source/apps/reader/release/core/${{ matrix.platform }}-${{ matrix.arch }}/*.deb
+            source/apps/reader/release/core/${{ matrix.platform }}-${{ matrix.arch }}/*.blockmap
+            source/apps/reader/release/core/${{ matrix.platform }}-${{ matrix.arch }}/desktop-artifacts.json
+            source/apps/reader/release/core/${{ matrix.platform }}-${{ matrix.arch }}/SHA256SUMS
+
+      - name: Encrypt private build logs
+        if: always()
+        run: node ci/seal-log.mjs
+
+      - name: Upload encrypted diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: reader-${{ matrix.platform }}-${{ matrix.arch }}-encrypted-log
+          retention-days: 3
+          if-no-files-found: ignore
+          path: ${{ runner.temp }}/reader-private-build.log.enc.json
