@@ -40,7 +40,7 @@ jobs:
   build:
     needs: targets
     name: ${{ matrix.id }}
-    timeout-minutes: 60
+    timeout-minutes: 75
     strategy:
       fail-fast: false
       matrix:
@@ -101,6 +101,7 @@ jobs:
           sudo apt-get install -y libgtk-3-0 libnss3 libasound2 libgbm1 libxss1 libfuse2 xvfb xauth
 
       - name: Install private application dependencies
+        timeout-minutes: 10
         env:
           READER_INSTALL_NETWORK: direct
         run: node ci/private-step.mjs dependencies source/apps/reader bash --noprofile --norc scripts/install.sh --frozen-lockfile
@@ -116,6 +117,7 @@ jobs:
         run: node ci/private-step.mjs browser-assets source/apps/reader pnpm exec vitest run scripts/reader-module-preloads.test.ts
 
       - name: Build unsigned candidates without publishing
+        timeout-minutes: 40
         env:
           CI: true
           READER_BUILD_SHA: ${{ inputs.source_ref }}
@@ -126,18 +128,21 @@ jobs:
         run: node ci/private-step.mjs audit source node ../ci/audit-package.mjs apps/reader/release/core/${{ matrix.platform }}-${{ matrix.arch }}/${{ matrix.app }}
 
       - name: Validate isolated packaged service
+        timeout-minutes: 5
         run: >-
           node ci/private-step.mjs service source/apps/reader node scripts/smoke-desktop-package.mjs
           release/core/${{ matrix.platform }}-${{ matrix.arch }}/${{ matrix.executable }}
           release/core/${{ matrix.platform }}-${{ matrix.arch }}/${{ matrix.resources }}
 
       - name: Validate installed desktop window
+        timeout-minutes: 5
         if: runner.os != 'Linux'
         run: >-
           node ci/private-step.mjs window source/apps/reader node scripts/smoke-desktop-window.mjs
           release/core/${{ matrix.platform }}-${{ matrix.arch }}/${{ matrix.executable }}
 
       - name: Validate Linux desktop window
+        timeout-minutes: 5
         if: runner.os == 'Linux'
         run: >-
           node ci/private-step.mjs window source/apps/reader xvfb-run -a node scripts/smoke-desktop-window.mjs
