@@ -21,6 +21,12 @@ on:
           - win32-x64
           - linux-x64
 
+      verify_upgrade:
+        description: Require upgrade from the approved previous candidate (disable only when rebuilding a baseline; no upgrade acceptance)
+        required: true
+        default: true
+        type: boolean
+
 permissions:
   contents: read
   actions: read
@@ -72,12 +78,14 @@ jobs:
         run: node --test ci/log-crypto.test.mjs ci/private-step.test.mjs ci/verify-portable-baseline.test.mjs
 
       - name: Verify approved upgrade baseline
+        if: inputs.verify_upgrade
         env:
           GITHUB_TOKEN: ${{ github.token }}
           BUILD_TARGET: ${{ matrix.id }}
         run: node ci/verify-upgrade-baseline.mjs
 
       - name: Download immutable previous candidate
+        if: inputs.verify_upgrade
         uses: actions/download-artifact@v4
         with:
           github-token: ${{ github.token }}
@@ -214,7 +222,7 @@ jobs:
           release/core/${{ matrix.platform }}-${{ matrix.arch }}
 
       - name: Verify actual installer version upgrade
-        if: runner.os != 'Linux'
+        if: inputs.verify_upgrade && runner.os != 'Linux'
         timeout-minutes: 10
         env:
           READER_INSTALLER_TEST_DISPOSABLE: '1'
@@ -223,7 +231,7 @@ jobs:
           ../../../baseline release/core/${{ matrix.platform }}-${{ matrix.arch }}
 
       - name: Verify actual Linux installer version upgrade
-        if: runner.os == 'Linux'
+        if: inputs.verify_upgrade && runner.os == 'Linux'
         timeout-minutes: 10
         env:
           READER_INSTALLER_TEST_DISPOSABLE: '1'
