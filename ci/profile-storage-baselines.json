@@ -1,0 +1,29 @@
+{
+  "darwin-arm64": {
+    "os": "macos-15",
+    "run_id": 41165533193,
+    "artifact_id": 13028803572,
+    "artifact_name": "reader-darwin-arm64-candidate",
+    "archive_digest": "sha256:099f6958e892ea7c52ea7558974cbdafc66fbbd12238ef7f5a07585883f2ddd5",
+    "source_ref": "97f06dac31b7c90fb7fe93eeb8678d4a5293a34a",
+    "workflow_ref": "4dae1fdced0d2e885628bf44c789042a5ff5c53d"
+  },
+  "win32-x64": {
+    "os": "windows-latest",
+    "run_id": 41165533193,
+    "artifact_id": 13029616310,
+    "artifact_name": "reader-win32-x64-candidate",
+    "archive_digest": "sha256:e5f1260780f8ddf4057f97fa9ea1d304f446a413ad46a518a84ca703d76bae29",
+    "source_ref": "97f06dac31b7c90fb7fe93eeb8678d4a5293a34a",
+    "workflow_ref": "4dae1fdced0d2e885628bf44c789042a5ff5c53d"
+  },
+  "linux-x64": {
+    "os": "ubuntu-22.04",
+    "run_id": 41165533193,
+    "artifact_id": 13029485966,
+    "artifact_name": "reader-linux-x64-candidate",
+    "archive_digest": "sha256:b18175bbf4c1e3d0836ad331e0f62687884512bb00a6a2a2d93814dcc045dfc6",
+    "source_ref": "97f06dac31b7c90fb7fe93eeb8678d4a5293a34a",
+    "workflow_ref": "4dae1fdced0d2e885628bf44c789042a5ff5c53d"
+  }
+}

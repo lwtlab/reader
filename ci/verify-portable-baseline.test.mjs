@@ -6,7 +6,8 @@ import { baselines, verifyBaseline } from './verify-portable-baseline.mjs';
 const upgradeBaselines = JSON.parse(readFileSync(new URL('./upgrade-baselines.json', import.meta.url), 'utf8'));
 const offlineBaselines = JSON.parse(readFileSync(new URL('./offline-baselines.json', import.meta.url), 'utf8'));
 const coreBaselines = JSON.parse(readFileSync(new URL('./core-baselines.json', import.meta.url), 'utf8'));
-for (const [kind, approved] of [['portable', baselines], ['upgrade', upgradeBaselines], ['core', coreBaselines], ['offline', offlineBaselines]])
+const profileStorageBaselines = JSON.parse(readFileSync(new URL('./profile-storage-baselines.json', import.meta.url), 'utf8'));
+for (const [kind, approved] of [['portable', baselines], ['upgrade', upgradeBaselines], ['core', coreBaselines], ['offline', offlineBaselines], ['profile-storage', profileStorageBaselines]])
 for (const target of Object.keys(approved)) {
   test(`${kind} ${target}: rejects foreign, failed, expired or changed artifacts`, () => {
     const baseline = approved[target];

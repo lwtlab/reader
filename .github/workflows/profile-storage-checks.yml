@@ -1,0 +1,124 @@
+name: Verified candidate library volume exhaustion checks
+run-name: Library volume exhaustion ${{ inputs.target }}
+on:
+  workflow_dispatch:
+    inputs:
+      source_ref:
+        description: Full private commit SHA containing the QA scripts (candidate source stays pinned in ci/profile-storage-baselines.json)
+        required: true
+        type: string
+      target:
+        description: Library volume exhaustion target
+        required: true
+        default: all
+        type: choice
+        options: [all, darwin-arm64, darwin-x64, win32-x64, linux-x64]
+permissions:
+  contents: read
+  actions: read
+jobs:
+  targets:
+    runs-on: ubuntu-22.04
+    outputs:
+      matrix: ${{ steps.select.outputs.matrix }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - id: select
+        env:
+          QA_SOURCE_REF: ${{ inputs.source_ref }}
+          PROFILE_STORAGE_TARGET: ${{ inputs.target }}
+        run: node ci/select-profile-storage-targets.mjs
+  runtime:
+    needs: targets
+    name: profile-storage-${{ matrix.id }}
+    timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      matrix:
+        include: ${{ fromJSON(needs.targets.outputs.matrix) }}
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Validate approved candidate provenance
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          PROFILE_STORAGE_TARGET: ${{ matrix.id }}
+        run: |
+          node --test ci/verify-portable-baseline.test.mjs ci/log-crypto.test.mjs ci/private-step.test.mjs
+          node ci/verify-profile-storage-baseline.mjs
+      - name: Download the approved immutable artifact
+        uses: actions/download-artifact@v4
+        with:
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: ${{ matrix.run_id }}
+          artifact-ids: ${{ matrix.artifact_id }}
+          merge-multiple: true
+          path: candidate
+      - name: Checkout QA source read-only
+        uses: actions/checkout@v4
+        with:
+          repository: lwtlab/lwt-core
+          ref: ${{ inputs.source_ref }}
+          path: source
+          ssh-key: ${{ secrets.PRIVATE_SOURCE_SSH_KEY }}
+          persist-credentials: false
+          submodules: false
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11.5.2
+          package_json_file: source/apps/reader/package.json
+      - name: Install Linux runtime dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y libgtk-3-0 libnss3 libasound2 libgbm1 libxss1 e2fsprogs
+      - name: Install QA dependencies
+        timeout-minutes: 10
+        env:
+          READER_INSTALL_NETWORK: direct
+        run: node ci/private-step.mjs dependencies source/apps/reader bash --noprofile --norc scripts/install.sh --frozen-lockfile
+      - name: Test QA artifact and host guards
+        run: node ci/private-step.mjs storage-contracts source/apps/reader node --test scripts/desktop-installer-target.test.mjs
+
+      - name: Validate bounded volume controls and packaged recovery
+        if: runner.os != 'Windows'
+        shell: bash
+        timeout-minutes: 8
+        env:
+          READER_INSTALLER_TEST_DISPOSABLE: '1'
+        run: |
+          node ci/private-step.mjs storage-controls source/apps/reader node scripts/verify-desktop-storage-volume.mjs
+          node ci/private-step.mjs profile-storage source/apps/reader node scripts/smoke-desktop-profile-storage.mjs ../../../candidate
+      - name: Validate bounded volume controls and packaged recovery on Windows
+        if: runner.os == 'Windows'
+        shell: pwsh
+        timeout-minutes: 8
+        env:
+          READER_INSTALLER_TEST_DISPOSABLE: '1'
+        run: |
+          $env:PSModulePath = "$env:SystemRoot\System32\WindowsPowerShell\v1.0\Modules"
+          node ci/private-step.mjs storage-controls source/apps/reader node scripts/verify-desktop-storage-volume.mjs
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          node ci/private-step.mjs profile-storage source/apps/reader node scripts/smoke-desktop-profile-storage.mjs ../../../candidate
+      - name: Encrypt private QA logs
+        if: always()
+        run: node ci/seal-log.mjs
+      - name: Upload encrypted diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: profile-storage-${{ matrix.id }}-encrypted-log
+          retention-days: 3
+          if-no-files-found: ignore
+          path: ${{ runner.temp }}/reader-private-build.log.enc.json
