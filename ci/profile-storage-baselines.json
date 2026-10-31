@@ -25,5 +25,14 @@
     "archive_digest": "sha256:b18175bbf4c1e3d0836ad331e0f62687884512bb00a6a2a2d93814dcc045dfc6",
     "source_ref": "97f06dac31b7c90fb7fe93eeb8678d4a5293a34a",
     "workflow_ref": "4dae1fdced0d2e885628bf44c789042a5ff5c53d"
+  },
+  "darwin-x64": {
+    "os": "macos-15-intel",
+    "run_id": 41170919349,
+    "artifact_id": 13031985855,
+    "artifact_name": "reader-darwin-x64-candidate",
+    "archive_digest": "sha256:74940a756af2250ce258367d8e2d2f52157b848eaba3564a6b2d3554faf01bbd",
+    "source_ref": "47e4ebdba51104cc38565daef4f7605a815db100",
+    "workflow_ref": "94aaef4d67e3b4542a6c4705e2388994fb57b475"
   }
 }
