@@ -147,7 +147,7 @@ jobs:
           lib/transcribe/asr-readiness.test.ts lib/transcribe/availability.test.ts lib/transcribe/paths.test.ts
           lib/transcribe/sync.test.ts lib/transcribe/qwen3/manager.test.ts app/api/transcribe/route.test.ts
           app/api/transcribe/sync/route.test.ts app/api/transcribe/retry/route.test.ts app/api/narration/route.test.ts
-          lib/config/store.test.ts lib/config/store-atomic.test.ts
+          lib/config/store.test.ts lib/config/store-atomic.test.ts lib/db/client-retry.test.ts
 
       - name: Validate native NSIS user path handling
         if: runner.os == 'Windows'
@@ -295,6 +295,24 @@ jobs:
         run: |
           $env:PSModulePath = "$env:SystemRoot\System32\WindowsPowerShell\v1.0\Modules"
           node ci/private-step.mjs storage source/apps/reader node scripts/smoke-desktop-storage.mjs release/core/${{ matrix.platform }}-${{ matrix.arch }}
+
+      - name: Validate library volume exhaustion and same-process recovery
+        if: runner.os != 'Windows'
+        shell: bash
+        timeout-minutes: 5
+        env:
+          READER_INSTALLER_TEST_DISPOSABLE: '1'
+        run: node ci/private-step.mjs profile-storage source/apps/reader node scripts/smoke-desktop-profile-storage.mjs release/core/${{ matrix.platform }}-${{ matrix.arch }}
+
+      - name: Validate library volume exhaustion and same-process recovery on Windows
+        if: runner.os == 'Windows'
+        shell: pwsh
+        timeout-minutes: 5
+        env:
+          READER_INSTALLER_TEST_DISPOSABLE: '1'
+        run: |
+          $env:PSModulePath = "$env:SystemRoot\System32\WindowsPowerShell\v1.0\Modules"
+          node ci/private-step.mjs profile-storage source/apps/reader node scripts/smoke-desktop-profile-storage.mjs release/core/${{ matrix.platform }}-${{ matrix.arch }}
 
       - name: Validate offline native reading and network restoration
         timeout-minutes: 12
