@@ -1,0 +1,184 @@
+name: Verified macOS signed candidates
+run-name: Signed macOS ${{ inputs.target }} candidates
+on:
+  workflow_dispatch:
+    inputs:
+      source_ref:
+        description: Full private QA/signing source SHA; application binaries stay pinned in ci/macos-signing-baselines.json
+        required: true
+        type: string
+      target:
+        description: Native signing and verification host
+        required: true
+        default: all
+        type: choice
+        options: [all, darwin-arm64, darwin-x64]
+permissions:
+  contents: read
+  actions: read
+jobs:
+  targets:
+    runs-on: ubuntu-22.04
+    outputs:
+      matrix: ${{ steps.select.outputs.matrix }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - id: select
+        env:
+          QA_SOURCE_REF: ${{ inputs.source_ref }}
+          MACOS_TARGET: ${{ inputs.target }}
+        run: node ci/select-macos-signing-targets.mjs
+  sign:
+    needs: targets
+    name: signed-${{ matrix.id }}
+    runs-on: ${{ matrix.os }}
+    environment: macos-signing
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      matrix:
+        include: ${{ fromJSON(needs.targets.outputs.matrix) }}
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Test public signing and provenance contracts
+        run: node --test ci/macos-signing.test.mjs ci/verify-portable-baseline.test.mjs ci/log-crypto.test.mjs ci/private-step.test.mjs
+      - name: Verify approved unsigned binary provenance
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          MACOS_TARGET: ${{ matrix.id }}
+        run: node ci/verify-macos-signing-baseline.mjs
+      - name: Download approved immutable binary
+        uses: actions/download-artifact@v4
+        with:
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: ${{ matrix.run_id }}
+          artifact-ids: ${{ matrix.artifact_id }}
+          merge-multiple: true
+          path: baseline
+      - name: Checkout signing and QA source read-only
+        uses: actions/checkout@v4
+        with:
+          repository: lwtlab/lwt-core
+          ref: ${{ inputs.source_ref }}
+          path: source
+          ssh-key: ${{ secrets.PRIVATE_SOURCE_SSH_KEY }}
+          persist-credentials: false
+          submodules: false
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11.5.2
+          package_json_file: source/apps/reader/package.json
+      - name: Install QA dependencies before importing credentials
+        timeout-minutes: 10
+        env:
+          READER_INSTALL_NETWORK: direct
+        run: node ci/private-step.mjs dependencies source/apps/reader bash --noprofile --norc scripts/install.sh --frozen-lockfile
+      - name: Test signing and artifact contracts
+        run: node ci/private-step.mjs signing-contracts source/apps/reader node --test scripts/macos-notarization.test.mjs scripts/macos-signature.test.mjs scripts/macos-signed-artifacts.test.mjs scripts/macos-app-replacement.test.mjs scripts/desktop-artifacts.test.mjs scripts/desktop-installer-target.test.mjs
+      - name: Import isolated signing credentials
+        env:
+          MACOS_SIGNING_P12_BASE64: ${{ secrets.MACOS_SIGNING_P12_BASE64 }}
+          MACOS_SIGNING_P12_PASSWORD: ${{ secrets.MACOS_SIGNING_P12_PASSWORD }}
+          MACOS_NOTARY_P8_BASE64: ${{ secrets.MACOS_NOTARY_P8_BASE64 }}
+          MACOS_NOTARY_KEY_ID: ${{ secrets.MACOS_NOTARY_KEY_ID }}
+          MACOS_NOTARY_ISSUER_ID: ${{ secrets.MACOS_NOTARY_ISSUER_ID }}
+        run: node ci/macos-signing.mjs prepare
+      - name: Sign notarize and repackage the approved native application
+        timeout-minutes: 70
+        env:
+          READER_SIGNING_SOURCE_REF: ${{ inputs.source_ref }}
+        run: >-
+          node ci/private-step.mjs signing source/apps/reader node scripts/sign-desktop-macos.mjs
+          ${{ github.workspace }}/baseline release/core/${{ matrix.id }}
+          ${{ github.workspace }}/ci/macos-signing-baselines.json ${{ matrix.id }}
+      - name: Remove credentials before executing packaged application QA
+        if: always()
+        run: node ci/macos-signing.mjs cleanup
+      - name: Verify real signatures tickets containers and Gatekeeper
+        env:
+          READER_INSTALLER_TEST_DISPOSABLE: '1'
+        run: node ci/private-step.mjs macos-verification source/apps/reader node scripts/verify-desktop-macos.mjs release/core/${{ matrix.id }}
+      - name: Verify actual installer lifecycle and retained data
+        timeout-minutes: 10
+        env:
+          READER_INSTALLER_TEST_DISPOSABLE: '1'
+        run: node ci/private-step.mjs installer source/apps/reader node scripts/smoke-desktop-installers.mjs release/core/${{ matrix.id }}
+      - name: Verify actual signed container application window
+        timeout-minutes: 8
+        env:
+          READER_INSTALLER_TEST_DISPOSABLE: '1'
+        run: node ci/private-step.mjs window source/apps/reader node scripts/smoke-desktop-signed-window.mjs release/core/${{ matrix.id }}
+      - name: Verify format imports and persisted reading state
+        timeout-minutes: 5
+        env:
+          READER_INSTALLER_TEST_DISPOSABLE: '1'
+        run: node ci/private-step.mjs formats source/apps/reader node scripts/smoke-desktop-formats.mjs release/core/${{ matrix.id }}
+      - name: Verify damaged JSON protection
+        timeout-minutes: 5
+        env:
+          READER_INSTALLER_TEST_DISPOSABLE: '1'
+        run: node ci/private-step.mjs corruption source/apps/reader node scripts/smoke-desktop-corruption.mjs release/core/${{ matrix.id }}
+      - name: Verify retained speech settings and missing-resource handling
+        timeout-minutes: 5
+        env:
+          READER_INSTALLER_TEST_DISPOSABLE: '1'
+        run: node ci/private-step.mjs saved-speech source/apps/reader node scripts/smoke-desktop-saved-speech.mjs release/core/${{ matrix.id }}
+      - name: Verify file read-access recovery
+        timeout-minutes: 5
+        env:
+          READER_INSTALLER_TEST_DISPOSABLE: '1'
+        run: node ci/private-step.mjs read-access source/apps/reader node scripts/smoke-desktop-read-access.mjs release/core/${{ matrix.id }}
+      - name: Verify configuration storage failures
+        timeout-minutes: 5
+        env:
+          READER_INSTALLER_TEST_DISPOSABLE: '1'
+        run: node ci/private-step.mjs storage source/apps/reader node scripts/smoke-desktop-storage.mjs release/core/${{ matrix.id }}
+      - name: Verify library volume exhaustion and restoration
+        timeout-minutes: 5
+        env:
+          READER_INSTALLER_TEST_DISPOSABLE: '1'
+        run: node ci/private-step.mjs profile-storage source/apps/reader node scripts/smoke-desktop-profile-storage.mjs release/core/${{ matrix.id }}
+      - name: Verify controlled offline native reading
+        timeout-minutes: 12
+        env:
+          READER_INSTALLER_TEST_DISPOSABLE: '1'
+          READER_TEST_NO_SANDBOX: '1'
+        run: node ci/private-step.mjs offline source/apps/reader node scripts/smoke-desktop-offline.mjs release/core/${{ matrix.id }}
+      - name: Upload verified signed candidates only
+        uses: actions/upload-artifact@v4
+        with:
+          name: reader-${{ matrix.id }}-signed-candidate
+          retention-days: 7
+          if-no-files-found: error
+          path: |
+            source/apps/reader/release/core/${{ matrix.id }}/*.dmg
+            source/apps/reader/release/core/${{ matrix.id }}/*.zip
+            source/apps/reader/release/core/${{ matrix.id }}/*.blockmap
+            source/apps/reader/release/core/${{ matrix.id }}/desktop-*.yml
+            source/apps/reader/release/core/${{ matrix.id }}/desktop-*.json
+            source/apps/reader/release/core/${{ matrix.id }}/SHA256SUMS
+      - name: Cleanup signing credentials after any failure
+        if: always()
+        run: node ci/macos-signing.mjs cleanup
+      - name: Encrypt private diagnostics
+        if: always()
+        run: node ci/seal-log.mjs
+      - name: Upload encrypted diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: reader-${{ matrix.id }}-signed-encrypted-log
+          retention-days: 3
+          if-no-files-found: ignore
+          path: ${{ runner.temp }}/reader-private-build.log.enc.json

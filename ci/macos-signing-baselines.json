@@ -1,0 +1,20 @@
+{
+  "darwin-arm64": {
+    "os": "macos-15",
+    "run_id": 41188844805,
+    "artifact_id": 13038706602,
+    "artifact_name": "reader-darwin-arm64-candidate",
+    "archive_digest": "sha256:57a82248cdb15157628d1ac10fd7d01adb72f73712b3492dbb4304ea9bc03180",
+    "source_ref": "7c90344bd76395adb5e1c3184a5f158562949d8e",
+    "workflow_ref": "16cd72ea2a21b75bfed05c5edfb3f656e514897d"
+  },
+  "darwin-x64": {
+    "os": "macos-15-intel",
+    "run_id": 41188844805,
+    "artifact_id": 13038608268,
+    "artifact_name": "reader-darwin-x64-candidate",
+    "archive_digest": "sha256:f6554f51d580736b07fc638dc22c368563038695889acd123b4f60e08c111571",
+    "source_ref": "7c90344bd76395adb5e1c3184a5f158562949d8e",
+    "workflow_ref": "16cd72ea2a21b75bfed05c5edfb3f656e514897d"
+  }
+}
