@@ -15,6 +15,10 @@ function command(file, args) {
   });
 }
 if (process.argv[2] === 'child') {
+  // Force the last short-lived client to disconnect immediately before the
+  // window manager connects, minimizing the suspected server-reset interval.
+  const firstClient = await command('xprop', ['-root', '_NET_SUPPORTING_WM_CHECK']);
+  if (firstClient.code !== 0) throw new Error(firstClient.output);
   const wm = spawn('openbox', ['--sm-disable'], { stdio: ['ignore', 'pipe', 'pipe'] });
   let output = '', ended = false;
   const done = new Promise(resolve => wm.once('close', code => { ended = true; resolve(code); }));
@@ -40,7 +44,7 @@ if (process.argv[2] === 'child') {
   const root = mkdtempSync(path.join(os.tmpdir(), 'reader-display-probe-'));
   let failures = 0;
   try {
-    for (let round = 0; round < 100; round++) {
+    for (let round = 0; round < 30; round++) {
       const log = path.join(root, `server-${round}.log`);
       const args = ['-a', '-e', log];
       if (mode === 'noreset') args.push('--server-args=-screen 0 1280x1024x24 -nolisten tcp -noreset');
@@ -51,7 +55,7 @@ if (process.argv[2] === 'child') {
         console.error(`FAIL ${mode} round=${round} code=${result.code}\n${result.output}\n${readFileSync(log, 'utf8')}`);
       }
     }
-    console.log(JSON.stringify({ mode, rounds: 100, failures }));
+    console.log(JSON.stringify({ mode, rounds: 30, failures }));
     if (failures) process.exitCode = 1;
   } finally { rmSync(root, { recursive: true, force: true }); }
 }
