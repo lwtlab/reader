@@ -173,7 +173,9 @@ jobs:
         timeout-minutes: 3
         env:
           READER_INSTALLER_TEST_DISPOSABLE: '1'
-        run: node ci/private-step.mjs storage-controls source/apps/reader node scripts/verify-desktop-storage-volume.mjs
+        run: |
+          $env:PSModulePath = "$env:SystemRoot\System32\WindowsPowerShell\v1.0\Modules"
+          node ci/private-step.mjs storage-controls source/apps/reader node scripts/verify-desktop-storage-volume.mjs
 
       - name: Build unsigned candidates without publishing
         timeout-minutes: 40
@@ -290,9 +292,9 @@ jobs:
         timeout-minutes: 5
         env:
           READER_INSTALLER_TEST_DISPOSABLE: '1'
-        run: >-
-          node ci/private-step.mjs storage source/apps/reader node scripts/smoke-desktop-storage.mjs
-          release/core/${{ matrix.platform }}-${{ matrix.arch }}
+        run: |
+          $env:PSModulePath = "$env:SystemRoot\System32\WindowsPowerShell\v1.0\Modules"
+          node ci/private-step.mjs storage source/apps/reader node scripts/smoke-desktop-storage.mjs release/core/${{ matrix.platform }}-${{ matrix.arch }}
 
       - name: Validate offline native reading and network restoration
         timeout-minutes: 12
