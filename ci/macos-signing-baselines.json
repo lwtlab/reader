@@ -1,20 +1,20 @@
 {
   "darwin-arm64": {
     "os": "macos-15",
-    "run_id": 41196253945,
-    "artifact_id": 13040569669,
+    "run_id": 41212073886,
+    "artifact_id": 13047580730,
     "artifact_name": "reader-darwin-arm64-candidate",
-    "archive_digest": "sha256:d200588c2db4cfdc285202dfbbceb50021e2eb2c1d203d97abc9c8085fc07deb",
-    "source_ref": "99bb02c9bf70867d40370b851caf1363b3c371f5",
-    "workflow_ref": "88015b657104b286c004290044cc61961feee11e"
+    "archive_digest": "sha256:d13593f9d39b0745fd1d8a81bf10c4b3327933146a1dca22afec63c0780fbef7",
+    "source_ref": "5d193ed0693a2ca45b4a80e70efe90ce98d58a10",
+    "workflow_ref": "eb93205881139ef327066c2580de80e37733d933"
   },
   "darwin-x64": {
     "os": "macos-15-intel",
-    "run_id": 41196253945,
-    "artifact_id": 13041397441,
+    "run_id": 41212073886,
+    "artifact_id": 13048495978,
     "artifact_name": "reader-darwin-x64-candidate",
-    "archive_digest": "sha256:6b64edd6a820e20506bf1bde5820eefb7a9cd59a059f4e359a17468f5a5597ab",
-    "source_ref": "99bb02c9bf70867d40370b851caf1363b3c371f5",
-    "workflow_ref": "88015b657104b286c004290044cc61961feee11e"
+    "archive_digest": "sha256:928df212576686ae95a00d8547c27b1c5ef2b42d17330c796d463389ab9adf37",
+    "source_ref": "5d193ed0693a2ca45b4a80e70efe90ce98d58a10",
+    "workflow_ref": "eb93205881139ef327066c2580de80e37733d933"
   }
 }
