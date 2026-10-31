@@ -160,7 +160,16 @@ jobs:
         run: node ci/private-step.mjs storage-token source/apps/reader whoami /priv
 
       - name: Validate native storage volume controls
-        shell: ${{ matrix.platform == 'win32' && 'pwsh' || 'bash' }}
+        if: runner.os != 'Windows'
+        shell: bash
+        timeout-minutes: 3
+        env:
+          READER_INSTALLER_TEST_DISPOSABLE: '1'
+        run: node ci/private-step.mjs storage-controls source/apps/reader node scripts/verify-desktop-storage-volume.mjs
+
+      - name: Validate native storage volume controls on Windows
+        if: runner.os == 'Windows'
+        shell: pwsh
         timeout-minutes: 3
         env:
           READER_INSTALLER_TEST_DISPOSABLE: '1'
@@ -266,7 +275,18 @@ jobs:
           release/core/${{ matrix.platform }}-${{ matrix.arch }}
 
       - name: Validate permission denial and bounded-volume exhaustion
-        shell: ${{ matrix.platform == 'win32' && 'pwsh' || 'bash' }}
+        if: runner.os != 'Windows'
+        shell: bash
+        timeout-minutes: 5
+        env:
+          READER_INSTALLER_TEST_DISPOSABLE: '1'
+        run: >-
+          node ci/private-step.mjs storage source/apps/reader node scripts/smoke-desktop-storage.mjs
+          release/core/${{ matrix.platform }}-${{ matrix.arch }}
+
+      - name: Validate permission denial and bounded-volume exhaustion on Windows
+        if: runner.os == 'Windows'
+        shell: pwsh
         timeout-minutes: 5
         env:
           READER_INSTALLER_TEST_DISPOSABLE: '1'
