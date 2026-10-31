@@ -1,0 +1,115 @@
+name: Verified candidate offline reading checks
+run-name: Offline reading ${{ inputs.target }}
+on:
+  workflow_dispatch:
+    inputs:
+      source_ref:
+        description: Full private commit SHA containing the QA scripts (candidate source stays pinned in ci/offline-baselines.json)
+        required: true
+        type: string
+      target:
+        description: Offline reading target
+        required: true
+        default: all
+        type: choice
+        options: [all, darwin-arm64, darwin-x64, win32-x64, linux-x64]
+permissions:
+  contents: read
+  actions: read
+jobs:
+  targets:
+    runs-on: ubuntu-22.04
+    outputs:
+      matrix: ${{ steps.select.outputs.matrix }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - id: select
+        env:
+          QA_SOURCE_REF: ${{ inputs.source_ref }}
+          OFFLINE_TARGET: ${{ inputs.target }}
+        run: node ci/select-offline-targets.mjs
+  runtime:
+    needs: targets
+    name: offline-${{ matrix.id }}
+    timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      matrix:
+        include: ${{ fromJSON(needs.targets.outputs.matrix) }}
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Validate approved candidate provenance
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          OFFLINE_TARGET: ${{ matrix.id }}
+        run: |
+          node --test ci/verify-portable-baseline.test.mjs ci/log-crypto.test.mjs ci/private-step.test.mjs
+          node ci/verify-offline-baseline.mjs
+      - name: Download the approved immutable artifact
+        uses: actions/download-artifact@v4
+        with:
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: ${{ matrix.run_id }}
+          artifact-ids: ${{ matrix.artifact_id }}
+          merge-multiple: true
+          path: candidate
+      - name: Checkout QA source read-only
+        uses: actions/checkout@v4
+        with:
+          repository: lwtlab/lwt-core
+          ref: ${{ inputs.source_ref }}
+          path: source
+          ssh-key: ${{ secrets.PRIVATE_SOURCE_SSH_KEY }}
+          persist-credentials: false
+          submodules: false
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11.5.2
+          package_json_file: source/apps/reader/package.json
+      - name: Install Linux runtime dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y libgtk-3-0 libnss3 libasound2 libgbm1 libxss1 xvfb xauth openbox x11-utils iproute2
+      - name: Install QA dependencies
+        timeout-minutes: 10
+        env:
+          READER_INSTALL_NETWORK: direct
+        run: node ci/private-step.mjs dependencies source/apps/reader bash --noprofile --norc scripts/install.sh --frozen-lockfile
+      - name: Test QA artifact and host guards
+        run: node ci/private-step.mjs offline-contracts source/apps/reader node --test scripts/desktop-installer-target.test.mjs scripts/desktop-network-canary.test.mjs
+
+      - name: Validate offline native reading and network restoration
+        timeout-minutes: 12
+        env:
+          READER_INSTALLER_TEST_DISPOSABLE: '1'
+          READER_TEST_NO_SANDBOX: ${{ runner.os == 'macOS' && '1' || '0' }}
+        run: |
+          if [ "$RUNNER_OS" = Linux ]; then
+            node ci/private-step.mjs offline source/apps/reader xvfb-run -a node scripts/smoke-desktop-offline.mjs ../../../candidate
+          else
+            node ci/private-step.mjs offline source/apps/reader node scripts/smoke-desktop-offline.mjs ../../../candidate
+          fi
+      - name: Encrypt private QA logs
+        if: always()
+        run: node ci/seal-log.mjs
+      - name: Upload encrypted diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: offline-${{ matrix.id }}-encrypted-log
+          retention-days: 3
+          if-no-files-found: ignore
+          path: ${{ runner.temp }}/reader-private-build.log.enc.json
