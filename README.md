@@ -76,3 +76,11 @@ The bounded fill controller drains fresh files using both synchronous and asynch
 `profile-storage-checks.yml` reruns the volume controls and packaged data-volume checks against immutable candidates explicitly approved in `ci/profile-storage-baselines.json`. QA source is independent of the binary source; no candidate is recompiled, relabeled or uploaded. A requested `all` requires all four approved targets and fails closed while any baseline is absent. Only encrypted diagnostics are uploaded for three days.
 
 All four profile-storage baselines now pin the verified 0.1.4 candidates. Rechecks retain the original artifact IDs and expiry times; expired baselines require an explicit reviewed update.
+
+## File read-access recovery
+
+The 0.1.5 candidate pipeline checks native file read-denial controls before compiling, then runs `smoke-desktop-read-access.mjs` against the actual container before upload. QA-owned synthetic article indexes, parts, media, configuration and a closed SQLite database lose read access temporarily. Existing content must not become a successful missing/empty result. A configuration mutation while its original file is unreadable must fail without replacing any original bytes. Restored access must allow reads, new writes and restart persistence while retaining notes, progress and settings. Genuine absent article/part requests retain 404.
+
+POSIX restores captured file modes; Windows uses native PowerShell, system modules and the current SID's ReadData deny ACL, restoring the original SDDL. The preflight requires an actual denied `readFile` and a writable parent directory. These checks cover selected ordinary files; directory traversal restrictions, damaged files, removed external volumes and physical-device/security-prompt acceptance remain outside this gate. Build output remains encrypted under the existing diagnostic retention policy.
+
+The complete four-platform 0.1.5 candidate run [41175572596](https://github.com/lwtlab/reader/actions/runs/41175572596) passed all applicable gates, including actual 0.1.4-to-0.1.5 installer upgrades and the new read-access checks. Each host passed 281 tests in 35 files before building. Candidates retain their original seven-day engineering-artifact retention; this does not publish a Release or verify signing.
