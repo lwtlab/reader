@@ -4,8 +4,9 @@
 set -u
 reader_xvfb_root=$(mktemp -d "${RUNNER_TEMP:-${TMPDIR:-/tmp}}/reader-xvfb.XXXXXX") || exit 1
 trap 'rm -rf -- "$reader_xvfb_root"' EXIT
+# Keep short readiness clients from resetting the server before Openbox connects.
 reader_xvfb_args=(-a --error-file="$reader_xvfb_root/server.log")
-if [[ "${READER_XVFB_NO_RESET:-0}" = 1 ]]; then
+if [[ "${READER_XVFB_NO_RESET:-1}" = 1 ]]; then
   reader_xvfb_args+=(--server-args='-screen 0 1280x1024x24 -nolisten tcp -noreset')
 fi
 xvfb-run "${reader_xvfb_args[@]}" "$@"
