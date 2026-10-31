@@ -346,6 +346,12 @@ jobs:
           $env:PSModulePath = "$env:SystemRoot\System32\WindowsPowerShell\v1.0\Modules"
           node ci/private-step.mjs read-access source/apps/reader node scripts/smoke-desktop-read-access.mjs release/core/${{ matrix.platform }}-${{ matrix.arch }}
 
+      - name: Validate native text Markdown HTML and EPUB imports
+        timeout-minutes: 5
+        env:
+          READER_INSTALLER_TEST_DISPOSABLE: '1'
+        run: node ci/private-step.mjs formats source/apps/reader node scripts/smoke-desktop-formats.mjs release/core/${{ matrix.platform }}-${{ matrix.arch }}
+
       - name: Validate damaged JSON protection and restored files
         timeout-minutes: 5
         env:
