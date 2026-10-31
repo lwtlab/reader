@@ -102,7 +102,7 @@ jobs:
         timeout-minutes: 10
         env:
           READER_INSTALLER_TEST_DISPOSABLE: '1'
-        run: node ci/private-step.mjs portable source/apps/reader xvfb-run -a --error-file=/dev/stderr node scripts/smoke-desktop-portable.mjs ../../../candidate
+        run: node ci/private-step.mjs portable source/apps/reader xvfb-run -a --error-file=/dev/stderr bash ../../../ci/linux-display-context.sh node scripts/smoke-desktop-portable.mjs ../../../candidate
       - name: Encrypt private QA logs
         if: always()
         run: node ci/seal-log.mjs

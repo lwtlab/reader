@@ -10,11 +10,11 @@
   },
   "linux-x64": {
     "os": "ubuntu-22.04",
-    "run_id": 41076859842,
-    "artifact_id": 12988003550,
+    "run_id": 41188844805,
+    "artifact_id": 13038756303,
     "artifact_name": "reader-linux-x64-candidate",
-    "archive_digest": "sha256:6a0d6403d3ac4488418f0437bd70769ad888e8a896d97939beb5f83c041b29c6",
-    "source_ref": "982acc5888cfb8c081c9fd2d9ddb9914006854b6",
-    "workflow_ref": "f8f5c7e26f21efe33086e6594a9a044827649ae4"
+    "archive_digest": "sha256:451eb71a482759e5310420327f35e79744805b06a3df3bb22ffe03c4cbb14012",
+    "source_ref": "7c90344bd76395adb5e1c3184a5f158562949d8e",
+    "workflow_ref": "16cd72ea2a21b75bfed05c5edfb3f656e514897d"
   }
 }
