@@ -95,7 +95,7 @@ The complete four-platform 0.1.6 candidate run [41188844805](https://github.com/
 
 ## macOS signed candidate staging
 
-`macos-signed-candidates.yml` is a separate manual-only pipeline for the approved 0.1.6 Mac binaries in `ci/macos-signing-baselines.json`. It verifies immutable source artifacts, then signs, notarizes, staples and repackages on native arm64/Intel hosts. Application version and JavaScript archive stay unchanged; production updates remain disabled. A distinct report binds signing provenance and verified signatures/tickets to the final checksummed containers. The DMG blockmap/feed are regenerated after stapling.
+`macos-signed-candidates.yml` is a separate manual-only pipeline for the approved 0.1.7 Mac binaries in `ci/macos-signing-baselines.json`. It verifies immutable source artifacts, then signs, notarizes, staples and repackages on native arm64/Intel hosts. Application version and JavaScript archive stay unchanged; production updates remain disabled. A distinct report binds signing provenance and verified signatures/tickets to the final checksummed containers. The DMG blockmap/feed are regenerated after stapling.
 
 The `macos-signing` environment is limited to main. Configure `MACOS_SIGNING_P12_BASE64` and `MACOS_SIGNING_P12_PASSWORD` with only the approved Developer ID identity; the three `MACOS_NOTARY_*` secrets are already configured. The maintainer deferred certificate export because the local keychain rejected non-interactive export. [Issue #6](https://github.com/lwtlab/reader/issues/6) contains the exact certificate identity, upload commands and acceptance checklist. Cloud signing has not run successfully and must not be presented as accepted. P12/password contents never belong in issues, chat or the repository.
 
