@@ -154,7 +154,13 @@ jobs:
         timeout-minutes: 3
         run: node ci/private-step.mjs nsis-path source/apps/reader node scripts/verify-nsis-user-path.mjs
 
+      - name: Record native Windows storage token
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: node ci/private-step.mjs storage-token source/apps/reader whoami /priv
+
       - name: Validate native storage volume controls
+        shell: ${{ runner.os == 'Windows' && 'pwsh' || 'bash' }}
         timeout-minutes: 3
         env:
           READER_INSTALLER_TEST_DISPOSABLE: '1'
@@ -260,6 +266,7 @@ jobs:
           release/core/${{ matrix.platform }}-${{ matrix.arch }}
 
       - name: Validate permission denial and bounded-volume exhaustion
+        shell: ${{ runner.os == 'Windows' && 'pwsh' || 'bash' }}
         timeout-minutes: 5
         env:
           READER_INSTALLER_TEST_DISPOSABLE: '1'
