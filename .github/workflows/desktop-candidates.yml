@@ -147,8 +147,8 @@ jobs:
           lib/transcribe/asr-readiness.test.ts lib/transcribe/availability.test.ts lib/transcribe/paths.test.ts
           lib/transcribe/sync.test.ts lib/transcribe/qwen3/manager.test.ts app/api/transcribe/route.test.ts
           app/api/transcribe/sync/route.test.ts app/api/transcribe/retry/route.test.ts app/api/narration/route.test.ts
-          lib/config/store.test.ts lib/config/store-atomic.test.ts lib/config/store-read-errors.test.ts lib/db/client-retry.test.ts
-          lib/articles/part-store-read-errors.test.ts lib/articles/part-store.test.ts lib/books/list.test.ts
+          lib/config/store.test.ts lib/config/store-atomic.test.ts lib/config/store-read-errors.test.ts lib/config/store-corruption.test.ts lib/db/client-retry.test.ts
+          lib/articles/part-store-read-errors.test.ts lib/articles/part-store-corruption.test.ts lib/articles/part-store.test.ts lib/books/list.test.ts
           app/api/articles/[slug]/route.test.ts app/api/articles/[slug]/parts/[partId]/route.test.ts
 
       - name: Validate native NSIS user path handling
@@ -345,6 +345,12 @@ jobs:
         run: |
           $env:PSModulePath = "$env:SystemRoot\System32\WindowsPowerShell\v1.0\Modules"
           node ci/private-step.mjs read-access source/apps/reader node scripts/smoke-desktop-read-access.mjs release/core/${{ matrix.platform }}-${{ matrix.arch }}
+
+      - name: Validate damaged JSON protection and restored files
+        timeout-minutes: 5
+        env:
+          READER_INSTALLER_TEST_DISPOSABLE: '1'
+        run: node ci/private-step.mjs corruption source/apps/reader node scripts/smoke-desktop-corruption.mjs release/core/${{ matrix.platform }}-${{ matrix.arch }}
 
       - name: Validate offline native reading and network restoration
         timeout-minutes: 12
