@@ -98,7 +98,7 @@ jobs:
           READER_TEST_NO_SANDBOX: ${{ runner.os == 'macOS' && '1' || '0' }}
         run: |
           if [ "$RUNNER_OS" = Linux ]; then
-            node ci/private-step.mjs offline source/apps/reader xvfb-run -a node scripts/smoke-desktop-offline.mjs ../../../candidate
+            node ci/private-step.mjs offline source/apps/reader xvfb-run -a --error-file=/dev/stderr node scripts/smoke-desktop-offline.mjs ../../../candidate
           else
             node ci/private-step.mjs offline source/apps/reader node scripts/smoke-desktop-offline.mjs ../../../candidate
           fi

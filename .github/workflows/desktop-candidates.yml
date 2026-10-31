@@ -220,7 +220,7 @@ jobs:
         timeout-minutes: 5
         if: runner.os == 'Linux'
         run: >-
-          node ci/private-step.mjs window source/apps/reader xvfb-run -a bash scripts/smoke-desktop-window-linux.sh
+          node ci/private-step.mjs window source/apps/reader xvfb-run -a --error-file=/dev/stderr bash scripts/smoke-desktop-window-linux.sh
           release/core/${{ matrix.platform }}-${{ matrix.arch }}/${{ matrix.executable }}
 
       - name: Prepare checksums
@@ -243,7 +243,7 @@ jobs:
         env:
           READER_INSTALLER_TEST_DISPOSABLE: '1'
         run: >-
-          node ci/private-step.mjs installer source/apps/reader xvfb-run -a node scripts/smoke-desktop-installers.mjs
+          node ci/private-step.mjs installer source/apps/reader xvfb-run -a --error-file=/dev/stderr node scripts/smoke-desktop-installers.mjs
           release/core/${{ matrix.platform }}-${{ matrix.arch }}
 
       - name: Validate Windows single-file runtime
@@ -261,7 +261,7 @@ jobs:
         env:
           READER_INSTALLER_TEST_DISPOSABLE: '1'
         run: >-
-          node ci/private-step.mjs portable source/apps/reader xvfb-run -a node scripts/smoke-desktop-portable.mjs
+          node ci/private-step.mjs portable source/apps/reader xvfb-run -a --error-file=/dev/stderr node scripts/smoke-desktop-portable.mjs
           release/core/${{ matrix.platform }}-${{ matrix.arch }}
 
       - name: Verify actual installer version upgrade
@@ -279,7 +279,7 @@ jobs:
         env:
           READER_INSTALLER_TEST_DISPOSABLE: '1'
         run: >-
-          node ci/private-step.mjs upgrade source/apps/reader xvfb-run -a node scripts/smoke-desktop-installers.mjs
+          node ci/private-step.mjs upgrade source/apps/reader xvfb-run -a --error-file=/dev/stderr node scripts/smoke-desktop-installers.mjs
           ../../../baseline release/core/${{ matrix.platform }}-${{ matrix.arch }}
 
       - name: Validate persisted speech preferences with missing engines
@@ -365,7 +365,7 @@ jobs:
           READER_TEST_NO_SANDBOX: ${{ runner.os == 'macOS' && '1' || '0' }}
         run: |
           if [ "$RUNNER_OS" = Linux ]; then
-            node ci/private-step.mjs offline source/apps/reader xvfb-run -a node scripts/smoke-desktop-offline.mjs release/core/${{ matrix.platform }}-${{ matrix.arch }}
+            node ci/private-step.mjs offline source/apps/reader xvfb-run -a --error-file=/dev/stderr node scripts/smoke-desktop-offline.mjs release/core/${{ matrix.platform }}-${{ matrix.arch }}
           else
             node ci/private-step.mjs offline source/apps/reader node scripts/smoke-desktop-offline.mjs release/core/${{ matrix.platform }}-${{ matrix.arch }}
           fi
