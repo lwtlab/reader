@@ -54,7 +54,7 @@ jobs:
           GITHUB_TOKEN: ${{ github.token }}
           OFFLINE_TARGET: ${{ matrix.id }}
         run: |
-          node --test ci/verify-portable-baseline.test.mjs ci/log-crypto.test.mjs ci/private-step.test.mjs
+          node --test ci/verify-portable-baseline.test.mjs ci/log-crypto.test.mjs ci/private-step.test.mjs ci/run-xvfb.test.mjs
           node ci/verify-offline-baseline.mjs
       - name: Download the approved immutable artifact
         uses: actions/download-artifact@v4
@@ -98,7 +98,7 @@ jobs:
           READER_TEST_NO_SANDBOX: ${{ runner.os == 'macOS' && '1' || '0' }}
         run: |
           if [ "$RUNNER_OS" = Linux ]; then
-            node ci/private-step.mjs offline source/apps/reader xvfb-run -a --error-file=/dev/stderr node scripts/smoke-desktop-offline.mjs ../../../candidate
+            node ci/private-step.mjs offline source/apps/reader bash ../../../ci/run-xvfb.sh node scripts/smoke-desktop-offline.mjs ../../../candidate
           else
             node ci/private-step.mjs offline source/apps/reader node scripts/smoke-desktop-offline.mjs ../../../candidate
           fi

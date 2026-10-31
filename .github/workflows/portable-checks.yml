@@ -54,7 +54,7 @@ jobs:
           GITHUB_TOKEN: ${{ github.token }}
           PORTABLE_TARGET: ${{ matrix.id }}
         run: |
-          node --test ci/verify-portable-baseline.test.mjs ci/log-crypto.test.mjs ci/private-step.test.mjs
+          node --test ci/verify-portable-baseline.test.mjs ci/log-crypto.test.mjs ci/private-step.test.mjs ci/run-xvfb.test.mjs
           node ci/verify-portable-baseline.mjs
       - name: Download the approved immutable artifact
         uses: actions/download-artifact@v4
@@ -102,7 +102,7 @@ jobs:
         timeout-minutes: 10
         env:
           READER_INSTALLER_TEST_DISPOSABLE: '1'
-        run: node ci/private-step.mjs portable source/apps/reader xvfb-run -a --error-file=/dev/stderr bash ../../../ci/linux-display-context.sh node scripts/smoke-desktop-portable.mjs ../../../candidate
+        run: node ci/private-step.mjs portable source/apps/reader bash ../../../ci/run-xvfb.sh bash ../../../ci/linux-display-context.sh node scripts/smoke-desktop-portable.mjs ../../../candidate
       - name: Encrypt private QA logs
         if: always()
         run: node ci/seal-log.mjs
