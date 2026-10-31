@@ -123,7 +123,7 @@ jobs:
         if: runner.os == 'Linux'
         run: |
           sudo apt-get update -qq
-          sudo apt-get install -y libgtk-3-0 libnss3 libasound2 libgbm1 libxss1 libfuse2 xvfb xauth openbox x11-utils
+          sudo apt-get install -y libgtk-3-0 libnss3 libasound2 libgbm1 libxss1 libfuse2 xvfb xauth openbox x11-utils iproute2
 
       - name: Install private application dependencies
         timeout-minutes: 10
@@ -138,7 +138,7 @@ jobs:
           scripts/desktop-source.test.mjs scripts/windows-native-signing.test.mjs
           scripts/desktop-source-maps.test.mjs
           scripts/desktop-installer-target.test.mjs
-          scripts/desktop-upgrade-pair.test.mjs
+          scripts/desktop-upgrade-pair.test.mjs scripts/desktop-network-canary.test.mjs
 
       - name: Test desktop lifecycle and browser assets
         run: >-
@@ -251,6 +251,18 @@ jobs:
         run: >-
           node ci/private-step.mjs saved-speech source/apps/reader node scripts/smoke-desktop-saved-speech.mjs
           release/core/${{ matrix.platform }}-${{ matrix.arch }}
+
+      - name: Validate offline native reading and network restoration
+        timeout-minutes: 12
+        env:
+          READER_INSTALLER_TEST_DISPOSABLE: '1'
+          READER_TEST_NO_SANDBOX: ${{ runner.os == 'macOS' && '1' || '0' }}
+        run: |
+          if [ "$RUNNER_OS" = Linux ]; then
+            node ci/private-step.mjs offline source/apps/reader xvfb-run -a node scripts/smoke-desktop-offline.mjs release/core/${{ matrix.platform }}-${{ matrix.arch }}
+          else
+            node ci/private-step.mjs offline source/apps/reader node scripts/smoke-desktop-offline.mjs release/core/${{ matrix.platform }}-${{ matrix.arch }}
+          fi
 
       - name: Upload verified candidate artifacts only
         uses: actions/upload-artifact@v4

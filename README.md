@@ -49,6 +49,8 @@ A separate pre-upload gate runs `smoke-desktop-saved-speech.mjs` against the act
 
 `offline-checks.yml` reuses the four approved 0.1.2 artifacts in `ci/offline-baselines.json`, with the same immutable provenance and upload-gate checks. The QA source SHA is independent of the recorded binary source. No candidate is rebuilt or republished; only encrypted diagnostics are retained for three days.
 
+Future `desktop-candidates.yml` builds run the same offline check before candidate upload. A private QA source without the required entry point fails; the gate is never silently skipped.
+
 QA installs the actual NSIS/DEB/DMG container, then uses a fresh isolated profile for native offline cold start, text/PDF import and reading, notes/progress/settings, offline relaunch, network restoration and new writes. The candidate's own Electron Node runtime must connect to a positive external TCP control before restriction, reject the same connection while loopback remains usable under restriction, and connect again after restoration. A failed control fails the check.
 
 Linux runs the worker and application tree in a new loopback-only network namespace. Windows temporarily blocks non-loopback IPv4/IPv6 outbound connections for every executable in the installed application directory; rules use a unique owned group and the original firewall profile states are restored. It never disables the host network or targets the Actions agent. Those system operations require an explicitly opted-in disposable runner.
