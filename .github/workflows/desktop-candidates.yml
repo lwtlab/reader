@@ -75,7 +75,7 @@ jobs:
           node-version: 22
 
       - name: Test public CI infrastructure
-        run: node --test ci/log-crypto.test.mjs ci/private-step.test.mjs ci/verify-portable-baseline.test.mjs ci/run-xvfb.test.mjs
+        run: node --test ci/log-crypto.test.mjs ci/private-step.test.mjs ci/verify-portable-baseline.test.mjs ci/run-xvfb.test.mjs ci/audit-package.test.mjs
 
       - name: Verify approved upgrade baseline
         if: inputs.verify_upgrade
