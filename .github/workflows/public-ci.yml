@@ -1,0 +1,32 @@
+name: Public delivery and website checks
+on:
+  pull_request:
+  push:
+    branches: [main]
+permissions:
+  contents: read
+env:
+  ASTRO_TELEMETRY_DISABLED: '1'
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+          submodules: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: site/package-lock.json
+      - name: Public infrastructure and publishing contracts
+        run: node --test ci/*.test.mjs scripts/*.test.mjs
+      - name: Install website dependencies only
+        run: npm --prefix site ci
+      - name: Verify project-site paths
+        run: npm --prefix site run verify
+      - name: Verify custom-domain root paths
+        env:
+          SITE_BASE: /
+        run: npm --prefix site run verify

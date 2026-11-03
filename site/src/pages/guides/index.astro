@@ -1,0 +1,13 @@
+---
+import Page from '../../layouts/Page.astro';
+import { urlFor } from '../../lib/paths';
+const guides = [
+  ['getting-started/', '01', '开始第一次学习', '选择语言，导入文章，保存一个词，再完成一轮复习。'],
+  ['importing/', '02', '把自己的内容收进来', '了解链接、文件与粘贴文本各自适合什么内容。'],
+  ['extension/', '03', '从浏览器带回好文章', '了解浏览器扩展的使用方式与当前安装入口。'],
+];
+---
+<Page title="使用教程" description="从第一次导入开始，了解 Reader 的阅读、查词、生词复习与浏览器扩展。">
+  <header class="page-heading"><p class="eyebrow">一步一步，读起来</p><h1>使用教程</h1><p class="lede">从第一篇文章开始，再找到适合自己的学习方式。</p></header>
+  <div class="guide-list">{guides.map(([path, number, title, description]) => <a class="guide-card" href={urlFor(`guides/${path}`)}><span class="step-number">{number}</span><div><h2>{title}</h2><p>{description}</p></div><span aria-hidden="true">→</span></a>)}</div>
+</Page>

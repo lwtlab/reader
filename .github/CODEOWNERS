@@ -1,0 +1,6 @@
+# Enforce required code-owner review through branch rules before broadening write access.
+/.github/ @XUJiahua
+/ci/ @XUJiahua
+/scripts/ @XUJiahua
+/manifests/ @XUJiahua
+/AGENTS.md @XUJiahua

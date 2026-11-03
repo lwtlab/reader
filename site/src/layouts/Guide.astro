@@ -1,0 +1,17 @@
+---
+import Page from './Page.astro';
+import { urlFor } from '../lib/paths';
+const { title, description } = Astro.props.frontmatter;
+---
+<Page title={title} description={description}>
+  <div class="guide-layout">
+    <aside aria-label="教程导航">
+      <a href={urlFor('guides/')}>全部教程</a>
+      <a href={urlFor('guides/getting-started/')}>开始第一次学习</a>
+      <a href={urlFor('guides/importing/')}>导入自己的内容</a>
+      <a href={urlFor('guides/extension/')}>使用浏览器扩展</a>
+      <a href={urlFor('downloads/')}>下载与安装</a>
+    </aside>
+    <article class="prose"><p class="eyebrow">使用教程</p><h1>{title}</h1><p class="lede">{description}</p><slot /></article>
+  </div>
+</Page>

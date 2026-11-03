@@ -1,0 +1,29 @@
+---
+import Page from '../layouts/Page.astro';
+import { urlFor } from '../lib/paths';
+---
+<Page title="Reader" description="把网页、电子书和自己的文章变成语言学习材料。从阅读、查词到生词复习，在 Reader 中连成一条自然的学习路径。">
+  <section class="hero">
+    <div>
+      <p class="eyebrow">从你想读的内容开始</p>
+      <h1>读进去。<br />让语言留下来。</h1>
+      <p class="lede">一篇文章，一本喜欢的书。<br />在阅读中理解生词，在语境里记住它。</p>
+      <div class="actions"><a class="button primary" href="https://reader.cubbber.com/">开始阅读 <span aria-hidden="true">↗</span></a><a class="button" href={urlFor('guides/getting-started/')}>看看如何开始 <span aria-hidden="true">→</span></a></div>
+      <p class="quiet">网页 · 电子书 · PDF · 你自己的文字</p>
+    </div>
+    <figure class="reading-sample" aria-label="阅读与语境学习的示意">
+      <div class="sample-header"><span>一段值得读的文字</span><span aria-hidden="true">01 / 03</span></div>
+      <blockquote>Every new word is a small <mark>window</mark> into another way of seeing the world.</blockquote>
+      <figcaption><span class="sample-word">window <span>/ˈwɪndoʊ/</span></span><p>窗；理解另一种生活的视角。</p><span class="quiet">从文章中理解，在下一次阅读中认出。</span></figcaption>
+    </figure>
+  </section>
+  <section class="section-block" aria-labelledby="learning-path">
+    <div class="section-heading"><p class="eyebrow">一条完整的学习路径</p><h2 id="learning-path">阅读的收获，留到下一次。</h2></div>
+    <div class="steps">
+      <div><span class="step-number">01</span><h3>收进想读的内容</h3><p>导入文章链接、EPUB、文本或 PDF，把零散的材料放回同一个书库。</p></div>
+      <div><span class="step-number">02</span><h3>在语境里理解</h3><p>查词、保存义项、划线和记笔记。需要时深入一句话，想继续时回到正文。</p></div>
+      <div><span class="step-number">03</span><h3>让生词变熟悉</h3><p>把阅读中的词放进生词本，用到期复习继续巩固，而不必另抄一份清单。</p></div>
+    </div>
+  </section>
+  <section class="closing section-block"><div><p class="eyebrow">今天，先读一小段</p><h2>从第一篇文章开始。</h2></div><a class="button" href={urlFor('guides/getting-started/')}>第一次学习指南 →</a></section>
+</Page>
