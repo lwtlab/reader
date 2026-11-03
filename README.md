@@ -1,15 +1,23 @@
-# LWT Reader
+# Reader
 
-Bug reports and feature requests for [LWT Reader](https://reader.cubbber.com/) mobile app.
+Public delivery, website and user guides for [Reader](https://reader.cubbber.com/), across desktop,
+mobile and the browser extension. Application implementation stays in the private source repository.
 
 Issues are created automatically from the app's **Report Bug** feature (Settings → Report a bug).
 
+See [repository maintenance](docs/maintaining.md) for the product-scoped release publisher, compatible
+Android updates, website setup and independently gated deployment. Website source is in [`site/`](site/),
+reviewed public download metadata in [`manifests/`](manifests/). Installers are Release assets, not Git files.
+This repository can be maintained independently or through the private source's `public/reader` submodule.
 
 ## Desktop candidate builds
 
 [Desktop candidate packages](https://github.com/lwtlab/reader/actions/workflows/desktop-candidates.yml) is a maintainer-only manual workflow for macOS arm64/x64, Windows x64 and Linux x64. Supply a full commit SHA from the private source repository and select `all` or a single native target. The workflow uses a repository-scoped, read-only SSH deploy key in the `PRIVATE_SOURCE_SSH_KEY` Actions secret; it does not require a personal access token.
 
-This repository contains build infrastructure only. Private source is checked out on ephemeral runners, built without signing, and tested using synthetic application data. Successful jobs upload candidate installers and SHA-256 manifests for seven days. No GitHub Release is published.
+The desktop candidate pipeline checks out private source on ephemeral runners, builds without signing,
+and tests with synthetic application data. Successful jobs upload candidate installers and SHA-256
+manifests for seven days. This candidate pipeline does not publish a GitHub Release; the separate
+publisher requires explicit release authorization and preserves product-specific Latest behavior.
 
 The upload gate includes actual installer lifecycle checks: Windows per-user NSIS installation, uninstall registration and shortcuts; Linux apt/dpkg installation and removal; and macOS read-only DMG mount, application copy and removal in a temporary directory. Each host checks same-version overwrite, retained library/notes/progress/settings, uninstall and reinstall. Windows and Linux use the disposable runner's initially absent default user profile, so uninstall data retention is tested at the real application path. Existing installations or profiles cause refusal. macOS always uses an isolated temporary profile. The separate cross-version gate below checks an explicitly approved version pair. These engineering candidates do not certify signing, notarization, SmartScreen or Gatekeeper behavior.
 

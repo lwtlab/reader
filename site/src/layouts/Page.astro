@@ -1,0 +1,34 @@
+---
+import '../styles/global.css';
+import { urlFor } from '../lib/paths';
+interface Props { title: string; description: string; }
+const { title, description } = Astro.props;
+const links = [{ label: '下载', path: 'downloads/' }, { label: '使用教程', path: 'guides/' }];
+---
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="description" content={description} />
+    <meta name="color-scheme" content="light dark" />
+    <title>{title === 'Reader' ? 'Reader · 从阅读开始，让语言留下来' : `${title} · Reader`}</title>
+    <link rel="canonical" href={new URL(Astro.url.pathname, Astro.site)} />
+  </head>
+  <body>
+    <a class="skip-link" href="#main">跳到正文</a>
+    <header class="site-header shell">
+      <a class="wordmark" href={urlFor()} aria-label="Reader 首页"><span class="brand-mark" aria-hidden="true">r</span>Reader</a>
+      <nav aria-label="主导航">
+        {links.map(link => <a href={urlFor(link.path)} aria-current={Astro.url.pathname === urlFor(link.path) ? 'page' : undefined}>{link.label}</a>)}
+        <a class="app-link" href="https://reader.cubbber.com/">打开网页版 <span aria-hidden="true">↗</span></a>
+      </nav>
+    </header>
+    <main id="main" class="shell" tabindex="-1"><slot /></main>
+    <footer class="site-footer shell">
+      <a class="wordmark" href={urlFor()}>Reader</a>
+      <p>读你喜欢的内容，记住真正用得上的词。</p>
+      <a href="https://github.com/lwtlab/reader">GitHub 与问题反馈 ↗</a>
+    </footer>
+  </body>
+</html>

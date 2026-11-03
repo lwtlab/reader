@@ -1,0 +1,48 @@
+name: Deploy public website
+on:
+  workflow_dispatch:
+    inputs:
+      confirm:
+        description: Deploy the reviewed website to the separately configured Pages site
+        type: boolean
+        required: true
+        default: false
+permissions:
+  contents: read
+env:
+  ASTRO_TELEMETRY_DISABLED: '1'
+jobs:
+  build:
+    if: github.ref == 'refs/heads/main' && inputs.confirm && vars.READER_SITE_DEPLOY_ENABLED == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+          submodules: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: site/package-lock.json
+      - run: npm --prefix site ci
+      - name: Build configured public site
+        env:
+          SITE_URL: ${{ vars.READER_SITE_URL || 'https://lwtlab.github.io' }}
+          SITE_BASE: ${{ vars.READER_SITE_BASE || '/reader/' }}
+        run: npm --prefix site run verify
+      - uses: actions/upload-pages-artifact@v4
+        with:
+          path: site/dist
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4

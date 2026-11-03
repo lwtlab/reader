@@ -1,0 +1,15 @@
+{
+  "schemaVersion": 1,
+  "mobile": {
+    "android": {
+      "version": "0.22.0",
+      "tag": "v0.22.0",
+      "url": "https://github.com/lwtlab/reader/releases/download/v0.22.0/lwt-reader-0.22.0.apk",
+      "sha256": "854d64647c126dd9c9ee6109c23d981cb2c8699b578a42e72ea30660ce88ab71",
+      "bytes": 100972822
+    },
+    "ios": null
+  },
+  "desktop": null,
+  "extension": null
+}
