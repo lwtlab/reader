@@ -31,6 +31,11 @@ on:
         type: string
         default: ''
 
+      baseline_only:
+        description: Rebuild fixed historical core source solely as upgrade baseline
+        type: boolean
+        default: false
+
       verify_upgrade:
         description: Require upgrade from the approved previous candidate (disable only when rebuilding a baseline; no upgrade acceptance)
         required: true
@@ -55,7 +60,7 @@ jobs:
           BUILD_TARGET: ${{ inputs.target }}
         run: node ci/select-targets.mjs
   build:
-    if: ${{ !inputs.internal && inputs.acceptance_json == '' }}
+    if: ${{ !inputs.internal && inputs.acceptance_json == '' && !inputs.baseline_only }}
     needs: targets
     name: ${{ matrix.id }}
     timeout-minutes: 75
@@ -409,6 +414,97 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: reader-${{ matrix.platform }}-${{ matrix.arch }}-encrypted-log
+          retention-days: 3
+          if-no-files-found: ignore
+          path: ${{ runner.temp }}/reader-private-build.log.enc.json
+
+  historical-baseline:
+    if: inputs.baseline_only && inputs.acceptance_json == '' && !inputs.internal
+    needs: targets
+    name: baseline-${{ matrix.id }}
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        include: ${{ fromJSON(needs.targets.outputs.matrix) }}
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        shell: bash
+    env:
+      SOURCE_REF: ${{ inputs.source_ref }}
+      READER_BUILD_SHA: ${{ inputs.source_ref }}
+    steps:
+      - name: Preserve source bytes
+        run: git config --global core.autocrlf false
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Require historical source identity
+        run: node -e 'if(process.env.SOURCE_REF!=="4d4a44876e9833bae0c9d1120b588623f5a46ea8")process.exit(1)'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24.22.0
+      - uses: actions/checkout@v4
+        with:
+          repository: lwtlab/lwt-core
+          ref: ${{ inputs.source_ref }}
+          path: source
+          ssh-key: ${{ secrets.PRIVATE_SOURCE_SSH_KEY }}
+          persist-credentials: false
+          submodules: false
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11.5.2
+          package_json_file: source/apps/reader/package.json
+      - name: Initialize native dependencies
+        run: node ci/private-step.mjs submodules source git -c submodule.aspeak.url=https://github.com/XUJiahua/aspeak.git -c submodule.srtparse.url=https://github.com/XUJiahua/srtparse.git submodule update --init aspeak srtparse
+      - name: Linux runtime dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y libgtk-3-0 libnss3 libasound2 libgbm1 libxss1 libfuse2 xvfb xauth
+      - name: Install frozen historical dependencies
+        env:
+          READER_INSTALL_NETWORK: direct
+        run: node ci/private-step.mjs dependencies source/apps/reader bash --noprofile --norc scripts/install.sh --frozen-lockfile
+      - name: Build historical core without publishing
+        env:
+          CI: true
+          APPIMAGE_EXTRACT_AND_RUN: '1'
+        run: node ci/private-step.mjs baseline source/apps/reader pnpm dist --profile=core --unsigned --${{ matrix.arch }} --publish never
+      - name: Verify historical service
+        run: node ci/private-step.mjs service source/apps/reader node scripts/smoke-desktop-package.mjs release/core/${{ matrix.id }}/${{ matrix.executable }} release/core/${{ matrix.id }}/${{ matrix.resources }}
+      - name: Verify baseline identities
+        run: |
+          node ci/private-step.mjs index source/apps/reader node scripts/desktop-artifacts.mjs ${{ matrix.platform }} ${{ matrix.arch }} core
+          node ci/private-step.mjs checksums source/apps/reader node scripts/desktop-artifacts.mjs ${{ matrix.platform }} ${{ matrix.arch }} core --verify
+          node ci/record-historical-baseline.mjs source/apps/reader/release/core/${{ matrix.id }} source
+      - name: Upload historical installers and provenance only
+        uses: actions/upload-artifact@v4
+        with:
+          name: reader-${{ matrix.id }}-candidate
+          retention-days: 7
+          if-no-files-found: error
+          path: |
+            source/apps/reader/release/core/${{ matrix.id }}/*.dmg
+            source/apps/reader/release/core/${{ matrix.id }}/*.zip
+            source/apps/reader/release/core/${{ matrix.id }}/*.exe
+            source/apps/reader/release/core/${{ matrix.id }}/*.AppImage
+            source/apps/reader/release/core/${{ matrix.id }}/*.deb
+            source/apps/reader/release/core/${{ matrix.id }}/*.blockmap
+            source/apps/reader/release/core/${{ matrix.id }}/desktop-*.yml
+            source/apps/reader/release/core/${{ matrix.id }}/desktop-artifacts.json
+            source/apps/reader/release/core/${{ matrix.id }}/historical-baseline-provenance.json
+            source/apps/reader/release/core/${{ matrix.id }}/SHA256SUMS
+      - name: Encrypt private baseline logs
+        if: always()
+        run: node ci/seal-log.mjs
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: reader-${{ matrix.id }}-baseline-encrypted-log
           retention-days: 3
           if-no-files-found: ignore
           path: ${{ runner.temp }}/reader-private-build.log.enc.json

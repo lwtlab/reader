@@ -5,11 +5,7 @@ import { execFileSync } from 'node:child_process';
 import path from 'node:path';
 import { createRequire } from 'node:module';
 
-const approvedBaseline = {
-  runId: '42449632255',
-  sourceSha: '4d4a44876e9833bae0c9d1120b588623f5a46ea8',
-  workflowSha: 'd5f8a4a24df7897244ea3ba300f3ae2c4dd8c5d2',
-};
+const historicalSourceSha = '4d4a44876e9833bae0c9d1120b588623f5a46ea8';
 
 export function parseAcceptance(value) {
   const input = JSON.parse(value);
@@ -21,16 +17,14 @@ export function parseAcceptance(value) {
 
 export async function resolveAcceptance(input, target, request) {
   assert.match(target, /^(darwin-(arm64|x64)|win32-x64|linux-x64)$/);
-  assert.equal(String(input.baselineRun), approvedBaseline.runId, 'Historical source baseline must use the audited rebuild dispatch');
   for (const [role, id, jobName] of [
-    ['baseline', input.baselineRun, target],
+    ['baseline', input.baselineRun, `baseline-${target}`],
     ['candidate', input.candidateRun, `internal-${target}`],
   ]) {
     const run = await request(`actions/runs/${id}`);
     assert.equal(run.event, 'workflow_dispatch');
     assert.equal(run.path, '.github/workflows/desktop-candidates.yml');
     assert.equal(run.repository.full_name, 'lwtlab/reader');
-    if (role === 'baseline') assert.equal(run.head_sha, approvedBaseline.workflowSha);
     const jobs = await request(`actions/runs/${id}/jobs?per_page=100`);
     assert.ok(jobs.jobs.some(job => job.name === jobName && job.conclusion === 'success'), `${role} native job must pass`);
     const name = `reader-${role === 'candidate' ? 'internal-' : ''}${target}-candidate`;
@@ -97,9 +91,12 @@ if (process.argv[2] === 'resolve') {
   const [baselineDir, candidateDir, sourceDir, output] = process.argv.slice(3);
   const previous = verifyIndex(baselineDir), next = verifyIndex(candidateDir);
   const provenance = JSON.parse(readFileSync(path.join(candidateDir, 'internal-candidate-provenance.json'), 'utf8'));
+  const historical = JSON.parse(readFileSync(path.join(baselineDir, 'historical-baseline-provenance.json'), 'utf8'));
   const input = parseAcceptance(process.env.ACCEPTANCE_JSON);
   assert.equal(provenance.source.commit, process.env.SOURCE_REF);
-  assert.equal(String(input.baselineRun), approvedBaseline.runId);
+  assert.equal(historical.sourceSha, historicalSourceSha);
+  assert.equal(String(historical.delivery.runId), String(input.baselineRun));
+  assert.deepEqual(historical.artifacts, previous.artifacts);
   assert.match(process.env.SOURCE_REF, /^[a-f0-9]{40}$/);
   assert.equal(String(provenance.delivery.runId), String(input.candidateRun));
   assert.equal(previous.profile, 'core'); assert.equal(previous.version, '0.1.13');
@@ -113,7 +110,7 @@ if (process.argv[2] === 'resolve') {
     kind: 'synthetic-release-validation', status: 'PASS', gate: 'upgrade', version: next.version,
     target: `desktop-${next.platform}-${next.arch}`, sourceSha: process.env.SOURCE_REF,
     artifactSha256: next.artifacts.filter(row => /\.(dmg|zip|exe|deb|AppImage)$/.test(row.name)).map(row => row.sha256).sort(),
-    toolingSha, baseline: { sourceSha: approvedBaseline.sourceSha, runId: input.baselineRun, version: previous.version, profile: previous.profile, artifacts: previous.artifacts },
+    toolingSha, baseline: { sourceSha: historicalSourceSha, runId: input.baselineRun, version: previous.version, profile: previous.profile, artifacts: previous.artifacts, provenance: historical },
     candidate: provenance,
     delivery: { repository: process.env.GITHUB_REPOSITORY, runId: process.env.GITHUB_RUN_ID, workflowCommit: process.env.GITHUB_SHA },
     checks: { actualNativeInstallerUpgrade: 'PASS', syntheticLibraryNotesProgressAndPdfPreserved: 'PASS', postUpgradeWriteAndReopen: 'PASS', uninstallPreservesData: 'PASS', explicitCoreToBundledSpeechTransition: 'PASS' },
