@@ -14,3 +14,11 @@ test('internal candidate workflow stays manual and only uploads bounded artifact
   assert.doesNotMatch(internal, /release create|publish-release|contents: write|pull_request_target/);
   assert.doesNotMatch(internal.slice(internal.indexOf('Upload internal candidates only')), /path: source\s*$/m);
 });
+
+test('native macOS producers prepare both media tools before private dependencies and signing',()=>{
+ const yaml=readFileSync(new URL('../.github/workflows/desktop-candidates.yml',import.meta.url),'utf8');
+ const producer=yaml.slice(yaml.indexOf('  release-native-producer:'));
+ const media=producer.indexOf('- name: Prepare macOS native media tools');
+ assert.ok(media>=0 && media<producer.indexOf('- name: Verify immutable application'));
+ assert.match(producer.slice(media,producer.indexOf('- name: Verify immutable application')),/if: matrix\.platform == 'darwin'[\s\S]*?command -v ffmpeg[\s\S]*?command -v ffprobe[\s\S]*?brew install ffmpeg/);
+});

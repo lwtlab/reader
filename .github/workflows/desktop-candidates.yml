@@ -954,6 +954,16 @@ jobs:
       - name: Linux desktop libraries
         if: matrix.platform == 'linux'
         run: sudo apt-get update -qq && sudo apt-get install -y libgtk-3-0 libnss3 libasound2 libgbm1 libxss1 libfuse2 xvfb xauth openbox x11-utils iproute2
+      - name: Prepare macOS native media tools
+        if: matrix.platform == 'darwin'
+        env:
+          HOMEBREW_NO_AUTO_UPDATE: '1'
+        run: |
+          if ! command -v ffmpeg || ! command -v ffprobe; then
+            brew install ffmpeg
+          fi
+          ffmpeg -version
+          ffprobe -version
       - name: Verify immutable application and install frozen dependencies before signing
         env:
           RELEASE_TARGET: ${{ matrix.target }}
