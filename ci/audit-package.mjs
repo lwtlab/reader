@@ -1,15 +1,20 @@
-import { readdirSync, existsSync } from 'node:fs';
+import { readdirSync, existsSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
+import { createHash } from 'node:crypto';
+import { publicDependencyMapProofs } from './public-dependency-maps.mjs';
 
-export function auditPackagedSourceMaps(directory, asar) {
+export function auditPackagedSourceMaps(directory, asar, publicMapProofs = new Map()) {
   let applications = 0;
   function visit(root) {
     for (const entry of readdirSync(root, { withFileTypes: true })) {
       const file = path.join(root, entry.name);
       if (entry.isDirectory()) visit(file);
-      else if (entry.name.endsWith('.map')) throw new Error('Private source map found in distributable');
+      else if (entry.name.endsWith('.map')) {
+        const expected = publicMapProofs.get(path.resolve(file));
+        if (!expected || createHash('sha256').update(readFileSync(file)).digest('hex') !== expected) throw new Error('Private source map found in distributable');
+      }
       else if (entry.name.endsWith('.asar')) {
         if (entry.name === 'app.asar') applications++;
         if (asar.listPackage(file).some(name => name.endsWith('.map'))) {
@@ -25,6 +30,10 @@ export function auditPackagedSourceMaps(directory, asar) {
 
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   const require = createRequire(fileURLToPath(new URL('../source/apps/reader/package.json', import.meta.url)));
-  auditPackagedSourceMaps(path.resolve(process.argv[2]), require('@electron/asar'));
+  const directory = path.resolve(process.argv[2]);
+  if (process.argv[3] && process.argv[3] !== '--public-dependency-maps') throw new Error('Unknown audit option');
+  const proofs = process.argv[3] ? await publicDependencyMapProofs(directory, require('js-yaml').load(readFileSync(path.resolve('apps/reader/pnpm-lock.yaml'), 'utf8'))) : new Map();
+  auditPackagedSourceMaps(directory, require('@electron/asar'), proofs);
+  if (proofs.size) console.log(`Verified ${proofs.size} dependency maps against integrity-locked public npm archives`);
   console.log('Packaged code source-map audit passed');
 }

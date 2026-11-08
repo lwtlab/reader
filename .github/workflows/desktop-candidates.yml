@@ -479,7 +479,7 @@ jobs:
           READER_BUILD_SHA: ${{ inputs.source_ref }}
         run: node ci/private-step.mjs build source/apps/reader pnpm dist --profile=bundled-speech --unsigned --${{ matrix.arch }} --publish never
       - name: Audit source maps
-        run: node ci/private-step.mjs audit source node ../ci/audit-package.mjs apps/reader/release/bundled-speech/${{ matrix.platform }}-${{ matrix.arch }}/${{ matrix.app }}
+        run: node ci/private-step.mjs audit source node ../ci/audit-package.mjs apps/reader/release/bundled-speech/${{ matrix.platform }}-${{ matrix.arch }}/${{ matrix.app }} --public-dependency-maps
       - name: Check actual packaged engines
         timeout-minutes: 20
         run: node ci/private-step.mjs speech-package source node scripts/check-internal-desktop.mjs apps/reader/release/bundled-speech/${{ matrix.platform }}-${{ matrix.arch }}/${{ matrix.resources }}
