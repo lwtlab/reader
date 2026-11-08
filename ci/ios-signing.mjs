@@ -6,6 +6,11 @@ import path from 'node:path';
 import os from 'node:os';
 import {fileURLToPath} from 'node:url';
 const security=args=>execFileSync('/usr/bin/security',args,{encoding:'utf8',stdio:'pipe'});
+export function assertProfileCapabilities(entitlements,bundle){
+ assert.ok(['net.thucydides.LWTReader','net.thucydides.LWTReader.share'].includes(bundle));
+ assert.ok(entitlements['com.apple.security.application-groups']?.includes('group.net.thucydides.LWTReader'),'Required Reader App Group missing from profile');
+ if(bundle==='net.thucydides.LWTReader')assert.ok(entitlements['com.apple.developer.applesignin']?.includes('Default'),'Required Apple sign-in missing from profile');
+}
 function paths(temp){assert.ok(path.isAbsolute(temp));const root=path.join(temp,'reader-ios-signing');return {root,state:path.join(root,'state.json'),keychain:path.join(root,'reader.keychain-db')};}
 export function cleanupIos(temp,run=security){
  const p=paths(temp);if(!existsSync(p.root))return;
@@ -37,14 +42,16 @@ export function prepareIos(temp,envFile,env=process.env,run=security,profileRoot
    state.profiles.push(file);save();writeFileSync(file,Buffer.from(env[key],'base64'),{flag:'wx',mode:0o600});
    // Only public profile identity is printed to the bounded verifier's stdin; its full plist is never logged.
    const plist=run(['cms','-D','-i',file]);
-   execFileSync('python3',['-c',`import datetime,hashlib,plistlib,sys
+   const entitlements=JSON.parse(execFileSync('python3',['-c',`import datetime,hashlib,json,plistlib,sys
 p=plistlib.loads(sys.stdin.buffer.read())
 assert p['Name']==sys.argv[1] and p['TeamIdentifier']==['N4HQH532K9']
 assert p['Entitlements']['application-identifier']=='N4HQH532K9.'+sys.argv[2]
 assert p['Entitlements'].get('get-task-allow') is False
 assert p['ExpirationDate']>datetime.datetime.now(datetime.timezone.utc).replace(tzinfo=None)
 assert '0B25C8552D5E560E9F7FB28E6F0BB370BB1AE1C7' in [hashlib.sha1(c).hexdigest().upper() for c in p['DeveloperCertificates']]
-`,name,bundle],{input:plist,stdio:['pipe','pipe','pipe']});
+print(json.dumps(p['Entitlements']))
+`,name,bundle],{input:plist,stdio:['pipe','pipe','pipe']}));
+   assertProfileCapabilities(entitlements,bundle);
   }
   rmSync(p12);appendFileSync(envFile,`READER_IOS_KEYCHAIN=${p.keychain}\n`);
  }catch{try{cleanupIos(temp,run);}catch{}throw new Error('iOS signing setup failed; private arguments omitted');}
