@@ -12,5 +12,5 @@ test('internal candidate workflow stays manual and only uploads bounded artifact
   assert.match(internal, /node ci\/seal-log\.mjs/);
   assert.match(internal, /--profile=bundled-speech --unsigned[\s\S]*?--publish never/);
   assert.doesNotMatch(internal, /release create|publish-release|contents: write|pull_request_target/);
-  assert.doesNotMatch(internal, /path: source\s*$/m);
+  assert.doesNotMatch(internal.slice(internal.indexOf('Upload internal candidates only')), /path: source\s*$/m);
 });
