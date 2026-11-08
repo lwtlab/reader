@@ -24,7 +24,8 @@ test('isolates signing keys, exports only paths and restores keychain state on c
   try {
     const githubEnv = path.join(f.root, 'github-env');
     const result = prepareSigning(f.root, githubEnv, f.env, f.run);
-    assert.equal(statSync(result.key).mode & 0o777, 0o600);
+    // Windows stat modes do not represent POSIX owner-only permissions.
+    if (process.platform !== 'win32') assert.equal(statSync(result.key).mode & 0o777, 0o600);
     const exported = readFileSync(githubEnv, 'utf8');
     assert.ok(!exported.includes(f.key) && !exported.includes(f.env.MACOS_SIGNING_P12_PASSWORD));
     assert.equal(existsSync(path.join(f.root, 'reader-macos-signing/developer-id.p12')), false);
