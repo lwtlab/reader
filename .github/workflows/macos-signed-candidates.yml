@@ -49,7 +49,7 @@ jobs:
           persist-credentials: false
       - uses: actions/setup-node@v4
         with:
-          node-version: 22
+          node-version: 24.22.0
       - name: Test public signing and provenance contracts
         run: node --test ci/macos-signing.test.mjs ci/verify-portable-baseline.test.mjs ci/log-crypto.test.mjs ci/private-step.test.mjs
       - name: Verify approved unsigned binary provenance

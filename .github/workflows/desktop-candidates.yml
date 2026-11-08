@@ -425,7 +425,7 @@ jobs:
           path: ${{ runner.temp }}/reader-private-build.log.enc.json
 
   internal-release:
-    if: inputs.release_json != ''
+    if: inputs.release_json != '' && fromJSON(inputs.release_json).operation != 'build'
     name: Aggregate and publish private Reader release
     runs-on: ubuntu-24.04
     timeout-minutes: 120
@@ -464,36 +464,16 @@ jobs:
         run: |
           test "$(git -C source rev-parse HEAD)" = "$SOURCE_REF"
           test -n "$RELEASE_TOKEN" || { echo 'Internal publishing environment credential is missing'; exit 1; }
-      - name: Restore explicitly selected previous upload session
-        if: steps.release.outputs.resume_run != ''
-        uses: actions/download-artifact@v4
-        with:
-          github-token: ${{ github.token }}
-          repository: ${{ github.repository }}
-          run-id: ${{ steps.release.outputs.resume_run }}
-          name: reader-internal-session-${{ steps.release.outputs.resume_run }}-${{ steps.release.outputs.resume_attempt }}
-          path: ${{ runner.temp }}/reader-release-session
-      - name: Collect pinned artifacts directly inside CI and seal complete candidate
-        timeout-minutes: 60
+      - name: Preflight, protect, publish or exercise recovery directly in CI
+        timeout-minutes: 110
         env:
           GH_TOKEN: ${{ secrets.INTERNAL_RELEASE_PUBLISH_TOKEN }}
           READER_ACTIONS_TOKEN: ${{ github.token }}
-          RELEASE_PLAN: ${{ steps.release.outputs.plan }}
-        run: >-
-          node ci/private-step.mjs collect source node scripts/release-actions.mjs collect
-          --plan "$RELEASE_PLAN" --output "$RUNNER_TEMP/reader-release-candidate"
-          --receipt "$RUNNER_TEMP/reader-release-collection.json"
-      - name: Verify and publish only to private internal repository
-        timeout-minutes: 55
-        env:
-          GH_TOKEN: ${{ secrets.INTERNAL_RELEASE_PUBLISH_TOKEN }}
-          RELEASE_PLAN: ${{ steps.release.outputs.plan }}
-          RELEASE_PUBLISH: ${{ steps.release.outputs.publish }}
-        run: >-
-          node ci/private-step.mjs publish source node scripts/release-actions.mjs publish
-          --plan "$RELEASE_PLAN" --bundle "$RUNNER_TEMP/reader-release-candidate"
-          --receipt "$RUNNER_TEMP/reader-release-collection.json"
-          --state "$RUNNER_TEMP/reader-release-session" --publish "$RELEASE_PUBLISH"
+          READER_RELEASE_CHECKPOINT: github
+          SOURCE_REF: ${{ inputs.source_ref }}
+          RELEASE_JSON: ${{ inputs.release_json }}
+        run: node ci/release-operation.mjs
+      # The orchestrator invokes scripts/release-actions.mjs publish only for the reviewed publish operation.
       - name: Export bounded resumable session metadata
         if: always()
         run: node ci/internal-release.mjs state "$RUNNER_TEMP/reader-release-session" "$RUNNER_TEMP/reader-release-state-export"
@@ -511,6 +491,14 @@ jobs:
         with:
           name: reader-internal-collection-${{ github.run_id }}-${{ github.run_attempt }}
           path: ${{ runner.temp }}/reader-release-collection.json
+          if-no-files-found: ignore
+          retention-days: 30
+      - name: Retain bounded operation result
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: reader-release-result-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/reader-release-result.json
           if-no-files-found: ignore
           retention-days: 30
       - name: Encrypt private publication diagnostics
@@ -875,6 +863,162 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: reader-internal-${{ matrix.id }}-encrypted-log
+          retention-days: 3
+          if-no-files-found: ignore
+          path: ${{ runner.temp }}/reader-private-build.log.enc.json
+
+  release-build-matrix:
+    if: inputs.release_json != '' && fromJSON(inputs.release_json).operation == 'build'
+    runs-on: ubuntu-24.04
+    outputs:
+      matrix: ${{ steps.select.outputs.matrix }}
+      application_source: ${{ steps.select.outputs.application_source }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24.22.0
+      - name: Checkout reviewed producer tooling read-only
+        uses: actions/checkout@v4
+        with:
+          repository: lwtlab/lwt-core
+          ref: ${{ inputs.source_ref }}
+          path: tooling
+          ssh-key: ${{ secrets.PRIVATE_SOURCE_SSH_KEY }}
+          persist-credentials: false
+          submodules: false
+      - id: select
+        env:
+          RELEASE_JSON: ${{ inputs.release_json }}
+          SOURCE_REF: ${{ inputs.source_ref }}
+        run: node ci/release-build.mjs
+
+  release-native-producer:
+    needs: release-build-matrix
+    name: release-${{ matrix.target }}
+    runs-on: ${{ matrix.os }}
+    environment: ${{ matrix.environment }}
+    timeout-minutes: 180
+    strategy:
+      fail-fast: false
+      matrix:
+        include: ${{ fromJSON(needs.release-build-matrix.outputs.matrix) }}
+    defaults:
+      run:
+        shell: bash
+    env:
+      READER_APPLICATION_SOURCE: ${{ needs.release-build-matrix.outputs.application_source }}
+    steps:
+      - run: git config --global core.autocrlf false
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24.22.0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: actions/checkout@v4
+        with:
+          repository: lwtlab/lwt-core
+          ref: ${{ inputs.source_ref }}
+          path: tooling
+          ssh-key: ${{ secrets.PRIVATE_SOURCE_SSH_KEY }}
+          persist-credentials: false
+          submodules: false
+      - uses: actions/checkout@v4
+        with:
+          repository: lwtlab/lwt-core
+          ref: ${{ needs.release-build-matrix.outputs.application_source }}
+          path: source
+          ssh-key: ${{ secrets.PRIVATE_SOURCE_SSH_KEY }}
+          persist-credentials: false
+          submodules: false
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11.5.2
+          package_json_file: source/apps/reader/package.json
+      - uses: dtolnay/rust-toolchain@stable
+        if: startsWith(matrix.target, 'desktop-')
+      - uses: actions/setup-java@v4
+        if: matrix.target == 'mobile-android'
+        with:
+          distribution: temurin
+          java-version: '21'
+      - name: Select supported iOS SDK
+        if: matrix.target == 'mobile-ios'
+        run: sudo xcode-select -s /Applications/Xcode_26.6.app/Contents/Developer
+      - name: Linux desktop libraries
+        if: matrix.platform == 'linux'
+        run: sudo apt-get update -qq && sudo apt-get install -y libgtk-3-0 libnss3 libasound2 libgbm1 libxss1 libfuse2 xvfb xauth openbox x11-utils iproute2
+      - name: Verify immutable application and install frozen dependencies before signing
+        env:
+          RELEASE_TARGET: ${{ matrix.target }}
+        run: node ci/private-step.mjs dependencies source node ../tooling/scripts/release/producer.mjs dependencies . "$RELEASE_TARGET" "$RUNNER_TEMP/reader-producer" "$GITHUB_WORKSPACE"
+      - name: Install isolated Chromium
+        if: matrix.target == 'extension-chrome'
+        run: node ci/private-step.mjs browser source/apps/reader pnpm exec playwright install --with-deps chromium
+      - name: Import isolated Developer ID credentials
+        if: matrix.platform == 'darwin'
+        env:
+          MACOS_SIGNING_P12_BASE64: ${{ secrets.MACOS_SIGNING_P12_BASE64 }}
+          MACOS_SIGNING_P12_PASSWORD: ${{ secrets.MACOS_SIGNING_P12_PASSWORD }}
+          MACOS_NOTARY_P8_BASE64: ${{ secrets.MACOS_NOTARY_P8_BASE64 }}
+          MACOS_NOTARY_KEY_ID: ${{ secrets.MACOS_NOTARY_KEY_ID }}
+          MACOS_NOTARY_ISSUER_ID: ${{ secrets.MACOS_NOTARY_ISSUER_ID }}
+        run: node ci/macos-signing.mjs prepare
+      - name: Import isolated Apple Distribution identity and profiles
+        if: matrix.target == 'mobile-ios'
+        env:
+          IOS_SIGNING_P12_BASE64: ${{ secrets.IOS_SIGNING_P12_BASE64 }}
+          IOS_SIGNING_P12_PASSWORD: ${{ secrets.IOS_SIGNING_P12_PASSWORD }}
+          IOS_PROFILE_BASE64: ${{ secrets.IOS_PROFILE_BASE64 }}
+          IOS_SHARE_PROFILE_BASE64: ${{ secrets.IOS_SHARE_PROFILE_BASE64 }}
+        run: node ci/ios-signing.mjs prepare
+      - name: Build and validate real native packages without publishing
+        env:
+          RELEASE_TARGET: ${{ matrix.target }}
+          ANDROID_INTERNAL_KEYSTORE_BASE64: ${{ matrix.target == 'mobile-android' && secrets.ANDROID_INTERNAL_KEYSTORE_BASE64 || '' }}
+        run: node ci/private-step.mjs native-producer source node ../tooling/scripts/release/producer.mjs build . "$RELEASE_TARGET" "$RUNNER_TEMP/reader-producer" "$GITHUB_WORKSPACE"
+      - name: Upload packages directly from CI
+        id: packages
+        uses: actions/upload-artifact@v4
+        with:
+          name: reader-release-${{ matrix.target }}-packages
+          retention-days: 30
+          if-no-files-found: error
+          path: ${{ runner.temp }}/reader-producer/reader-${{ matrix.target }}-*
+      - name: Bind receipt to actual Actions upload
+        env:
+          RELEASE_JSON: ${{ inputs.release_json }}
+          SOURCE_REF: ${{ inputs.source_ref }}
+          RELEASE_TARGET: ${{ matrix.target }}
+          PACKAGE_ARTIFACT_ID: ${{ steps.packages.outputs.artifact-id }}
+        run: node ci/release-build.mjs receipt "$RUNNER_TEMP/reader-producer/release-target.json"
+      - name: Upload small producer receipt
+        uses: actions/upload-artifact@v4
+        with:
+          name: reader-release-${{ matrix.target }}-receipt
+          retention-days: 30
+          if-no-files-found: error
+          path: ${{ runner.temp }}/reader-producer/release-target.json
+      - name: Cleanup Developer ID credentials
+        if: always() && matrix.platform == 'darwin'
+        run: node ci/macos-signing.mjs cleanup
+      - name: Cleanup Apple Distribution credentials and owned profiles
+        if: always() && matrix.target == 'mobile-ios'
+        run: node ci/ios-signing.mjs cleanup
+      - name: Encrypt private native diagnostics
+        if: always()
+        run: node ci/seal-log.mjs
+      - name: Retain encrypted diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: reader-release-${{ matrix.target }}-encrypted-log
           retention-days: 3
           if-no-files-found: ignore
           path: ${{ runner.temp }}/reader-private-build.log.enc.json

@@ -35,3 +35,10 @@ test('release job stays manual, isolated from builds and cannot publish a public
   assert.ok(!job.includes('gh release'));
   assert.ok(!workflow.split('  internal-release:')[0].includes('INTERNAL_RELEASE_PUBLISH_TOKEN'));
 });
+test('probe, protection, smoke and native producer dispatches cannot widen source, refs or credentials',()=>{
+  for(const operation of ['probe','protect']) assert.equal(releaseInputs(JSON.stringify({...valid(),operation}),source,workflowSha).operation,operation);
+  assert.equal(releaseInputs(JSON.stringify({publish:false,workflowSha,operation:'smoke'}),source,workflowSha).operation,'smoke');
+  const build={publish:false,workflowSha,operation:'build',applicationSource:source,targets:['all']};
+  assert.deepEqual(releaseInputs(JSON.stringify(build),source,workflowSha),build);
+  for(const patch of [{targets:['all','mobile-ios']},{applicationSource:'main'},{targets:['other']},{publish:true}])assert.throws(()=>releaseInputs(JSON.stringify({...build,...patch}),source,workflowSha));
+});
