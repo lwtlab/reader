@@ -88,7 +88,7 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: 22
+          node-version: 24.22.0
 
       - name: Test public CI infrastructure
         run: node --test ci/log-crypto.test.mjs ci/private-step.test.mjs ci/verify-portable-baseline.test.mjs ci/run-xvfb.test.mjs ci/audit-package.test.mjs
