@@ -496,6 +496,30 @@ jobs:
         run: node ci/private-step.mjs window source/apps/reader bash ../../../ci/run-xvfb.sh node scripts/smoke-desktop-window.mjs release/bundled-speech/${{ matrix.platform }}-${{ matrix.arch }}/${{ matrix.executable }} bundled-speech
       - name: Verify artifact set
         run: node ci/private-step.mjs artifacts source/apps/reader node scripts/desktop-artifacts.mjs ${{ matrix.platform }} ${{ matrix.arch }} bundled-speech
+      - name: Validate actual installer lifecycle
+        if: runner.os != 'Linux'
+        timeout-minutes: 15
+        env:
+          READER_INSTALLER_TEST_DISPOSABLE: '1'
+        run: node ci/private-step.mjs installers source/apps/reader node scripts/smoke-desktop-installers.mjs release/bundled-speech/${{ matrix.platform }}-${{ matrix.arch }}
+      - name: Validate Linux installer lifecycle
+        if: runner.os == 'Linux'
+        timeout-minutes: 15
+        env:
+          READER_INSTALLER_TEST_DISPOSABLE: '1'
+        run: node ci/private-step.mjs installers source/apps/reader bash ../../../ci/run-xvfb.sh node scripts/smoke-desktop-installers.mjs release/bundled-speech/${{ matrix.platform }}-${{ matrix.arch }}
+      - name: Validate actual Windows portable entry
+        if: runner.os == 'Windows'
+        timeout-minutes: 15
+        env:
+          READER_INSTALLER_TEST_DISPOSABLE: '1'
+        run: node ci/private-step.mjs portable source/apps/reader node scripts/smoke-desktop-portable.mjs release/bundled-speech/${{ matrix.platform }}-${{ matrix.arch }}
+      - name: Validate actual Linux AppImage entry
+        if: runner.os == 'Linux'
+        timeout-minutes: 15
+        env:
+          READER_INSTALLER_TEST_DISPOSABLE: '1'
+        run: node ci/private-step.mjs portable source/apps/reader bash ../../../ci/run-xvfb.sh node scripts/smoke-desktop-portable.mjs release/bundled-speech/${{ matrix.platform }}-${{ matrix.arch }}
       - name: Upload internal candidates only
         uses: actions/upload-artifact@v4
         with:
