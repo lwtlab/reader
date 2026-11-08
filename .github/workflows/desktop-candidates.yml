@@ -9,6 +9,11 @@ on:
         required: true
         type: string
 
+      release_json:
+        description: Internal CI aggregation/publication — pinned workflowSha, private plan path, publish boolean, optional resume run/attempt
+        type: string
+        default: ''
+
       target:
         description: Native build target
         required: true
@@ -48,6 +53,7 @@ permissions:
 
 jobs:
   targets:
+    if: inputs.release_json == ''
     runs-on: ubuntu-22.04
     outputs:
       matrix: ${{ steps.select.outputs.matrix }}
@@ -417,6 +423,107 @@ jobs:
           retention-days: 3
           if-no-files-found: ignore
           path: ${{ runner.temp }}/reader-private-build.log.enc.json
+
+  internal-release:
+    if: inputs.release_json != ''
+    name: Aggregate and publish private Reader release
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    environment: reader-internal-release
+    concurrency:
+      group: reader-internal-release-writer
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24.22.0
+      - name: Check trusted release infrastructure
+        run: node --test ci/*.test.mjs scripts/*.test.mjs
+      - name: Validate immutable dispatch
+        id: release
+        env:
+          RELEASE_JSON: ${{ inputs.release_json }}
+          SOURCE_REF: ${{ inputs.source_ref }}
+        run: node ci/internal-release.mjs
+      - name: Checkout reviewed private upload tooling and metadata
+        uses: actions/checkout@v4
+        with:
+          repository: lwtlab/lwt-core
+          ref: ${{ inputs.source_ref }}
+          path: source
+          ssh-key: ${{ secrets.PRIVATE_SOURCE_SSH_KEY }}
+          persist-credentials: false
+          submodules: false
+      - name: Check source and credential availability
+        env:
+          SOURCE_REF: ${{ inputs.source_ref }}
+          RELEASE_TOKEN: ${{ secrets.INTERNAL_RELEASE_PUBLISH_TOKEN }}
+        run: |
+          test "$(git -C source rev-parse HEAD)" = "$SOURCE_REF"
+          test -n "$RELEASE_TOKEN" || { echo 'Internal publishing environment credential is missing'; exit 1; }
+      - name: Restore explicitly selected previous upload session
+        if: steps.release.outputs.resume_run != ''
+        uses: actions/download-artifact@v4
+        with:
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: ${{ steps.release.outputs.resume_run }}
+          name: reader-internal-session-${{ steps.release.outputs.resume_run }}-${{ steps.release.outputs.resume_attempt }}
+          path: ${{ runner.temp }}/reader-release-session
+      - name: Collect pinned artifacts directly inside CI and seal complete candidate
+        timeout-minutes: 60
+        env:
+          GH_TOKEN: ${{ secrets.INTERNAL_RELEASE_PUBLISH_TOKEN }}
+          READER_ACTIONS_TOKEN: ${{ github.token }}
+          RELEASE_PLAN: ${{ steps.release.outputs.plan }}
+        run: >-
+          node ci/private-step.mjs collect source node scripts/release-actions.mjs collect
+          --plan "$RELEASE_PLAN" --output "$RUNNER_TEMP/reader-release-candidate"
+          --receipt "$RUNNER_TEMP/reader-release-collection.json"
+      - name: Verify and publish only to private internal repository
+        timeout-minutes: 55
+        env:
+          GH_TOKEN: ${{ secrets.INTERNAL_RELEASE_PUBLISH_TOKEN }}
+          RELEASE_PLAN: ${{ steps.release.outputs.plan }}
+          RELEASE_PUBLISH: ${{ steps.release.outputs.publish }}
+        run: >-
+          node ci/private-step.mjs publish source node scripts/release-actions.mjs publish
+          --plan "$RELEASE_PLAN" --bundle "$RUNNER_TEMP/reader-release-candidate"
+          --receipt "$RUNNER_TEMP/reader-release-collection.json"
+          --state "$RUNNER_TEMP/reader-release-session" --publish "$RELEASE_PUBLISH"
+      - name: Export bounded resumable session metadata
+        if: always()
+        run: node ci/internal-release.mjs state "$RUNNER_TEMP/reader-release-session" "$RUNNER_TEMP/reader-release-state-export"
+      - name: Retain session identity for explicit retry; never copy writer locks
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: reader-internal-session-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/reader-release-state-export/
+          if-no-files-found: ignore
+          retention-days: 30
+      - name: Retain small candidate receipt, never reupload package bytes as an intermediate
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: reader-internal-collection-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/reader-release-collection.json
+          if-no-files-found: ignore
+          retention-days: 30
+      - name: Encrypt private publication diagnostics
+        if: always()
+        run: node ci/seal-log.mjs
+      - name: Retain encrypted diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: reader-internal-publish-encrypted-log-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/reader-private-build.log.enc.json
+          if-no-files-found: ignore
+          retention-days: 3
 
   historical-baseline:
     if: inputs.baseline_only && inputs.acceptance_json == '' && !inputs.internal
