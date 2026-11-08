@@ -65,19 +65,19 @@ export function releaseCommands(manifest, notes, assets, manifestFile) {
   ];
 }
 
-async function main() {
-  const { values } = parseArgs({ options: {
+export async function publishRelease(args = process.argv.slice(2), { run = execFileSync, log = console.log } = {}) {
+  const { values } = parseArgs({ args, options: {
     product: { type: 'string' }, version: { type: 'string' },
     'source-sha': { type: 'string' }, notes: { type: 'string' },
     asset: { type: 'string', multiple: true }, publish: { type: 'boolean', default: false },
     help: { type: 'boolean', default: false },
   } });
   if (values.help) {
-    console.log('Usage: node scripts/publish-release.mjs --product mobile|desktop|extension --version x.y.z --source-sha <40 hex> --notes <file> --asset <file> [--asset <file>] [--publish]');
-    console.log('Default: plan-only. --publish uploads a draft, then publishes; only mobile becomes Latest.');
+    log('Usage: node scripts/publish-release.mjs --product mobile|desktop|extension --version x.y.z --source-sha <40 hex> --notes <file> --asset <file> [--asset <file>] [--publish]');
+    log('Default: plan-only. --publish uploads a draft, then publishes; only mobile becomes Latest.');
     return;
   }
-  const publicSha = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: root, encoding: 'utf8' }).trim();
+  const publicSha = run('git', ['rev-parse', 'HEAD'], { cwd: root, encoding: 'utf8' }).trim();
   const assets = (values.asset ?? []).map(file => path.resolve(file));
   const notes = path.resolve(values.notes ?? '');
   assert.ok(readFileSync(notes, 'utf8').trim(), 'Release notes required');
@@ -85,12 +85,12 @@ async function main() {
     product: values.product, version: values.version, sourceSha: values['source-sha'], publicSha, assets,
   });
   if (!values.publish) {
-    console.log(JSON.stringify({ mode: 'plan-only', manifest }, null, 2));
+    log(JSON.stringify({ mode: 'plan-only', manifest }, null, 2));
     return;
   }
-  assert.equal(execFileSync('git', ['status', '--porcelain'], { cwd: root, encoding: 'utf8' }).trim(), '', 'Commit public changes before publishing');
+  assert.equal(run('git', ['status', '--porcelain'], { cwd: root, encoding: 'utf8' }).trim(), '', 'Commit public changes before publishing');
   // Check the target in the PUBLIC repository; never target a private source commit.
-  const remote = execFileSync('gh', ['api', `repos/${releaseRepository}/commits/${publicSha}`, '--jq', '.sha'], { encoding: 'utf8' }).trim();
+  const remote = run('gh', ['api', `repos/${releaseRepository}/commits/${publicSha}`, '--jq', '.sha'], { encoding: 'utf8' }).trim();
   assert.equal(remote, publicSha, 'Public commit must already be pushed');
   const directory = mkdtempSync(path.join(tmpdir(), 'reader-release-'));
   try {
@@ -109,7 +109,7 @@ async function main() {
     const manifestFile = path.join(directory, 'reader-release.json');
     writeFileSync(manifestFile, `${JSON.stringify(manifest, null, 2)}\n`);
     for (const args of releaseCommands(manifest, stagedNotes, staged, manifestFile)) {
-      execFileSync('gh', args, { stdio: 'inherit' });
+      run('gh', args, { stdio: 'inherit' });
     }
   } finally {
     rmSync(directory, { recursive: true, force: true });
@@ -117,5 +117,5 @@ async function main() {
 }
 
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
-  main().catch(error => { console.error(error.message); process.exitCode = 1; });
+  publishRelease().catch(error => { console.error(error.message); process.exitCode = 1; });
 }

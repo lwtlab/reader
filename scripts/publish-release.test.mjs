@@ -1,11 +1,12 @@
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
-import { chmodSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { test } from 'node:test';
-import { releaseIdentity, releaseManifest, releaseCommands } from './publish-release.mjs';
+import { fileURLToPath } from 'node:url';
+import { releaseIdentity, releaseManifest, releaseCommands, publishRelease } from './publish-release.mjs';
 
 test('product tags preserve legacy Android and isolate desktop/extension latest', () => {
   assert.deepEqual(['mobile', 'desktop', 'extension'].map(product => {
@@ -18,27 +19,30 @@ test('product tags preserve legacy Android and isolate desktop/extension latest'
   assert.throws(() => releaseIdentity('unknown', '1.2.3'));
 });
 
-test('failed draft upload never publishes; plan-only never calls GitHub', () => {
+test('failed draft upload never publishes; plan-only never calls GitHub', async () => {
   const directory = mkdtempSync(path.join(tmpdir(), 'reader-publish-cli-'));
   try {
-    const log = path.join(directory, 'gh-calls.jsonl');
-    const git = path.join(directory, 'git');
-    const gh = path.join(directory, 'gh');
-    writeFileSync(git, '#!/usr/bin/env node\nif(process.argv[2]===\'rev-parse\') console.log(\'b\'.repeat(40));\n');
-    writeFileSync(gh, '#!/usr/bin/env node\nconst fs=require("node:fs"); const args=process.argv.slice(2); fs.appendFileSync(process.env.READER_TEST_GH_LOG,JSON.stringify(args)+"\\n"); if(args[0]==="api")console.log("b".repeat(40)); else process.exit(1);\n');
-    chmodSync(git, 0o755); chmodSync(gh, 0o755);
     const asset = path.join(directory, 'reader-clipper-v1.2.3.zip');
     const notes = path.join(directory, 'notes.md');
     writeFileSync(asset, 'original synthetic artifact'); writeFileSync(notes, 'Original release notes');
-    const args = [new URL('./publish-release.mjs', import.meta.url).pathname, '--product', 'extension', '--version', '1.2.3', '--source-sha', 'a'.repeat(40), '--notes', notes, '--asset', asset];
-    const env = { ...process.env, PATH: `${directory}${path.delimiter}${process.env.PATH}`, READER_TEST_GH_LOG: log };
-    const plan = spawnSync(process.execPath, args, { env, encoding: 'utf8' });
+    const args = ['--product', 'extension', '--version', '1.2.3', '--source-sha', 'a'.repeat(40), '--notes', notes, '--asset', asset];
+    const calls = [], output = [];
+    const run = (command, argv) => {
+      if (command === 'git') return argv[0] === 'rev-parse' ? 'b'.repeat(40) : '';
+      assert.equal(command, 'gh');
+      calls.push(argv);
+      if (argv[0] === 'api') return 'b'.repeat(40);
+      throw new Error('synthetic draft creation failure');
+    };
+    await publishRelease(args, { run, log: value => output.push(value) });
+    assert.equal(JSON.parse(output[0]).mode, 'plan-only');
+    assert.equal(calls.length, 0);
+    // Exercise the real CLI path with the actual platform URL conversion too.
+    const plan = spawnSync(process.execPath, [fileURLToPath(new URL('./publish-release.mjs', import.meta.url)), ...args], { encoding: 'utf8' });
     assert.equal(plan.status, 0, plan.stderr);
     assert.equal(JSON.parse(plan.stdout).mode, 'plan-only');
-    const failed = spawnSync(process.execPath, [...args, '--publish'], { env, encoding: 'utf8' });
-    assert.notEqual(failed.status, 0);
-    const calls = readFileSync(log, 'utf8').trim().split('\n').map(line => JSON.parse(line));
-    assert.equal(calls.length, 2); // API reachability, then failed draft creation.
+    await assert.rejects(publishRelease([...args, '--publish'], { run }), /synthetic draft creation failure/);
+    assert.equal(calls.length, 2);
     assert.deepEqual(calls[1].slice(0, 2), ['release', 'create']);
     assert.ok(calls[1].includes('--draft'));
     assert.ok(!calls.some(call => call[1] === 'edit'));
