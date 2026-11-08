@@ -523,6 +523,10 @@ jobs:
         env:
           READER_INSTALLER_TEST_DISPOSABLE: '1'
         run: node ci/private-step.mjs portable source/apps/reader bash ../../../ci/run-xvfb.sh node scripts/smoke-desktop-portable.mjs release/bundled-speech/${{ matrix.platform }}-${{ matrix.arch }}
+      - name: Record immutable candidate provenance
+        env:
+          SOURCE_REF: ${{ inputs.source_ref }}
+        run: node ci/record-internal-candidate.mjs source/apps/reader/release/bundled-speech/${{ matrix.platform }}-${{ matrix.arch }} source
       - name: Upload internal candidates only
         uses: actions/upload-artifact@v4
         with:
@@ -538,6 +542,7 @@ jobs:
             source/apps/reader/release/bundled-speech/${{ matrix.platform }}-${{ matrix.arch }}/desktop-*.yml
             source/apps/reader/release/bundled-speech/${{ matrix.platform }}-${{ matrix.arch }}/desktop-artifacts.json
             source/apps/reader/release/bundled-speech/${{ matrix.platform }}-${{ matrix.arch }}/SHA256SUMS
+            source/apps/reader/release/bundled-speech/${{ matrix.platform }}-${{ matrix.arch }}/internal-candidate-provenance.json
       - name: Encrypt private build logs
         if: always()
         run: node ci/seal-log.mjs
