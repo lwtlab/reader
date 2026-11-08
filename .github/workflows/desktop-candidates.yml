@@ -26,6 +26,11 @@ on:
         type: boolean
         default: false
 
+      acceptance_json:
+        description: Optional internal upgrade acceptance inputs (baselineRun, candidateRun, toolingSha)
+        type: string
+        default: ''
+
       verify_upgrade:
         description: Require upgrade from the approved previous candidate (disable only when rebuilding a baseline; no upgrade acceptance)
         required: true
@@ -50,7 +55,7 @@ jobs:
           BUILD_TARGET: ${{ inputs.target }}
         run: node ci/select-targets.mjs
   build:
-    if: ${{ !inputs.internal }}
+    if: ${{ !inputs.internal && inputs.acceptance_json == '' }}
     needs: targets
     name: ${{ matrix.id }}
     timeout-minutes: 75
@@ -408,8 +413,110 @@ jobs:
           if-no-files-found: ignore
           path: ${{ runner.temp }}/reader-private-build.log.enc.json
 
+  internal-upgrade:
+    if: inputs.acceptance_json != ''
+    needs: targets
+    name: upgrade-${{ matrix.id }}
+    timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      matrix:
+        include: ${{ fromJSON(needs.targets.outputs.matrix) }}
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        shell: bash
+    env:
+      ACCEPTANCE_JSON: ${{ inputs.acceptance_json }}
+      SOURCE_REF: ${{ inputs.source_ref }}
+      BUILD_TARGET: ${{ matrix.id }}
+    steps:
+      - name: Preserve native source bytes
+        run: git config --global core.autocrlf false
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24.22.0
+      - name: Verify immutable artifact provenance
+        id: resolve
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: node ci/internal-upgrade.mjs resolve
+      - uses: actions/download-artifact@v4
+        with:
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: ${{ steps.resolve.outputs.baseline_run }}
+          name: reader-${{ matrix.id }}-candidate
+          path: baseline
+      - uses: actions/download-artifact@v4
+        with:
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: ${{ steps.resolve.outputs.candidate_run }}
+          name: reader-internal-${{ matrix.id }}-candidate
+          path: candidate
+      - name: Checkout independent private validation tools
+        uses: actions/checkout@v4
+        with:
+          repository: lwtlab/lwt-core
+          ref: ${{ steps.resolve.outputs.tooling_sha }}
+          path: source
+          ssh-key: ${{ secrets.PRIVATE_SOURCE_SSH_KEY }}
+          persist-credentials: false
+          submodules: false
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11.5.2
+          package_json_file: source/apps/reader/package.json
+      - name: Linux display dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y libgtk-3-0 libnss3 libasound2 libgbm1 libxss1 libfuse2 xvfb xauth openbox x11-utils iproute2
+      - name: Install frozen validation dependencies
+        env:
+          READER_INSTALL_NETWORK: direct
+        run: node ci/private-step.mjs dependencies source/apps/reader bash --noprofile --norc scripts/install.sh --frozen-lockfile
+      - name: Exercise actual historical installer upgrade
+        if: runner.os != 'Linux'
+        env:
+          READER_INSTALLER_TEST_DISPOSABLE: '1'
+        run: >-
+          node ci/private-step.mjs upgrade source/apps/reader node scripts/smoke-desktop-installers.mjs
+          ../../../baseline ../../../candidate --allow-core-to-bundled-speech
+      - name: Exercise actual Linux historical installer upgrade
+        if: runner.os == 'Linux'
+        env:
+          READER_INSTALLER_TEST_DISPOSABLE: '1'
+        run: >-
+          node ci/private-step.mjs upgrade source/apps/reader bash ../../../ci/run-xvfb.sh node scripts/smoke-desktop-installers.mjs
+          ../../../baseline ../../../candidate --allow-core-to-bundled-speech
+      - name: Bind upgrade result to source and artifact digests
+        run: node ci/internal-upgrade.mjs record baseline candidate source internal-upgrade-provenance.json
+      - name: Upload synthetic acceptance receipt
+        uses: actions/upload-artifact@v4
+        with:
+          name: reader-internal-${{ matrix.id }}-upgrade
+          retention-days: 7
+          if-no-files-found: error
+          path: internal-upgrade-provenance.json
+      - name: Encrypt private acceptance logs
+        if: always()
+        run: node ci/seal-log.mjs
+      - name: Upload encrypted diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: reader-internal-${{ matrix.id }}-upgrade-encrypted-log
+          retention-days: 3
+          if-no-files-found: ignore
+          path: ${{ runner.temp }}/reader-private-build.log.enc.json
+
   internal-build:
-    if: inputs.internal
+    if: inputs.internal && inputs.acceptance_json == ''
     needs: targets
     name: internal-${{ matrix.id }}
     runs-on: ${{ matrix.os }}
