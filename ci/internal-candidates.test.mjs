@@ -3,7 +3,7 @@ import { readFileSync } from 'node:fs';
 import test from 'node:test';
 
 test('internal candidate workflow stays manual and only uploads bounded artifacts and encrypted logs', () => {
-  const yaml = readFileSync(new URL('../.github/workflows/desktop-candidates.yml', import.meta.url), 'utf8');
+  const yaml = readFileSync(new URL('../.github/workflows/desktop-candidates.yml', import.meta.url), 'utf8').replace(/\r\n/g, '\n');
   assert.match(yaml, /internal:\n[\s\S]*?default: false/);
   const internal = yaml.slice(yaml.indexOf('  internal-build:'));
   assert.match(internal, /if: inputs.internal/);
