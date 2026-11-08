@@ -9,6 +9,11 @@ on:
         required: true
         type: string
 
+      transport_probe:
+        description: Read-only archive download and ZIP interoperability probe
+        type: boolean
+        default: false
+
       release_json:
         description: Internal CI aggregation/publication — pinned workflowSha, private plan path, publish boolean, optional resume run/attempt
         type: string
@@ -53,7 +58,7 @@ permissions:
 
 jobs:
   targets:
-    if: inputs.release_json == ''
+    if: inputs.release_json == '' && !inputs.transport_probe
     runs-on: ubuntu-22.04
     outputs:
       matrix: ${{ steps.select.outputs.matrix }}
@@ -730,6 +735,53 @@ jobs:
           retention-days: 3
           if-no-files-found: ignore
           path: ${{ runner.temp }}/reader-private-build.log.enc.json
+
+  transport-probe:
+    if: inputs.transport_probe
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24.22.0
+      - name: Validate immutable tooling
+        env:
+          SOURCE_REF: ${{ inputs.source_ref }}
+        run: '[[ "$SOURCE_REF" =~ ^[0-9a-f]{40}$ ]]'
+      - uses: actions/checkout@v4
+        with:
+          repository: lwtlab/lwt-core
+          ref: ${{ inputs.source_ref }}
+          path: source
+          ssh-key: ${{ secrets.PRIVATE_SOURCE_SSH_KEY }}
+          persist-credentials: false
+          submodules: false
+      - name: Verify actual archive redirects and selected package bytes without a publisher credential
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: node ci/private-step.mjs transport source node ../ci/transport-probe.mjs
+      - name: Small synthetic result only
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: reader-transport-probe-${{ github.run_id }}
+          path: ${{ runner.temp }}/reader-transport-probe.json
+          if-no-files-found: ignore
+          retention-days: 7
+      - name: Encrypt diagnostics
+        if: always()
+        run: node ci/seal-log.mjs
+      - name: Encrypted diagnostics only
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: reader-transport-probe-encrypted-log-${{ github.run_id }}
+          path: ${{ runner.temp }}/reader-private-build.log.enc.json
+          if-no-files-found: ignore
+          retention-days: 3
 
   internal-build:
     if: inputs.internal && inputs.acceptance_json == ''
