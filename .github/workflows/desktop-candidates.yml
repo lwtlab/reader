@@ -604,9 +604,69 @@ jobs:
           if-no-files-found: ignore
           path: ${{ runner.temp }}/reader-private-build.log.enc.json
 
-  internal-upgrade:
-    if: inputs.acceptance_json != ''
+  upgrade-published-baseline:
+    if: inputs.acceptance_json != '' && fromJSON(inputs.acceptance_json).baselineVersion != ''
     needs: targets
+    name: baseline-download-${{ matrix.id }}
+    runs-on: ubuntu-24.04
+    environment: reader-internal-release
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        include: ${{ fromJSON(needs.targets.outputs.matrix) }}
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24.22.0
+      - name: Resolve trusted upgrade inputs before private access
+        id: resolve
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          ACCEPTANCE_JSON: ${{ inputs.acceptance_json }}
+          SOURCE_REF: ${{ inputs.source_ref }}
+          BUILD_TARGET: ${{ matrix.id }}
+        run: node ci/internal-upgrade.mjs resolve
+      - name: Checkout immutable baseline tools read-only
+        uses: actions/checkout@v4
+        with:
+          repository: lwtlab/lwt-core
+          ref: ${{ steps.resolve.outputs.tooling_sha }}
+          path: source
+          ssh-key: ${{ secrets.PRIVATE_SOURCE_SSH_KEY }}
+          persist-credentials: false
+          submodules: false
+      - name: Read and verify private baseline without executing packages
+        env:
+          GH_TOKEN: ${{ secrets.INTERNAL_RELEASE_PUBLISH_TOKEN }}
+        run: node ci/private-step.mjs baseline source node scripts/release-materialize.mjs --catalog release/baselines/${{ steps.resolve.outputs.baseline_version }}.json --target desktop-${{ matrix.id }} --output ../baseline
+      - name: Transfer verified baseline to independent native acceptance
+        uses: actions/upload-artifact@v4
+        with:
+          name: reader-published-${{ matrix.id }}-baseline
+          retention-days: 7
+          if-no-files-found: error
+          path: baseline/*
+      - name: Encrypt private baseline diagnostics
+        if: always()
+        run: node ci/seal-log.mjs
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: reader-published-${{ matrix.id }}-baseline-encrypted-log
+          retention-days: 3
+          if-no-files-found: ignore
+          path: ${{ runner.temp }}/reader-private-build.log.enc.json
+
+  internal-upgrade:
+    if: always() && inputs.acceptance_json != '' && needs.targets.result == 'success' && (needs.upgrade-published-baseline.result == 'success' || needs.upgrade-published-baseline.result == 'skipped')
+    needs: [targets, upgrade-published-baseline]
     name: upgrade-${{ matrix.id }}
     timeout-minutes: 25
     strategy:
@@ -643,13 +703,40 @@ jobs:
           run-id: ${{ steps.resolve.outputs.baseline_run }}
           name: reader-${{ matrix.id }}-candidate
           path: baseline
+      - name: Download published baseline from isolated reader job
+        if: steps.resolve.outputs.baseline_version != ''
+        uses: actions/download-artifact@v4
+        with:
+          name: reader-published-${{ matrix.id }}-baseline
+          path: baseline
       - uses: actions/download-artifact@v4
+        if: steps.resolve.outputs.candidate_kind == 'legacy'
         with:
           github-token: ${{ github.token }}
           repository: ${{ github.repository }}
           run-id: ${{ steps.resolve.outputs.candidate_run }}
-          name: reader-internal-${{ matrix.id }}-candidate
+          name: ${{ steps.resolve.outputs.candidate_artifact }}
           path: candidate
+      - name: Download exact native producer packages
+        if: steps.resolve.outputs.candidate_kind == 'producer'
+        uses: actions/download-artifact@v4
+        with:
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: ${{ steps.resolve.outputs.candidate_run }}
+          artifact-ids: ${{ steps.resolve.outputs.candidate_artifact_id }}
+          path: candidate-packages
+          merge-multiple: true
+      - name: Download exact native producer receipt
+        if: steps.resolve.outputs.candidate_kind == 'producer'
+        uses: actions/download-artifact@v4
+        with:
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: ${{ steps.resolve.outputs.candidate_run }}
+          artifact-ids: ${{ steps.resolve.outputs.candidate_receipt_id }}
+          path: candidate-receipt
+          merge-multiple: true
       - name: Checkout independent private validation tools
         uses: actions/checkout@v4
         with:
@@ -659,16 +746,9 @@ jobs:
           ssh-key: ${{ secrets.PRIVATE_SOURCE_SSH_KEY }}
           persist-credentials: false
           submodules: false
-      - name: Materialize immutable published baseline
-        if: steps.resolve.outputs.baseline_version != ''
-        env:
-          GH_TOKEN: ${{ secrets.INTERNAL_RELEASE_READ_TOKEN }}
-        run: |
-          if [[ -z "$GH_TOKEN" ]]; then
-            echo "Configure a read-only token scoped to private release contents: INTERNAL_RELEASE_READ_TOKEN"
-            exit 1
-          fi
-          node ci/private-step.mjs baseline source node scripts/release-materialize.mjs --catalog release/baselines/${{ steps.resolve.outputs.baseline_version }}.json --target desktop-${{ matrix.id }} --output ../baseline
+      - name: Restore original native installer metadata without credentials
+        if: steps.resolve.outputs.candidate_kind == 'producer'
+        run: node ci/private-step.mjs candidate source node scripts/release-desktop-acceptance.mjs --receipt ../candidate-receipt/release-target.json --packages ../candidate-packages --output ../candidate
       - uses: pnpm/action-setup@v4
         with:
           version: 11.5.2
@@ -699,6 +779,11 @@ jobs:
           node ci/private-step.mjs upgrade source/apps/reader bash ../../../ci/run-xvfb.sh node scripts/smoke-desktop-installers.mjs
           ../../../baseline ../../../candidate ${{ steps.resolve.outputs.transition_flag }}
       - name: Bind upgrade result to source and artifact digests
+        env:
+          CANDIDATE_KIND: ${{ steps.resolve.outputs.candidate_kind }}
+          CANDIDATE_ARTIFACT_ID: ${{ steps.resolve.outputs.candidate_artifact_id }}
+          CANDIDATE_WORKFLOW_SHA: ${{ steps.resolve.outputs.candidate_workflow_sha }}
+          CANDIDATE_ATTEMPT: ${{ steps.resolve.outputs.candidate_attempt }}
         run: node ci/internal-upgrade.mjs record baseline candidate source internal-upgrade-provenance.json
       - name: Upload synthetic acceptance receipt
         uses: actions/upload-artifact@v4

@@ -15,6 +15,16 @@ test('internal candidate workflow stays manual and only uploads bounded artifact
   assert.doesNotMatch(internal.slice(internal.indexOf('Upload internal candidates only')), /path: source\s*$/m);
 });
 
+test('published baseline reads use an isolated credential job and native acceptance receives only artifacts',()=>{
+ const yaml=readFileSync(new URL('../.github/workflows/desktop-candidates.yml',import.meta.url),'utf8');
+ const bootstrap=yaml.slice(yaml.indexOf('  upgrade-published-baseline:'),yaml.indexOf('  internal-upgrade:'));
+ const native=yaml.slice(yaml.indexOf('  internal-upgrade:'),yaml.indexOf('  internal-build:'));
+ assert.match(bootstrap,/environment: reader-internal-release/);assert.match(bootstrap,/GH_TOKEN: \$\{\{ secrets\.INTERNAL_RELEASE_PUBLISH_TOKEN \}\}/);
+ assert.match(bootstrap,/scripts\/release-materialize\.mjs/);assert.doesNotMatch(bootstrap,/smoke-desktop|scripts\/install\.sh|release create/);
+ assert.doesNotMatch(native,/INTERNAL_RELEASE_PUBLISH_TOKEN|INTERNAL_RELEASE_READ_TOKEN/);
+ assert.match(native,/reader-published-\$\{\{ matrix\.id \}\}-baseline/);assert.match(native,/scripts\/release-desktop-acceptance\.mjs/);
+});
+
 test('native macOS producers prepare both media tools before private dependencies and signing',()=>{
  const yaml=readFileSync(new URL('../.github/workflows/desktop-candidates.yml',import.meta.url),'utf8');
  const producer=yaml.slice(yaml.indexOf('  release-native-producer:'));

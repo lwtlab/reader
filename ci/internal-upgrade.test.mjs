@@ -4,7 +4,7 @@ import { mkdtempSync, writeFileSync, existsSync, rmSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { createHash } from 'node:crypto';
-import { parseAcceptance, resolveAcceptance, restoreMissingBlockmaps } from './internal-upgrade.mjs';
+import { parseAcceptance, resolveAcceptance, restoreMissingBlockmaps, nativeProducerProvenance } from './internal-upgrade.mjs';
 
 test('upgrade inputs require immutable tooling and numeric artifact run IDs', () => {
   const input = { baselineRun: '42449632255', candidateRun: '234567', toolingSha: 'a'.repeat(40) };
@@ -52,4 +52,33 @@ test('published baseline inputs use durable release catalogs and require no base
     return {event: 'workflow_dispatch', path: '.github/workflows/desktop-candidates.yml', repository: {full_name: 'lwtlab/reader'}};
   });
   assert.equal(endpoints.length, 3);
+});
+
+test('new native candidates require a successful whole run and both immutable package and receipt artifacts',async()=>{
+ const input={baselineVersion:'0.25.0',candidateRun:'234567',toolingSha:'a'.repeat(40)};
+ const request=async endpoint=>{
+  if(endpoint.includes('/jobs?'))return {jobs:[{name:'release-desktop-linux-x64',conclusion:'success'}]};
+  if(endpoint.includes('/artifacts?'))return {artifacts:[{id:101,name:'reader-release-desktop-linux-x64-packages',digest:'sha256:'+'b'.repeat(64),expired:false},{id:102,name:'reader-release-desktop-linux-x64-receipt',digest:'sha256:'+'c'.repeat(64),expired:false}]};
+  return {event:'workflow_dispatch',path:'.github/workflows/desktop-candidates.yml',repository:{full_name:'lwtlab/reader'},status:'completed',conclusion:'success',head_sha:'d'.repeat(40),run_attempt:1};
+ };
+ const resolved=await resolveAcceptance(input,'linux-x64',request);
+ assert.equal(resolved.candidateKind,'producer');assert.equal(resolved.candidateArtifactId,101);assert.equal(resolved.candidateReceiptId,102);
+ await assert.rejects(resolveAcceptance(input,'linux-x64',async endpoint=>endpoint.includes('/artifacts?')?{artifacts:(await request(endpoint)).artifacts.slice(0,1)}:request(endpoint)));
+ await assert.rejects(resolveAcceptance(input,'linux-x64',async endpoint=>endpoint.includes('/jobs?')||endpoint.includes('/artifacts?')?request(endpoint):{...await request(endpoint),conclusion:'failure'}));
+});
+
+test('pinned upgrade workflow drift is rejected before any artifact lookup or private access',async()=>{
+ const input=parseAcceptance(JSON.stringify({baselineVersion:'0.25.0',candidateRun:'234567',toolingSha:'a'.repeat(40),workflowSha:'b'.repeat(40)}));
+ let calls=0;
+ await assert.rejects(resolveAcceptance(input,'linux-x64',async()=>{calls++;throw Error('Unexpected access');},'c'.repeat(40)),/pin the executing workflow/);
+ assert.equal(calls,0);
+});
+
+test('native upgrade receipt cannot relabel another source, attempt, workflow or payload pair',()=>{
+ const index={platform:'linux',arch:'x64',version:'0.26.0',artifacts:[{name:'reader.AppImage',sha256:'b'.repeat(64),bytes:10},{name:'reader.deb',sha256:'c'.repeat(64),bytes:20}]};
+ const options={sourceSha:'a'.repeat(40),runId:234567,artifactId:101,workflowSha:'d'.repeat(40),attempt:1};
+ const receipt={schemaVersion:1,kind:'reader-release-target',sourceSha:options.sourceSha,target:'desktop-linux-x64',version:index.version,delivery:{repository:'lwtlab/reader',runId:234567,artifactId:101,workflowSha:options.workflowSha,attempt:1},artifacts:index.artifacts.map(a=>({originalBuildName:a.name,sha256:a.sha256,bytes:a.bytes}))};
+ assert.equal(nativeProducerProvenance(receipt,index,options).source.commit,options.sourceSha);
+ for(const patch of [{sourceSha:'e'.repeat(40)},{artifactId:999},{attempt:2},{workflowSha:'e'.repeat(40)}])assert.throws(()=>nativeProducerProvenance(receipt,index,{...options,...patch}));
+ assert.throws(()=>nativeProducerProvenance({...receipt,artifacts:receipt.artifacts.slice(0,1)},index,options));
 });
