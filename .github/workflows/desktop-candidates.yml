@@ -489,11 +489,11 @@ jobs:
       - name: Validate desktop window
         if: runner.os != 'Linux'
         timeout-minutes: 8
-        run: node ci/private-step.mjs window source/apps/reader node scripts/smoke-desktop-window.mjs release/bundled-speech/${{ matrix.platform }}-${{ matrix.arch }}/${{ matrix.executable }}
+        run: node ci/private-step.mjs window source/apps/reader node scripts/smoke-desktop-window.mjs release/bundled-speech/${{ matrix.platform }}-${{ matrix.arch }}/${{ matrix.executable }} bundled-speech
       - name: Validate Linux window
         if: runner.os == 'Linux'
         timeout-minutes: 8
-        run: node ci/private-step.mjs window source/apps/reader bash ../../../ci/run-xvfb.sh node scripts/smoke-desktop-window.mjs release/bundled-speech/${{ matrix.platform }}-${{ matrix.arch }}/${{ matrix.executable }}
+        run: node ci/private-step.mjs window source/apps/reader bash ../../../ci/run-xvfb.sh node scripts/smoke-desktop-window.mjs release/bundled-speech/${{ matrix.platform }}-${{ matrix.arch }}/${{ matrix.executable }} bundled-speech
       - name: Verify artifact set
         run: node ci/private-step.mjs artifacts source/apps/reader node scripts/desktop-artifacts.mjs ${{ matrix.platform }} ${{ matrix.arch }} bundled-speech
       - name: Upload internal candidates only
