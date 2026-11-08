@@ -1,8 +1,9 @@
 import assert from 'node:assert/strict';
-import { appendFileSync, readFileSync, writeFileSync } from 'node:fs';
+import { appendFileSync, existsSync, readFileSync, writeFileSync, unlinkSync } from 'node:fs';
 import { createHash } from 'node:crypto';
 import { execFileSync } from 'node:child_process';
 import path from 'node:path';
+import { createRequire } from 'node:module';
 
 const approvedBaseline = {
   runId: '42449632255',
@@ -40,6 +41,30 @@ export async function resolveAcceptance(input, target, request) {
   return input;
 }
 
+export function restoreMissingBlockmaps(directory, generate) {
+  const index = JSON.parse(readFileSync(path.join(directory, 'desktop-artifacts.json'), 'utf8'));
+  for (const artifact of index.artifacts) {
+    assert.equal(path.basename(artifact.name), artifact.name);
+    const file = path.join(directory, artifact.name);
+    if (existsSync(file)) continue;
+    assert.ok(artifact.name.endsWith('.blockmap'), 'Only omitted deterministic blockmap metadata can be recovered');
+    const payload = index.artifacts.find(row => row.name === artifact.name.slice(0, -9));
+    assert.ok(payload, 'Indexed payload required');
+    const input = path.join(directory, payload.name), before = readFileSync(input);
+    assert.equal(createHash('sha256').update(before).digest('hex'), payload.sha256);
+    try {
+      generate(input, file);
+      const bytes = readFileSync(file);
+      assert.equal(bytes.length, artifact.bytes);
+      assert.equal(createHash('sha256').update(bytes).digest('hex'), artifact.sha256, 'Regenerated metadata must exactly match original CI digest');
+      assert.deepEqual(readFileSync(input), before, 'Payload bytes must remain unchanged');
+    } catch (error) {
+      if (existsSync(file)) unlinkSync(file);
+      throw error;
+    }
+  }
+}
+
 function verifyIndex(directory) {
   const index = JSON.parse(readFileSync(path.join(directory, 'desktop-artifacts.json'), 'utf8'));
   for (const artifact of index.artifacts) {
@@ -61,6 +86,13 @@ if (process.argv[2] === 'resolve') {
     return response.json();
   });
   appendFileSync(process.env.GITHUB_OUTPUT, `tooling_sha=${input.toolingSha}\nbaseline_run=${input.baselineRun}\ncandidate_run=${input.candidateRun}\n`);
+} else if (process.argv[2] === 'restore-blockmaps') {
+  const [directory, source] = process.argv.slice(3);
+  const require = createRequire(path.resolve(source, 'apps/reader/package.json'));
+  const builder = require('app-builder-bin').appBuilderPath;
+  restoreMissingBlockmaps(directory, (input, output) => execFileSync(builder, ['blockmap', '--input', input, '--output', output], { stdio: 'pipe' }));
+  verifyIndex(directory);
+  console.log('All candidate files match original CI digests, including deterministic metadata');
 } else if (process.argv[2] === 'record') {
   const [baselineDir, candidateDir, sourceDir, output] = process.argv.slice(3);
   const previous = verifyIndex(baselineDir), next = verifyIndex(candidateDir);

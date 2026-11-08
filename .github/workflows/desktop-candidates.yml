@@ -480,6 +480,8 @@ jobs:
         env:
           READER_INSTALL_NETWORK: direct
         run: node ci/private-step.mjs dependencies source/apps/reader bash --noprofile --norc scripts/install.sh --frozen-lockfile
+      - name: Restore omitted deterministic metadata and verify original digests
+        run: node ci/internal-upgrade.mjs restore-blockmaps candidate source
       - name: Exercise actual historical installer upgrade
         if: runner.os != 'Linux'
         env:
@@ -646,6 +648,7 @@ jobs:
             source/apps/reader/release/bundled-speech/${{ matrix.platform }}-${{ matrix.arch }}/*.exe
             source/apps/reader/release/bundled-speech/${{ matrix.platform }}-${{ matrix.arch }}/*.AppImage
             source/apps/reader/release/bundled-speech/${{ matrix.platform }}-${{ matrix.arch }}/*.deb
+            source/apps/reader/release/bundled-speech/${{ matrix.platform }}-${{ matrix.arch }}/*.blockmap
             source/apps/reader/release/bundled-speech/${{ matrix.platform }}-${{ matrix.arch }}/desktop-*.yml
             source/apps/reader/release/bundled-speech/${{ matrix.platform }}-${{ matrix.arch }}/desktop-artifacts.json
             source/apps/reader/release/bundled-speech/${{ matrix.platform }}-${{ matrix.arch }}/SHA256SUMS
