@@ -27,7 +27,7 @@ on:
         default: false
 
       acceptance_json:
-        description: Optional internal upgrade acceptance inputs (baselineRun, candidateRun, toolingSha)
+        description: Internal upgrade inputs — baselineVersion or historical baselineRun, candidateRun, toolingSha
         type: string
         default: ''
 
@@ -541,6 +541,7 @@ jobs:
           GITHUB_TOKEN: ${{ github.token }}
         run: node ci/internal-upgrade.mjs resolve
       - uses: actions/download-artifact@v4
+        if: steps.resolve.outputs.baseline_run != ''
         with:
           github-token: ${{ github.token }}
           repository: ${{ github.repository }}
@@ -563,6 +564,16 @@ jobs:
           ssh-key: ${{ secrets.PRIVATE_SOURCE_SSH_KEY }}
           persist-credentials: false
           submodules: false
+      - name: Materialize immutable published baseline
+        if: steps.resolve.outputs.baseline_version != ''
+        env:
+          GH_TOKEN: ${{ secrets.INTERNAL_RELEASE_READ_TOKEN }}
+        run: |
+          if [[ -z "$GH_TOKEN" ]]; then
+            echo "Configure a read-only token scoped to private release contents: INTERNAL_RELEASE_READ_TOKEN"
+            exit 1
+          fi
+          node ci/private-step.mjs baseline source node scripts/release-materialize.mjs --catalog release/baselines/${{ steps.resolve.outputs.baseline_version }}.json --target desktop-${{ matrix.id }} --output ../baseline
       - uses: pnpm/action-setup@v4
         with:
           version: 11.5.2
@@ -578,20 +589,20 @@ jobs:
         run: node ci/private-step.mjs dependencies source/apps/reader bash --noprofile --norc scripts/install.sh --frozen-lockfile
       - name: Restore omitted deterministic metadata and verify original digests
         run: node ci/internal-upgrade.mjs restore-blockmaps candidate source
-      - name: Exercise actual historical installer upgrade
+      - name: Exercise actual installer upgrade
         if: runner.os != 'Linux'
         env:
           READER_INSTALLER_TEST_DISPOSABLE: '1'
         run: >-
           node ci/private-step.mjs upgrade source/apps/reader node scripts/smoke-desktop-installers.mjs
-          ../../../baseline ../../../candidate --allow-core-to-bundled-speech
-      - name: Exercise actual Linux historical installer upgrade
+          ../../../baseline ../../../candidate ${{ steps.resolve.outputs.transition_flag }}
+      - name: Exercise actual Linux installer upgrade
         if: runner.os == 'Linux'
         env:
           READER_INSTALLER_TEST_DISPOSABLE: '1'
         run: >-
           node ci/private-step.mjs upgrade source/apps/reader bash ../../../ci/run-xvfb.sh node scripts/smoke-desktop-installers.mjs
-          ../../../baseline ../../../candidate --allow-core-to-bundled-speech
+          ../../../baseline ../../../candidate ${{ steps.resolve.outputs.transition_flag }}
       - name: Bind upgrade result to source and artifact digests
         run: node ci/internal-upgrade.mjs record baseline candidate source internal-upgrade-provenance.json
       - name: Upload synthetic acceptance receipt

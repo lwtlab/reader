@@ -36,3 +36,20 @@ test('upgrade artifacts require successful native jobs and unexpired exact named
   await resolveAcceptance(input, 'linux-x64', request);
   await assert.rejects(resolveAcceptance(input, 'linux-x64', async endpoint => endpoint.includes('/artifacts?') ? {artifacts: []} : request(endpoint)));
 });
+
+
+test('published baseline inputs use durable release catalogs and require no baseline Actions run', async () => {
+  const input = {baselineVersion: '0.25.0', candidateRun: '234567', toolingSha: 'a'.repeat(40)};
+  assert.deepEqual(parseAcceptance(JSON.stringify(input)), input);
+  for (const value of ['../private', 'main', '0.25.0/path', '025.0.0'])
+    assert.throws(() => parseAcceptance(JSON.stringify({...input, baselineVersion: value})));
+  assert.throws(() => parseAcceptance(JSON.stringify({...input, baselineRun: '123456'})));
+  const endpoints = [];
+  await resolveAcceptance(input, 'darwin-x64', async endpoint => {
+    endpoints.push(endpoint);
+    if (endpoint.includes('/jobs?')) return {jobs: [{name: 'internal-darwin-x64', conclusion: 'success'}]};
+    if (endpoint.includes('/artifacts?')) return {artifacts: [{name: 'reader-internal-darwin-x64-candidate', expired: false}]};
+    return {event: 'workflow_dispatch', path: '.github/workflows/desktop-candidates.yml', repository: {full_name: 'lwtlab/reader'}};
+  });
+  assert.equal(endpoints.length, 3);
+});

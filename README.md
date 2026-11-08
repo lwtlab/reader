@@ -146,3 +146,22 @@ The approved arm64, Windows and Linux candidates come from successful platform j
 The local runtime now reads bounded, user-scoped conversation headers, allowing Assistant to leave the indefinite history-sync state. Native window QA accepts the existing first-use AI data-sharing confirmation or an already authorized composer and requires the syncing message to disappear. It never grants consent or sends an AI request. The initial run [41259506450](https://github.com/lwtlab/reader/actions/runs/41259506450) failed because the new QA wrongly required a composer before consent; the QA prerequisite was corrected without changing the product fix.
 
 The signing baselines pin these verified 0.1.10 Mac originals. After configuring the deferred certificate Secrets in [issue #6](https://github.com/lwtlab/reader/issues/6), dispatch `macos-signed-candidates.yml` with `source_ref=ab74c6ba4dcb66048e0931e1bc22dd2394755b96` and `target=all`. Original artifact expiry remains unchanged. Local arm64 signing, notarization, controlled Gatekeeper verification and Finder installation passed; after the operator unlocked the Mac, scoped native upgrade/Assistant and relaunch observations passed: the consent screen is available, the sync wait is gone, and the original Chinese note, full vocabulary definition and Learning state persist. Selecting Not now leaves reading available; no AI consent or provider request was initiated. Both owned process trees exited normally. Manual acceptance and other resource-dependent work are tracked in [issue #7](https://github.com/lwtlab/reader/issues/7). Cloud signing still awaits credentials. No Release or production update is enabled.
+
+### Internal upgrades from durable released binaries
+
+The manual `desktop-candidates.yml` acceptance path also accepts
+`{"baselineVersion":"0.25.0","candidateRun":"<run-id>","toolingSha":"<full-private-sha>"}`.
+The private tooling commit must include `release/baselines/<version>.json` and
+`scripts/release-materialize.mjs`. These pin actual private Release asset IDs, byte sizes and SHA256,
+plus the original update metadata; they do not depend on a baseline Actions artifact's retention.
+Candidate artifacts still require a successful native job and an unexpired named artifact.
+
+This optional path requires `INTERNAL_RELEASE_READ_TOKEN`, a dedicated credential with only
+Contents:read on the private source repository. The public repository token and existing Git SSH
+deploy key cannot read private Release assets. The secret is passed only to the encrypted private
+step; never commit it or replace it with a personal broad-scope token. Ordinary candidate builds
+continue to need only the existing read-only SSH key. No public Release is created.
+
+Published bundled-speech baselines use the default same-profile, strictly increasing version guard.
+The historical `baselineRun` path remains available and alone selects the explicitly allowed
+core-to-bundled-speech transition. The private baseline catalog remains in the private repository.
