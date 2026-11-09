@@ -645,7 +645,7 @@ jobs:
       - name: Read and verify private baseline without executing packages
         env:
           GH_TOKEN: ${{ secrets.INTERNAL_RELEASE_PUBLISH_TOKEN }}
-        run: node ci/private-step.mjs baseline source node scripts/release-materialize.mjs --catalog release/baselines/${{ steps.resolve.outputs.baseline_version }}.json --target desktop-${{ matrix.id }} --output ../baseline
+        run: node ci/private-step.mjs baseline source node scripts/release-materialize.mjs --baseline-version ${{ steps.resolve.outputs.baseline_version }} --target desktop-${{ matrix.id }} --output ../baseline
       - name: Transfer verified baseline to independent native acceptance
         uses: actions/upload-artifact@v4
         with:
