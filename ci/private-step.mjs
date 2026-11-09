@@ -3,7 +3,7 @@ import { appendFileSync } from 'node:fs';
 import path from 'node:path';
 
 const [phase, workingDirectory, command, ...args] = process.argv.slice(2);
-if (!/^[a-z-]+$/.test(phase ?? '') || !['source', 'source/apps/reader'].includes(workingDirectory) || !command) throw new Error('Invalid build step');
+if (!/^[a-z-]+$/.test(phase ?? '') || !['source', 'source/apps/reader', 'tooling'].includes(workingDirectory) || !command) throw new Error('Invalid build step');
 const log = path.join(process.env.RUNNER_TEMP, 'reader-private-build.log');
 appendFileSync(log, `\n--- ${phase} ---\n`, { mode: 0o600 });
 // Windows' system bash may resolve to WSL. Use the same Git Bash as Actions.

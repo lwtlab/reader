@@ -27,3 +27,24 @@ test('private output and spawn failures stay out of the public console', () => {
     assert.match(log, /Spawn error:/);
   } finally { rmSync(temp, { recursive: true, force: true }); }
 });
+
+test('reviewed tooling checkout keeps output private and artifact/traversal directories cannot execute', () => {
+  const temp = mkdtempSync(path.join(os.tmpdir(), 'reader-tooling-log-contract-'));
+  try {
+    mkdirSync(path.join(temp, 'tooling'));
+    const invoke = directory => spawnSync(process.execPath,
+      [fileURLToPath(new URL('./private-step.mjs', import.meta.url)), 'engine-cache-restore', directory, process.execPath, '-e', "console.log('SYNTHETIC-PRIVATE-TOOLING')"],
+      { cwd: temp, env: { ...process.env, RUNNER_TEMP: temp }, encoding: 'utf8' });
+    const accepted = invoke('tooling');
+    assert.equal(accepted.status, 0);
+    assert.doesNotMatch(accepted.stdout + accepted.stderr, /SYNTHETIC-PRIVATE-TOOLING/);
+    const before = readFileSync(path.join(temp, 'reader-private-build.log'), 'utf8');
+    assert.match(before, /SYNTHETIC-PRIVATE-TOOLING/);
+    for (const directory of ['engine-cache', 'engine-cache-new', 'tooling/../source', 'source/../tooling', '/tmp']) {
+      const rejected = invoke(directory);
+      assert.notEqual(rejected.status, 0);
+      assert.doesNotMatch(rejected.stdout + rejected.stderr, /SYNTHETIC-PRIVATE-TOOLING/);
+    }
+    assert.equal(readFileSync(path.join(temp, 'reader-private-build.log'), 'utf8'), before);
+  } finally { rmSync(temp, { recursive: true, force: true }); }
+});
