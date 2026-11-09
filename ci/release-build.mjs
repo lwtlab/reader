@@ -11,5 +11,5 @@ if(process.argv[2]==='receipt'){
  writeFileSync(file,`${JSON.stringify(value,null,2)}\n`);
 }else{
  const {producerMatrix}=await import(path.resolve('tooling/scripts/release/producer.mjs'));
- appendFileSync(process.env.GITHUB_OUTPUT,`matrix=${JSON.stringify(producerMatrix(request.targets))}\napplication_source=${request.applicationSource}\n`);
+ appendFileSync(process.env.GITHUB_OUTPUT,`matrix=${JSON.stringify(producerMatrix(request.targets))}\ndesktop_matrix=${JSON.stringify(producerMatrix(request.targets).filter(row=>row.target.startsWith('desktop-')))}\napplication_source=${request.applicationSource}\n`);
 }

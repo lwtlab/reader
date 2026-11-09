@@ -957,6 +957,7 @@ jobs:
     runs-on: ubuntu-24.04
     outputs:
       matrix: ${{ steps.select.outputs.matrix }}
+      desktop_matrix: ${{ steps.select.outputs.desktop_matrix }}
       application_source: ${{ steps.select.outputs.application_source }}
     steps:
       - uses: actions/checkout@v4
@@ -980,8 +981,64 @@ jobs:
           SOURCE_REF: ${{ inputs.source_ref }}
         run: node ci/release-build.mjs
 
-  release-native-producer:
+  release-engine-cache-restore:
+    timeout-minutes: 30
     needs: release-build-matrix
+    if: needs.release-build-matrix.outputs.desktop_matrix != '[]'
+    runs-on: ubuntu-24.04
+    environment: reader-internal-release
+    strategy:
+      fail-fast: false
+      matrix:
+        include: ${{ fromJSON(needs.release-build-matrix.outputs.desktop_matrix) }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24.22.0
+      - uses: actions/checkout@v4
+        with:
+          repository: lwtlab/lwt-core
+          ref: ${{ inputs.source_ref }}
+          path: tooling
+          ssh-key: ${{ secrets.PRIVATE_SOURCE_SSH_KEY }}
+          persist-credentials: false
+          submodules: false
+      - uses: actions/checkout@v4
+        with:
+          repository: lwtlab/lwt-core
+          ref: ${{ needs.release-build-matrix.outputs.application_source }}
+          path: source
+          ssh-key: ${{ secrets.PRIVATE_SOURCE_SSH_KEY }}
+          persist-credentials: false
+          submodules: false
+      - name: Read private engine cache without executing contents
+        env:
+          GH_TOKEN: ${{ secrets.INTERNAL_RELEASE_PUBLISH_TOKEN }}
+          RELEASE_TARGET: ${{ matrix.target }}
+        run: node ci/private-step.mjs engine-cache-restore tooling node scripts/release-engine-cache.mjs restore --source ../source --target "$RELEASE_TARGET" --output ../engine-cache
+      - uses: actions/upload-artifact@v4
+        with:
+          name: reader-engine-cache-${{ matrix.target }}-restore
+          retention-days: 1
+          if-no-files-found: error
+          path: engine-cache/*
+      - name: Encrypt private cache diagnostics
+        if: always()
+        run: node ci/seal-log.mjs
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: reader-engine-cache-${{ matrix.target }}-restore-encrypted-log
+          retention-days: 3
+          if-no-files-found: ignore
+          path: ${{ runner.temp }}/reader-private-build.log.enc.json
+
+  release-native-producer:
+    needs: [release-build-matrix, release-engine-cache-restore]
+    if: always() && needs.release-build-matrix.result == 'success' && (needs.release-engine-cache-restore.result == 'success' || needs.release-engine-cache-restore.result == 'skipped')
     name: release-${{ matrix.target }}
     runs-on: ${{ matrix.os }}
     environment: ${{ matrix.environment }}
@@ -1065,6 +1122,17 @@ jobs:
       - name: Install isolated Chromium
         if: matrix.target == 'extension-chrome'
         run: node ci/private-step.mjs browser source/apps/reader pnpm exec playwright install --with-deps chromium
+      - name: Transfer verified private cache candidate
+        if: startsWith(matrix.target, 'desktop-')
+        uses: actions/download-artifact@v4
+        with:
+          name: reader-engine-cache-${{ matrix.target }}-restore
+          path: engine-cache
+      - name: Configure credential-free engine cache paths
+        if: startsWith(matrix.target, 'desktop-')
+        run: |
+          echo "READER_ENGINE_CACHE_RESTORE=$GITHUB_WORKSPACE/engine-cache" >> "$GITHUB_ENV"
+          echo "READER_ENGINE_CACHE_OUTPUT=$GITHUB_WORKSPACE/engine-cache-new" >> "$GITHUB_ENV"
       - name: Import isolated Developer ID credentials
         if: matrix.platform == 'darwin'
         env:
@@ -1109,6 +1177,14 @@ jobs:
           retention-days: 30
           if-no-files-found: error
           path: ${{ runner.temp }}/reader-producer/release-target.json
+      - name: Transfer new unsigned engine cache after package validation
+        if: startsWith(matrix.target, 'desktop-')
+        uses: actions/upload-artifact@v4
+        with:
+          name: reader-engine-cache-${{ matrix.target }}-new
+          retention-days: 1
+          if-no-files-found: ignore
+          path: engine-cache-new/*
       - name: Cleanup Developer ID credentials
         if: always() && matrix.platform == 'darwin'
         run: node ci/macos-signing.mjs cleanup
@@ -1123,6 +1199,64 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: reader-release-${{ matrix.target }}-encrypted-log
+          retention-days: 3
+          if-no-files-found: ignore
+          path: ${{ runner.temp }}/reader-private-build.log.enc.json
+
+  release-engine-cache-publish:
+    timeout-minutes: 30
+    continue-on-error: true
+    needs: [release-build-matrix, release-native-producer]
+    if: needs.release-build-matrix.outputs.desktop_matrix != '[]'
+    runs-on: ubuntu-24.04
+    environment: reader-internal-release
+    strategy:
+      fail-fast: false
+      matrix:
+        include: ${{ fromJSON(needs.release-build-matrix.outputs.desktop_matrix) }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24.22.0
+      - uses: actions/checkout@v4
+        with:
+          repository: lwtlab/lwt-core
+          ref: ${{ inputs.source_ref }}
+          path: tooling
+          ssh-key: ${{ secrets.PRIVATE_SOURCE_SSH_KEY }}
+          persist-credentials: false
+          submodules: false
+      - name: Find successful producer cache transfer
+        id: find
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TARGET: ${{ matrix.target }}
+        run: node ci/engine-cache-transfer.mjs
+      - uses: actions/download-artifact@v4
+        if: steps.find.outputs.present == 'true'
+        with:
+          name: reader-engine-cache-${{ matrix.target }}-new
+          path: engine-cache-new
+      - uses: actions/download-artifact@v4
+        if: steps.find.outputs.present == 'true'
+        with:
+          name: reader-release-${{ matrix.target }}-receipt
+          path: producer-receipt
+      - name: Store validated engine cache only in private repository
+        if: steps.find.outputs.present == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.INTERNAL_RELEASE_PUBLISH_TOKEN }}
+        run: node ci/private-step.mjs engine-cache-publish tooling node scripts/release-engine-cache.mjs publish --output ../engine-cache-new --receipt ../producer-receipt/release-target.json
+      - name: Encrypt private cache diagnostics
+        if: always()
+        run: node ci/seal-log.mjs
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: reader-engine-cache-${{ matrix.target }}-publish-encrypted-log
           retention-days: 3
           if-no-files-found: ignore
           path: ${{ runner.temp }}/reader-private-build.log.enc.json
