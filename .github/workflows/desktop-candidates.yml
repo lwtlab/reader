@@ -1049,6 +1049,15 @@ jobs:
           fi
           ffmpeg -version
           ffprobe -version
+      # Public caches are readable outside trusted release jobs. Only public
+      # crates.io archives are eligible; never cache source, target, node_modules,
+      # model weights, signing identities, profiles, credentials or native outputs.
+      - name: Cache public crates.io downloads only
+        if: startsWith(matrix.target, 'desktop-')
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
+        with:
+          path: ~/.cargo/registry/cache/index.crates.io-*/*.crate
+          key: reader-public-crates-v1-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('source/Cargo.lock') }}
       - name: Verify immutable application and install frozen dependencies before signing
         env:
           RELEASE_TARGET: ${{ matrix.target }}

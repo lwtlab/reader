@@ -32,3 +32,13 @@ test('native macOS producers prepare both media tools before private dependencie
  assert.ok(media>=0 && media<producer.indexOf('- name: Verify immutable application'));
  assert.match(producer.slice(media,producer.indexOf('- name: Verify immutable application')),/if: matrix\.platform == 'darwin'[\s\S]*?command -v ffmpeg[\s\S]*?command -v ffprobe[\s\S]*?brew install ffmpeg/);
 });
+
+test('public native cache is restricted to checksum-verified crates.io download archives',()=>{
+ const yaml=readFileSync(new URL('../.github/workflows/desktop-candidates.yml',import.meta.url),'utf8');
+ const producer=yaml.slice(yaml.indexOf('  release-native-producer:'));
+ const cache=producer.slice(producer.indexOf('- name: Cache public crates.io'),producer.indexOf('- name: Verify immutable application'));
+ assert.match(cache,/uses: actions\/cache@[a-f0-9]{40}/);
+ assert.match(cache,/path: ~\/\.cargo\/registry\/cache\/index\.crates\.io-\*\/\*\.crate/);
+ assert.match(cache,/runner\.os[\s\S]*runner\.arch[\s\S]*hashFiles\('source\/Cargo.lock'\)/);
+ assert.doesNotMatch(cache,/restore-keys:|target\/|node_modules|\.npm|\.cargo\/git|\.gradle|\.p12|mobileprovision|models/);
+});
