@@ -95,6 +95,9 @@ export async function report(api,value,{run,attempt,job,token}) {
 }
 export async function poll(api,workflow,{enabled=false}={}) {
   if(!enabled)return {dispatched:0,disabled:true};
+  sha(workflow);
+  const approved=await api(publicEndpoint(`git/ref/heads/${policy.workflowRef}`));
+  assert.equal(approved.object.sha,workflow,'Review and update the dedicated verification pin first');
   const pulls=await api(endpoint('pulls?state=open&base=main&per_page=100'));
   assert(pulls.length<100,'Pagination required before enabling larger queues');
   const main=await api(endpoint('git/ref/heads/main'));
@@ -113,7 +116,7 @@ export async function poll(api,workflow,{enabled=false}={}) {
       }
       continue;
     }
-    await api(publicEndpoint(`actions/workflows/${WORKFLOW}/dispatches`),'POST',{ref:'main',inputs:{source_ref:value.head,pr_number:String(value.pr),workflow_sha:workflow}});
+    await api(publicEndpoint(`actions/workflows/${WORKFLOW}/dispatches`),'POST',{ref:policy.workflowRef,inputs:{source_ref:value.head,pr_number:String(value.pr),workflow_sha:workflow}});
     dispatched++;
   }
   return {dispatched};
@@ -123,9 +126,10 @@ async function main() {
   const api=github(process.env.GH_TOKEN);const command=process.argv[2];
   if(command==='poll') {
     assert.equal(process.env.GITHUB_REF,'refs/heads/main');
-    console.log(JSON.stringify(await poll(api,process.env.GITHUB_SHA,{enabled:process.env.AUTOMATIC_VERIFICATION==='true'})));return;
+    console.log(JSON.stringify(await poll(api,process.env.VERIFICATION_WORKFLOW_SHA,{enabled:process.env.AUTOMATIC_VERIFICATION==='true'})));return;
   }
   if(command==='resolve') {
+    assert.equal(process.env.GITHUB_REF,`refs/heads/${policy.workflowRef}`);
     assert.equal(process.env.WORKFLOW_SHA,process.env.GITHUB_SHA,'Executing workflow must match the requested immutable pin');
     const value=await resolveInput(api,{source:process.env.SOURCE_REF,pr:Number(process.env.PR_NUMBER||0),workflow:process.env.GITHUB_SHA});
     appendFileSync(process.env.GITHUB_OUTPUT,`binding=${JSON.stringify(value)}\ntested=${value.tested}\n`);

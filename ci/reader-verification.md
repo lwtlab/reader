@@ -11,7 +11,7 @@ accepted as source, and no untrusted public PR event runs this workflow.
 
 `resolve`, scheduled `poll`, and `report` use the personal credential
 `READER_VERIFICATION_TOKEN` in the separate `reader-verification` environment,
-restricted to public main. The credential needs private PR/commit reads, commit
+restricted to public main and `reader-public-full-verification`. The credential needs private PR/commit reads, commit
 status writes and public workflow dispatch/artifact reads. It is deliberately
 absent from the full test job. The existing read-only source SSH key is used with
 `persist-credentials: false`. Signing and application publishing are not involved.
@@ -39,8 +39,9 @@ are not automatically retried. A new source/base/workflow is a new input.
 During rollout the repository variable `READER_VERIFICATION_AUTOMATIC` is absent
 or `false`. After an actual full PASS it can be set to exactly `true` for a
 half-hourly scan of trusted private PRs and main, without changing the reviewed
-workflow pin. A schedule runs
-from public main; it needs no private hosted runner or permanently running local
+workflow pin. `READER_VERIFICATION_WORKFLOW_SHA` pins the dedicated verification
+branch so unrelated public website commits do not invalidate private results.
+A schedule runs from public main and dispatches that exact dedicated branch; it needs no private hosted runner or permanently running local
 agent. Manual dispatch remains available without waiting for the next scan.
 Public schedules may be delayed; if GitHub disables inactive schedules, re-enable
 the workflow. No schedule guarantees immediate execution after each push.

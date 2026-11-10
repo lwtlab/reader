@@ -70,11 +70,12 @@ test('automatic discovery defaults off and an enabled poll dispatches only exact
     if(method==='POST'){sent.push(body);return {};}
     if(route.includes('pulls?'))return [];
     if(route.endsWith('git/ref/heads/main'))return {object:{sha:value.head}};
+    if(route.endsWith('git/ref/heads/reader-public-full-verification'))return {object:{sha:value.workflow}};
     if(route.includes('/statuses?'))return [];
     assert.fail('Unexpected API route');
   };
   assert.deepEqual(await poll(api,value.workflow,{enabled:true}),{dispatched:1});
-  assert.deepEqual(sent,[{ref:'main',inputs:{source_ref:value.head,pr_number:'0',workflow_sha:value.workflow}}]);
+  assert.deepEqual(sent,[{ref:'reader-public-full-verification',inputs:{source_ref:value.head,pr_number:'0',workflow_sha:value.workflow}}]);
 });
 test('controller errors never echo authenticated response content',async()=>{
   const api=github('SYNTHETIC_TOKEN',async(_url,options)=>{assert.match(options.headers.Authorization,/SYNTHETIC_TOKEN/);return {ok:false,status:403,text:async()=> 'PRIVATE_RESPONSE'};});

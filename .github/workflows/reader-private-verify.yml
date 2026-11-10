@@ -20,6 +20,9 @@ on:
 permissions:
   contents: read
   actions: read
+concurrency:
+  group: reader-private-full-${{ github.event_name }}-${{ inputs.pr_number || 'poll' }}
+  cancel-in-progress: false
 jobs:
   poll:
     if: github.event_name == 'schedule'
@@ -41,6 +44,7 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.READER_VERIFICATION_TOKEN }}
           AUTOMATIC_VERIFICATION: ${{ vars.READER_VERIFICATION_AUTOMATIC }}
+          VERIFICATION_WORKFLOW_SHA: ${{ vars.READER_VERIFICATION_WORKFLOW_SHA }}
         run: node ci/reader-verification-control.mjs poll
   resolve:
     if: github.event_name == 'workflow_dispatch'
