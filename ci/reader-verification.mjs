@@ -14,13 +14,13 @@ export function binding({head, base, tested, pr = 0, workflow}) {
   return {head:sha(head),base:sha(base),tested:sha(tested),pr,workflow:sha(workflow)};
 }
 export const fingerprint = value => digest(JSON.stringify(binding(value))).slice(0,24);
-export function resolvePullRequest(pr, source, workflow, policy) {
+export function resolvePullRequest(pr, source, workflow, policy, currentBase) {
   assert.equal(pr.state,'open'); assert.equal(pr.head.repo.full_name,SOURCE_REPOSITORY);
   assert.equal(pr.base.repo.full_name,SOURCE_REPOSITORY); assert.equal(pr.base.ref,'main');
   assert(policy.trustedAssociations.includes(pr.author_association));
   assert.equal(sha(source),pr.head.sha);
   assert.notEqual(pr.mergeable,false); assert(pr.merge_commit_sha,'Merge commit is not ready');
-  return binding({head:pr.head.sha,base:pr.base.sha,tested:pr.merge_commit_sha,pr:positive(pr.number),workflow});
+  return binding({head:pr.head.sha,base:sha(currentBase),tested:pr.merge_commit_sha,pr:positive(pr.number),workflow});
 }
 export function verifyMergeParents(commit, value) {
   assert.equal(commit.sha,value.tested);

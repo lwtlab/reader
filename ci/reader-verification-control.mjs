@@ -12,7 +12,7 @@ export function github(token,transport=fetch) {
   return async (endpoint,method='GET',body)=>{
     assert(!endpoint.startsWith('/')&&!endpoint.includes('..'));
     const response=await transport(`https://api.github.com/${endpoint}`,{method,headers:{Authorization:`Bearer ${token}`,Accept:'application/vnd.github+json','Content-Type':'application/json','X-GitHub-Api-Version':'2022-11-28'},...(body?{body:JSON.stringify(body)}:{}),signal:AbortSignal.timeout(60000)});
-    if(!response.ok) throw new Error(`GitHub request failed (HTTP ${response.status})`);
+    if(!response.ok) throw Object.assign(new Error(`GitHub request failed (HTTP ${response.status})`),{code:`HTTP_${response.status}`});
     return response.status===204?null:response.json();
   };
 }
@@ -21,8 +21,9 @@ const publicEndpoint=path=>`repos/${BUILD_REPOSITORY}/${path}`;
 export async function resolveInput(api,{source,pr,workflow}) {
   sha(source);sha(workflow);
   if(pr) {
-    const pull=await api(endpoint(`pulls/${positive(pr)}`));
-    const value=resolvePullRequest(pull,source,workflow,policy);
+    // PR base.sha can remain at an older snapshot after main advances.
+    const [pull,main]=await Promise.all([api(endpoint(`pulls/${positive(pr)}`)),api(endpoint('git/ref/heads/main'))]);
+    const value=resolvePullRequest(pull,source,workflow,policy,main.object.sha);
     verifyMergeParents(await api(endpoint(`git/commits/${value.tested}`)),value);
     return value;
   }
@@ -38,10 +39,10 @@ const runUrl=(run,attempt)=>`https://github.com/${BUILD_REPOSITORY}/actions/runs
 async function postStatus(api,value,state,description,url) {
   await api(endpoint(`statuses/${value.head}`),'POST',{state,context:CONTEXT,description,target_url:url});
 }
-async function liveBinding(api,value) {
+export async function liveBinding(api,value) {
   if(value.pr) {
-    const pr=await api(endpoint(`pulls/${value.pr}`));
-    return pr.state==='open'?{head:pr.head.sha,base:pr.base.sha}:{head:null,base:null};
+    const [pr,main]=await Promise.all([api(endpoint(`pulls/${value.pr}`)),api(endpoint('git/ref/heads/main'))]);
+    return pr.state==='open'?{head:pr.head.sha,base:main.object.sha}:{head:null,base:null};
   }
   const ref=await api(endpoint('git/ref/heads/main'));
   return {head:ref.object.sha,base:ref.object.sha};
@@ -140,4 +141,4 @@ async function main() {
   const value=binding(JSON.parse(process.env.VERIFICATION_BINDING));
   console.log(`Verification status: ${await report(api,value,{run:positive(process.env.GITHUB_RUN_ID),attempt:positive(process.env.GITHUB_RUN_ATTEMPT),job:process.env.VERIFICATION_JOB_RESULT,token:process.env.GH_TOKEN})}`);
 }
-if(process.argv[1]&&path.resolve(process.argv[1])===fileURLToPath(import.meta.url)) main().catch(()=>{console.error('Verification controller failed; no success status was issued');process.exitCode=1;});
+if(process.argv[1]&&path.resolve(process.argv[1])===fileURLToPath(import.meta.url)) main().catch(error=>{const code=/^HTTP_[1-5][0-9]{2}$/.test(error.code||'')?error.code:error.code==='ERR_ASSERTION'?'VALIDATION_ASSERTION':'CONTROLLER_ERROR';console.error(`Verification controller failed (${code}); no success status was issued`);process.exitCode=1;});

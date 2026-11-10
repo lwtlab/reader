@@ -6,7 +6,11 @@ graph on a standard public Ubuntu runner. It does not publish applications.
 The controller accepts only current private main or an open same-repository PR
 from an OWNER, MEMBER or COLLABORATOR targeting main. A PR execution checks the
 immutable GitHub merge commit and verifies its parents against the exact base and
-head. Dispatch must include the exact public workflow commit. No branch name is
+head. The base SHA comes from `git/ref/heads/main`, both during resolution and
+completion checks. GitHub's PR `base.sha` can remain at an older snapshot after
+main advances even though the generated merge commit already has the new parent;
+that snapshot is not authoritative. Merge parent equality remains mandatory.
+Dispatch must include the exact public workflow commit. No branch name is
 accepted as source, and no untrusted public PR event runs this workflow.
 
 `resolve`, scheduled `poll`, and `report` use the personal credential
