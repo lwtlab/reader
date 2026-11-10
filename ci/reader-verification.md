@@ -45,6 +45,16 @@ A schedule runs from public main and dispatches that exact dedicated branch; it 
 agent. Manual dispatch remains available without waiting for the next scan.
 Public schedules may be delayed; if GitHub disables inactive schedules, re-enable
 the workflow. No schedule guarantees immediate execution after each push.
+The default-branch controller can also run the identical discovery path manually:
+
+```sh
+gh workflow run reader-private-verify.yml --repo lwtlab/reader --ref main -f operation=poll
+```
+
+This only discovers and dispatches changed inputs; it does not execute private
+code with the controller credential. Actual verification still runs at the
+independently approved branch/SHA. The private script's normal verify dispatch
+interface remains unchanged.
 
 The private repository's `scripts/verify-public.mjs --pr <number>` checks clean,
 pushed source and the reviewed workflow pin, then sends metadata only. It never

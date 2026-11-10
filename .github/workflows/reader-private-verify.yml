@@ -3,17 +3,24 @@ run-name: Reader full verification
 on:
   workflow_dispatch:
     inputs:
+      operation:
+        description: Run verification or default-branch discovery only
+        type: choice
+        default: verify
+        options:
+          - verify
+          - poll
       source_ref:
         description: Exact private PR head or main commit SHA
-        required: true
+        required: false
         type: string
       pr_number:
         description: Private PR number, or 0 for current main
-        required: true
+        required: false
         type: string
       workflow_sha:
         description: Exact executing public workflow commit SHA
-        required: true
+        required: false
         type: string
   schedule:
     - cron: '17,47 * * * *'
@@ -25,7 +32,7 @@ concurrency:
   cancel-in-progress: false
 jobs:
   poll:
-    if: github.event_name == 'schedule'
+    if: github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && inputs.operation == 'poll')
     name: Discover trusted private changes
     runs-on: ubuntu-24.04
     environment: reader-verification
@@ -47,7 +54,7 @@ jobs:
           VERIFICATION_WORKFLOW_SHA: ${{ vars.READER_VERIFICATION_WORKFLOW_SHA }}
         run: node ci/reader-verification-control.mjs poll
   resolve:
-    if: github.event_name == 'workflow_dispatch'
+    if: github.event_name == 'workflow_dispatch' && inputs.operation != 'poll'
     name: Resolve and mark exact private input
     runs-on: ubuntu-24.04
     environment: reader-verification
