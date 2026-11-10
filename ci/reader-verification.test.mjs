@@ -121,6 +121,15 @@ test('hosted verification keeps personal credentials out of test jobs and upload
   for(const upload of full.split('uses: actions/upload-artifact@').slice(1))assert.match(upload,/path: verification-output\/(verification.json|diagnostics.enc.json)/);
   assert.doesNotMatch(yaml,/pull_request_target|workflow_run:/);
 });
+test('manual discovery uses the default-branch controller and cannot enter source execution',()=>{
+  const yaml=readFileSync(new URL('../.github/workflows/reader-private-verify.yml',import.meta.url),'utf8');
+  assert.match(yaml,/operation:[\s\S]*?options:\s*\n\s*- verify\s*\n\s*- poll/);
+  assert.match(yaml,/if: github.event_name == 'schedule' \|\| \(github.event_name == 'workflow_dispatch' && inputs.operation == 'poll'\)/);
+  assert.match(yaml,/if: github.event_name == 'workflow_dispatch' && inputs.operation != 'poll'/);
+  const control=readFileSync(new URL('./reader-verification-control.mjs',import.meta.url),'utf8');
+  assert.match(control,/assert.equal\(process.env.GITHUB_REF,'refs\/heads\/main'\)/);
+  assert.match(control,/ref:policy.workflowRef/);
+});
 test('real receipt and encrypted diagnostic pipeline retains only approved synthetic locations',()=>{
   const temp=mkdtempSync(path.join(tmpdir(),'reader-encrypted-test-'));
   try {
