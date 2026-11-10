@@ -1,0 +1,7 @@
+{
+  "schemaVersion": 1,
+  "automaticEnabled": false,
+  "trustedAssociations": ["OWNER", "MEMBER", "COLLABORATOR"],
+  "defaultBranch": "main",
+  "retentionDays": 7
+}

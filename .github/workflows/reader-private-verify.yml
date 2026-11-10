@@ -1,0 +1,171 @@
+name: Private Reader verification on public runners
+run-name: Reader full verification
+on:
+  workflow_dispatch:
+    inputs:
+      source_ref:
+        description: Exact private PR head or main commit SHA
+        required: true
+        type: string
+      pr_number:
+        description: Private PR number, or 0 for current main
+        required: true
+        type: string
+      workflow_sha:
+        description: Exact executing public workflow commit SHA
+        required: true
+        type: string
+  schedule:
+    - cron: '17,47 * * * *'
+permissions:
+  contents: read
+  actions: read
+jobs:
+  poll:
+    if: github.event_name == 'schedule'
+    name: Discover trusted private changes
+    runs-on: ubuntu-24.04
+    environment: reader-verification
+    timeout-minutes: 10
+    concurrency:
+      group: reader-private-verification-poll
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24.22.0
+      - name: Dispatch only changed trusted inputs
+        env:
+          GH_TOKEN: ${{ secrets.READER_VERIFICATION_TOKEN }}
+        run: node ci/reader-verification-control.mjs poll
+  resolve:
+    if: github.event_name == 'workflow_dispatch'
+    name: Resolve and mark exact private input
+    runs-on: ubuntu-24.04
+    environment: reader-verification
+    timeout-minutes: 10
+    outputs:
+      binding: ${{ steps.resolve.outputs.binding }}
+      tested: ${{ steps.resolve.outputs.tested }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24.22.0
+      - id: resolve
+        name: Check repository, permission boundary and immutable merge parents
+        env:
+          GH_TOKEN: ${{ secrets.READER_VERIFICATION_TOKEN }}
+          SOURCE_REF: ${{ inputs.source_ref }}
+          PR_NUMBER: ${{ inputs.pr_number }}
+          WORKFLOW_SHA: ${{ inputs.workflow_sha }}
+        run: node ci/reader-verification-control.mjs resolve
+  full:
+    needs: resolve
+    name: Full private Reader verification
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    env:
+      VERIFICATION_BINDING: ${{ needs.resolve.outputs.binding }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24.22.0
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11.5.2
+          package_json_file: site/package.json
+          run_install: false
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: '1.88.0'
+      - name: Prepare public system tools
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y ffmpeg build-essential pkg-config libssl-dev
+          docker --host unix:///var/run/docker.sock pull postgres:17.7-bookworm
+      - name: Read exact private source without persisted credentials
+        uses: actions/checkout@v4
+        with:
+          repository: lwtlab/lwt-core
+          ref: ${{ needs.resolve.outputs.tested }}
+          path: source
+          fetch-depth: 0
+          ssh-key: ${{ secrets.PRIVATE_SOURCE_SSH_KEY }}
+          persist-credentials: false
+          submodules: false
+      - name: Validate clean immutable checkout
+        run: node ci/reader-verification-run.mjs identity
+      - name: Initialize fixed public submodules
+        run: >-
+          node ci/private-step.mjs submodules source git
+          -c submodule.aspeak.url=https://github.com/XUJiahua/aspeak.git
+          -c submodule.srtparse.url=https://github.com/XUJiahua/srtparse.git
+          submodule update --init -- aspeak srtparse
+      - name: Install frozen private dependencies and managed hooks
+        env:
+          READER_INSTALL_NETWORK: direct
+        run: |
+          node ci/private-step.mjs hooks source bash scripts/install-git-hooks.sh
+          node ci/private-step.mjs dependencies source bash apps/reader/scripts/install.sh --frozen-lockfile
+          node ci/private-step.mjs mobile-dependencies source npm --prefix apps/reader-mobile ci --include=dev --legacy-peer-deps
+      - name: Install browser runtimes
+        run: node ci/private-step.mjs browsers source pnpm --dir apps/reader exec playwright install --with-deps chromium firefox webkit chrome
+      - id: full
+        name: Run the unchanged complete task graph
+        run: node ci/private-step.mjs full-verification source node scripts/verify.mjs --profile full
+      - name: Produce bounded result without private output
+        if: always()
+        env:
+          VERIFICATION_OUTCOME: ${{ steps.full.outcome }}
+        run: node ci/reader-verification-run.mjs receipt
+      - name: Encrypt complete synthetic diagnostics
+        if: always()
+        run: node ci/reader-verification-run.mjs seal
+      - name: Upload bounded result only
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: reader-full-result-${{ github.run_id }}-${{ github.run_attempt }}
+          path: verification-output/verification.json
+          if-no-files-found: error
+          retention-days: 7
+      - name: Upload encrypted diagnostics only
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: reader-full-encrypted-${{ github.run_id }}-${{ github.run_attempt }}
+          path: verification-output/diagnostics.enc.json
+          if-no-files-found: ignore
+          retention-days: 7
+      - name: Require complete success
+        if: always()
+        run: node ci/reader-verification-run.mjs require
+  report:
+    needs: [resolve, full]
+    if: always() && needs.resolve.result == 'success'
+    name: Report verified private commit status
+    runs-on: ubuntu-24.04
+    environment: reader-verification
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24.22.0
+      - name: Verify workflow, run, attempt, digest and current PR before reporting
+        env:
+          GH_TOKEN: ${{ secrets.READER_VERIFICATION_TOKEN }}
+          VERIFICATION_BINDING: ${{ needs.resolve.outputs.binding }}
+          VERIFICATION_JOB_RESULT: ${{ needs.full.result }}
+        run: node ci/reader-verification-control.mjs report
