@@ -93,8 +93,8 @@ export async function report(api,value,{run,attempt,job,token}) {
   await postStatus(api,value,state.state,state.description,url);
   return state.state;
 }
-export async function poll(api,workflow) {
-  if(!policy.automaticEnabled)return {dispatched:0,disabled:true};
+export async function poll(api,workflow,{enabled=false}={}) {
+  if(!enabled)return {dispatched:0,disabled:true};
   const pulls=await api(endpoint('pulls?state=open&base=main&per_page=100'));
   assert(pulls.length<100,'Pagination required before enabling larger queues');
   const main=await api(endpoint('git/ref/heads/main'));
@@ -123,7 +123,7 @@ async function main() {
   const api=github(process.env.GH_TOKEN);const command=process.argv[2];
   if(command==='poll') {
     assert.equal(process.env.GITHUB_REF,'refs/heads/main');
-    console.log(JSON.stringify(await poll(api,process.env.GITHUB_SHA)));return;
+    console.log(JSON.stringify(await poll(api,process.env.GITHUB_SHA,{enabled:process.env.AUTOMATIC_VERIFICATION==='true'})));return;
   }
   if(command==='resolve') {
     assert.equal(process.env.WORKFLOW_SHA,process.env.GITHUB_SHA,'Executing workflow must match the requested immutable pin');

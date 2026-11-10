@@ -40,6 +40,7 @@ jobs:
       - name: Dispatch only changed trusted inputs
         env:
           GH_TOKEN: ${{ secrets.READER_VERIFICATION_TOKEN }}
+          AUTOMATIC_VERIFICATION: ${{ vars.READER_VERIFICATION_AUTOMATIC }}
         run: node ci/reader-verification-control.mjs poll
   resolve:
     if: github.event_name == 'workflow_dispatch'

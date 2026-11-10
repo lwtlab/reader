@@ -7,7 +7,7 @@ import path from 'node:path';
 import test from 'node:test';
 import {fileURLToPath} from 'node:url';
 import {TASKS,BUILD_REPOSITORY,SOURCE_REPOSITORY,binding,digest,fingerprint,resolvePullRequest,verifyMergeParents,resultFromSummary,validateResult,reportState,dispatchNeeded} from './reader-verification.mjs';
-import {github,readReceipt,resolveInput,report} from './reader-verification-control.mjs';
+import {github,readReceipt,resolveInput,report,poll} from './reader-verification-control.mjs';
 import {decryptLog} from './log-crypto.mjs';
 
 const value=binding({head:'a'.repeat(40),base:'b'.repeat(40),tested:'c'.repeat(40),pr:267,workflow:'d'.repeat(40)});
@@ -62,6 +62,19 @@ test('main dispatch rejects arbitrary branches and only accepts current main',as
   const api=async route=>{assert(route.endsWith('git/ref/heads/main'));return {object:{sha:value.head}};};
   assert.equal((await resolveInput(api,{source:value.head,pr:0,workflow:value.workflow})).tested,value.head);
   await assert.rejects(resolveInput(api,{source:value.base,pr:0,workflow:value.workflow}));
+});
+test('automatic discovery defaults off and an enabled poll dispatches only exact unverified inputs',async()=>{
+  assert.deepEqual(await poll(()=>assert.fail('Disabled polling must not read private data'),value.workflow),{dispatched:0,disabled:true});
+  const sent=[];
+  const api=async(route,method,body)=>{
+    if(method==='POST'){sent.push(body);return {};}
+    if(route.includes('pulls?'))return [];
+    if(route.endsWith('git/ref/heads/main'))return {object:{sha:value.head}};
+    if(route.includes('/statuses?'))return [];
+    assert.fail('Unexpected API route');
+  };
+  assert.deepEqual(await poll(api,value.workflow,{enabled:true}),{dispatched:1});
+  assert.deepEqual(sent,[{ref:'main',inputs:{source_ref:value.head,pr_number:'0',workflow_sha:value.workflow}}]);
 });
 test('controller errors never echo authenticated response content',async()=>{
   const api=github('SYNTHETIC_TOKEN',async(_url,options)=>{assert.match(options.headers.Authorization,/SYNTHETIC_TOKEN/);return {ok:false,status:403,text:async()=> 'PRIVATE_RESPONSE'};});

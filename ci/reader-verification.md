@@ -36,8 +36,10 @@ cancelled, failed or invalid evidence cannot report success. The scheduled polle
 reconciles completed runs that left a pending status as error; matching failures
 are not automatically retried. A new source/base/workflow is a new input.
 
-During rollout `automaticEnabled` is false. After an actual full PASS it can be
-enabled for a half-hourly scan of trusted private PRs and main. A schedule runs
+During rollout the repository variable `READER_VERIFICATION_AUTOMATIC` is absent
+or `false`. After an actual full PASS it can be set to exactly `true` for a
+half-hourly scan of trusted private PRs and main, without changing the reviewed
+workflow pin. A schedule runs
 from public main; it needs no private hosted runner or permanently running local
 agent. Manual dispatch remains available without waiting for the next scan.
 Public schedules may be delayed; if GitHub disables inactive schedules, re-enable
