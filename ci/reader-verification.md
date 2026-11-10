@@ -65,3 +65,22 @@ Required checks must explicitly select the new `reader-public/full` context rath
 than impersonating the old `test`/`verify` Actions checks. Keep managed local
 pre-push governance. A full PASS covers the task graph, not physical-device,
 signed-package or native installation acceptance.
+
+
+Informational task progress is read only from the source verifier's bounded
+`progress.jsonl`, restricted to this public repository's fixed 33 task IDs,
+statuses and durations. The wrapper emits at most a RUNNING and terminal event
+per task while retaining private stdout/stderr in the encrypted diagnostic log.
+The separate `progress.json` binds head/base/tested/workflow/run/attempt and
+records runner preparation separately from the graph wrapper. It is never a
+verification receipt; missing, malformed or incomplete progress cannot produce
+a required-check success. The final 33-task receipt/reporting contract is unchanged.
+
+Only Mobile public registry download content may be cached. Before restoring a
+cache, the public workflow independently validates every locked dependency's
+public HTTPS origin and SHA-512 integrity. The cache lives in a dedicated runner
+temporary directory and includes only `_cacache`, excluding npm logs. Reader's
+pnpm store is deliberately excluded because it includes private local `file:`
+packages. Frozen installation and all assertions still run after a cache hit.
+The checked-in source selection policy remains disabled, and task execution
+remains serial pending separate review and public qualification.
