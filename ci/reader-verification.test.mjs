@@ -7,7 +7,7 @@ import path from 'node:path';
 import test from 'node:test';
 import {fileURLToPath} from 'node:url';
 import {TASKS,BUILD_REPOSITORY,SOURCE_REPOSITORY,binding,digest,fingerprint,resolvePullRequest,verifyMergeParents,resultFromSummary,validateResult,reportState,dispatchNeeded} from './reader-verification.mjs';
-import {github,readReceipt,resolveInput,report,poll} from './reader-verification-control.mjs';
+import {github,readReceipt,resolveInput,liveBinding,report,poll} from './reader-verification-control.mjs';
 import {decryptLog} from './log-crypto.mjs';
 
 const value=binding({head:'a'.repeat(40),base:'b'.repeat(40),tested:'c'.repeat(40),pr:267,workflow:'d'.repeat(40)});
@@ -19,13 +19,13 @@ const url='https://github.com/lwtlab/reader/actions/runs/123/attempts/1';
 const stateInput=()=>({result:receipt(),value,job:'success',run:{id:123,run_attempt:1,repository:{full_name:BUILD_REPOSITORY},head_sha:value.workflow,workflow_id:456,event:'workflow_dispatch'},expectedRun:123,attempt:1,workflowId:456,live:{head:value.head,base:value.base},latest:{target_url:url,description:`full pending ${fingerprint(value)}`}});
 
 test('only exact same-repository trusted PR inputs and verified merge parents are accepted',()=>{
-  assert.deepEqual(resolvePullRequest(pull(),value.head,value.workflow,policy),value);
+  assert.deepEqual(resolvePullRequest(pull(),value.head,value.workflow,policy,value.base),value);
   verifyMergeParents({sha:value.tested,parents:[{sha:value.base},{sha:value.head}]},value);
   for(const mutate of [p=>p.state='closed',p=>p.author_association='CONTRIBUTOR',p=>p.head.repo.full_name='attacker/fork',p=>p.base.ref='other',p=>p.mergeable=false,p=>p.merge_commit_sha=null,p=>p.head.sha='f'.repeat(40)]) {
-    const p=pull();mutate(p);assert.throws(()=>resolvePullRequest(p,value.head,value.workflow,policy));
+    const p=pull();mutate(p);assert.throws(()=>resolvePullRequest(p,value.head,value.workflow,policy,value.base));
   }
   assert.throws(()=>verifyMergeParents({sha:value.tested,parents:[{sha:value.head},{sha:value.base}]},value));
-  assert.throws(()=>resolvePullRequest(pull(),'main; echo private',value.workflow,policy));
+  assert.throws(()=>resolvePullRequest(pull(),'main; echo private',value.workflow,policy,value.base));
 });
 test('all 33 fresh tasks and exact clean immutable source/input equality are required',()=>{
   validateResult(receipt(),value);
@@ -63,6 +63,22 @@ test('main dispatch rejects arbitrary branches and only accepts current main',as
   assert.equal((await resolveInput(api,{source:value.head,pr:0,workflow:value.workflow})).tested,value.head);
   await assert.rejects(resolveInput(api,{source:value.base,pr:0,workflow:value.workflow}));
 });
+test('PR snapshot base may lag main; resolve verifies merge parents against the authoritative Git ref',async()=>{
+  const current='f'.repeat(40);
+  const api=async route=>{
+    if(route.endsWith('pulls/267'))return pull();
+    if(route.endsWith('git/ref/heads/main'))return {object:{sha:current}};
+    if(route.endsWith(`git/commits/${value.tested}`))return {sha:value.tested,parents:[{sha:current},{sha:value.head}]};
+    assert.fail('Unexpected route');
+  };
+  const resolved=await resolveInput(api,{source:value.head,pr:267,workflow:value.workflow});
+  assert.equal(resolved.base,current);
+});
+test('completion checks also ignore the stale PR base snapshot and read the live Git ref',async()=>{
+  const current='f'.repeat(40);
+  const api=async route=>route.endsWith('/pulls/267')?pull():{object:{sha:current}};
+  assert.deepEqual(await liveBinding(api,value),{head:value.head,base:current});
+});
 test('automatic discovery defaults off and an enabled poll dispatches only exact unverified inputs',async()=>{
   assert.deepEqual(await poll(()=>assert.fail('Disabled polling must not read private data'),value.workflow),{dispatched:0,disabled:true});
   const sent=[];
@@ -79,7 +95,40 @@ test('automatic discovery defaults off and an enabled poll dispatches only exact
 });
 test('controller errors never echo authenticated response content',async()=>{
   const api=github('SYNTHETIC_TOKEN',async(_url,options)=>{assert.match(options.headers.Authorization,/SYNTHETIC_TOKEN/);return {ok:false,status:403,text:async()=> 'PRIVATE_RESPONSE'};});
-  await assert.rejects(api('repos/lwtlab/lwt-core/pulls/267'),error=>!String(error).includes('PRIVATE_RESPONSE')&&!String(error).includes('SYNTHETIC_TOKEN'));
+  await assert.rejects(api('repos/lwtlab/lwt-core/pulls/267'),error=>error.code==='HTTP_403'&&!String(error).includes('PRIVATE_RESPONSE')&&!String(error).includes('SYNTHETIC_TOKEN'));
+});
+test('only safe GitHub reads retry transient failures; writes and authorization failures do not retry',async()=>{
+  let reads=0;const pauses=[];
+  const api=github('TOKEN',async()=>++reads<3?{ok:false,status:503}:{ok:true,status:200,json:async()=>({ready:true})},{pause:async ms=>pauses.push(ms)});
+  assert.deepEqual(await api('repos/lwtlab/reader'),{ready:true});assert.equal(reads,3);assert.deepEqual(pauses,[1000,2000]);
+  let writes=0;const write=github('TOKEN',async()=>{writes++;return {ok:false,status:503};},{pause:async()=>assert.fail('Writes cannot retry')});
+  await assert.rejects(write('repos/lwtlab/reader/actions/workflows/test/dispatches','POST',{ref:'main'}));assert.equal(writes,1);
+  let denied=0;const auth=github('TOKEN',async()=>{denied++;return {ok:false,status:403};},{pause:async()=>assert.fail('Authorization cannot retry')});
+  await assert.rejects(auth('repos/lwtlab/reader'));assert.equal(denied,1);
+});
+test('truncated GitHub JSON reads retry without exposing response bytes',async()=>{
+  let calls=0;
+  const api=github('TOKEN',async()=>({ok:true,status:200,json:async()=>{if(++calls===1)throw new SyntaxError('SYNTHETIC_PRIVATE_BODY');return {ready:true};}}),{pause:async()=>{}});
+  assert.deepEqual(await api('repos/lwtlab/reader'),{ready:true});assert.equal(calls,2);
+  let invalid=0;const broken=github('TOKEN',async()=>({ok:true,status:200,json:async()=>{invalid++;throw new SyntaxError('SYNTHETIC_PRIVATE_BODY');}}),{pause:async()=>{}});
+  await assert.rejects(broken('repos/lwtlab/reader'),error=>error.code==='API_RESPONSE_INVALID'&&!String(error).includes('SYNTHETIC_PRIVATE_BODY'));assert.equal(invalid,3);
+});
+test('merge metadata readiness retries are bounded and never substitute a changed PR head',async()=>{
+  let pulls=0;const pauses=[];
+  const api=async route=>{
+    if(route.endsWith('/pulls/267')){const p=pull();if(++pulls<3)p.merge_commit_sha=null;return p;}
+    if(route.endsWith('git/ref/heads/main'))return {object:{sha:value.base}};
+    if(route.includes('/git/commits/'))return {sha:value.tested,parents:[{sha:value.base},{sha:value.head}]};
+    assert.fail('Unexpected route');
+  };
+  assert.deepEqual(await resolveInput(api,{source:value.head,pr:267,workflow:value.workflow},{pause:async ms=>pauses.push(ms)}),value);
+  assert.equal(pulls,3);assert.deepEqual(pauses,[1000,2000]);
+  let unavailable=0;
+  await assert.rejects(resolveInput(async route=>{if(route.endsWith('/pulls/267')){unavailable++;return {...pull(),merge_commit_sha:null};}return {object:{sha:value.base}};},{source:value.head,pr:267,workflow:value.workflow},{pause:async()=>{}}),error=>error.code==='MERGE_NOT_READY');
+  assert.equal(unavailable,3);
+  let rejected=0;
+  await assert.rejects(resolveInput(async route=>{if(route.endsWith('/pulls/267')){rejected++;return {...pull(),head:{sha:'f'.repeat(40),repo:{full_name:SOURCE_REPOSITORY}}};}return {object:{sha:value.base}};},{source:value.head,pr:267,workflow:value.workflow},{pause:async()=>assert.fail('Changed source cannot retry')}));
+  assert.equal(rejected,1);
 });
 test('artifact digest, run binding, exact ZIP name and redirect authentication are enforced',async()=>{
   const temp=mkdtempSync(path.join(tmpdir(),'reader-receipt-test-'));
@@ -102,6 +151,7 @@ test('missing evidence reports error and a newer pending run cannot be overwritt
   const api=async(route,method,body)=>{
     if(method==='POST'){posts.push(body);return {};}
     if(route.endsWith('/pulls/267'))return pull();
+    if(route.endsWith('/git/ref/heads/main'))return {object:{sha:value.base}};
     if(route.includes('/statuses?')){statusReads++;return [{context:'reader-public/full',target_url:statusReads>1?'newer':url,description:`full pending ${fingerprint(value)}`}];}
     if(route.endsWith('/actions/runs/123'))return stateInput().run;
     if(route.includes('/actions/workflows/'))return {id:456};
