@@ -1,0 +1,7 @@
+{
+  "schemaVersion": 1,
+  "workflowRef": "reader-public-full-verification",
+  "trustedAssociations": ["OWNER", "MEMBER", "COLLABORATOR"],
+  "defaultBranch": "main",
+  "retentionDays": 7
+}
