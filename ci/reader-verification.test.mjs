@@ -97,6 +97,39 @@ test('controller errors never echo authenticated response content',async()=>{
   const api=github('SYNTHETIC_TOKEN',async(_url,options)=>{assert.match(options.headers.Authorization,/SYNTHETIC_TOKEN/);return {ok:false,status:403,text:async()=> 'PRIVATE_RESPONSE'};});
   await assert.rejects(api('repos/lwtlab/lwt-core/pulls/267'),error=>error.code==='HTTP_403'&&!String(error).includes('PRIVATE_RESPONSE')&&!String(error).includes('SYNTHETIC_TOKEN'));
 });
+test('only safe GitHub reads retry transient failures; writes and authorization failures do not retry',async()=>{
+  let reads=0;const pauses=[];
+  const api=github('TOKEN',async()=>++reads<3?{ok:false,status:503}:{ok:true,status:200,json:async()=>({ready:true})},{pause:async ms=>pauses.push(ms)});
+  assert.deepEqual(await api('repos/lwtlab/reader'),{ready:true});assert.equal(reads,3);assert.deepEqual(pauses,[1000,2000]);
+  let writes=0;const write=github('TOKEN',async()=>{writes++;return {ok:false,status:503};},{pause:async()=>assert.fail('Writes cannot retry')});
+  await assert.rejects(write('repos/lwtlab/reader/actions/workflows/test/dispatches','POST',{ref:'main'}));assert.equal(writes,1);
+  let denied=0;const auth=github('TOKEN',async()=>{denied++;return {ok:false,status:403};},{pause:async()=>assert.fail('Authorization cannot retry')});
+  await assert.rejects(auth('repos/lwtlab/reader'));assert.equal(denied,1);
+});
+test('truncated GitHub JSON reads retry without exposing response bytes',async()=>{
+  let calls=0;
+  const api=github('TOKEN',async()=>({ok:true,status:200,json:async()=>{if(++calls===1)throw new SyntaxError('SYNTHETIC_PRIVATE_BODY');return {ready:true};}}),{pause:async()=>{}});
+  assert.deepEqual(await api('repos/lwtlab/reader'),{ready:true});assert.equal(calls,2);
+  let invalid=0;const broken=github('TOKEN',async()=>({ok:true,status:200,json:async()=>{invalid++;throw new SyntaxError('SYNTHETIC_PRIVATE_BODY');}}),{pause:async()=>{}});
+  await assert.rejects(broken('repos/lwtlab/reader'),error=>error.code==='API_RESPONSE_INVALID'&&!String(error).includes('SYNTHETIC_PRIVATE_BODY'));assert.equal(invalid,3);
+});
+test('merge metadata readiness retries are bounded and never substitute a changed PR head',async()=>{
+  let pulls=0;const pauses=[];
+  const api=async route=>{
+    if(route.endsWith('/pulls/267')){const p=pull();if(++pulls<3)p.merge_commit_sha=null;return p;}
+    if(route.endsWith('git/ref/heads/main'))return {object:{sha:value.base}};
+    if(route.includes('/git/commits/'))return {sha:value.tested,parents:[{sha:value.base},{sha:value.head}]};
+    assert.fail('Unexpected route');
+  };
+  assert.deepEqual(await resolveInput(api,{source:value.head,pr:267,workflow:value.workflow},{pause:async ms=>pauses.push(ms)}),value);
+  assert.equal(pulls,3);assert.deepEqual(pauses,[1000,2000]);
+  let unavailable=0;
+  await assert.rejects(resolveInput(async route=>{if(route.endsWith('/pulls/267')){unavailable++;return {...pull(),merge_commit_sha:null};}return {object:{sha:value.base}};},{source:value.head,pr:267,workflow:value.workflow},{pause:async()=>{}}),error=>error.code==='MERGE_NOT_READY');
+  assert.equal(unavailable,3);
+  let rejected=0;
+  await assert.rejects(resolveInput(async route=>{if(route.endsWith('/pulls/267')){rejected++;return {...pull(),head:{sha:'f'.repeat(40),repo:{full_name:SOURCE_REPOSITORY}}};}return {object:{sha:value.base}};},{source:value.head,pr:267,workflow:value.workflow},{pause:async()=>assert.fail('Changed source cannot retry')}));
+  assert.equal(rejected,1);
+});
 test('artifact digest, run binding, exact ZIP name and redirect authentication are enforced',async()=>{
   const temp=mkdtempSync(path.join(tmpdir(),'reader-receipt-test-'));
   try {

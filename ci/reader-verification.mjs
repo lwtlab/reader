@@ -19,12 +19,12 @@ export function resolvePullRequest(pr, source, workflow, policy, currentBase) {
   assert.equal(pr.base.repo.full_name,SOURCE_REPOSITORY); assert.equal(pr.base.ref,'main');
   assert(policy.trustedAssociations.includes(pr.author_association));
   assert.equal(sha(source),pr.head.sha);
-  assert.notEqual(pr.mergeable,false); assert(pr.merge_commit_sha,'Merge commit is not ready');
+  assert.notEqual(pr.mergeable,false);
+  if(!pr.merge_commit_sha)throw Object.assign(new Error('Generated merge metadata is not ready'),{code:'MERGE_NOT_READY'});
   return binding({head:pr.head.sha,base:sha(currentBase),tested:pr.merge_commit_sha,pr:positive(pr.number),workflow});
 }
 export function verifyMergeParents(commit, value) {
-  assert.equal(commit.sha,value.tested);
-  assert.deepEqual(commit.parents.map(p=>p.sha),[value.base,value.head]);
+  if(commit.sha!==value.tested || !Array.isArray(commit.parents) || JSON.stringify(commit.parents.map(p=>p.sha))!==JSON.stringify([value.base,value.head]))throw Object.assign(new Error('Generated merge parents do not match current source refs'),{code:'MERGE_NOT_READY'});
 }
 export function resultFromSummary(summary, value, execution, bytes) {
   const exactTasks = summary?.tasks?.length === TASKS.length && new Set(summary.tasks.map(t=>t.id)).size === TASKS.length && TASKS.every(id=>summary.tasks.some(t=>t.id===id));

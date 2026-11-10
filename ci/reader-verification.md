@@ -12,6 +12,11 @@ main advances even though the generated merge commit already has the new parent;
 that snapshot is not authoritative. Merge parent equality remains mandatory.
 Dispatch must include the exact public workflow commit. No branch name is
 accepted as source, and no untrusted public PR event runs this workflow.
+Transient GET failures and incomplete JSON responses use at most three attempts.
+Generated merge metadata may also be re-read three times with bounded backoff;
+the selected head never changes. Writes and authorization failures are not
+automatically retried. Public errors expose only bounded categories, never API
+response content, credentials or assertion values.
 
 `resolve`, scheduled `poll`, and `report` use the personal credential
 `READER_VERIFICATION_TOKEN` in the separate `reader-verification` environment,
