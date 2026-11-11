@@ -52,6 +52,11 @@ jobs:
           node-version: 24.22.0
       - name: Test public signing and provenance contracts
         run: node --test ci/macos-signing.test.mjs ci/verify-portable-baseline.test.mjs ci/log-crypto.test.mjs ci/private-step.test.mjs
+
+      - uses: ./.github/actions/privacy-tools
+
+      - name: Test release privacy guard
+        run: node --test scripts/privacy-publication.test.mjs
       - name: Verify approved unsigned binary provenance
         env:
           GITHUB_TOKEN: ${{ github.token }}
@@ -155,7 +160,10 @@ jobs:
           READER_INSTALLER_TEST_DISPOSABLE: '1'
           READER_TEST_NO_SANDBOX: '1'
         run: node ci/private-step.mjs offline source/apps/reader node scripts/smoke-desktop-offline.mjs release/core/${{ matrix.id }}
-      - name: Upload verified signed candidates only
+      - name: Audit final signed files before upload
+        run: node ci/private-step.mjs privacy source node ../ci/privacy-candidates.mjs apps/reader/release/core/${{ matrix.id }}
+
+      - name: Upload privacy-checked signed candidates only
         uses: actions/upload-artifact@v4
         with:
           name: reader-${{ matrix.id }}-signed-candidate

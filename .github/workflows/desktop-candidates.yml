@@ -77,6 +77,11 @@ jobs:
       - name: Test public CI infrastructure
         run: node --test ci/log-crypto.test.mjs ci/private-step.test.mjs ci/verify-portable-baseline.test.mjs ci/run-xvfb.test.mjs ci/audit-package.test.mjs
 
+      - uses: ./.github/actions/privacy-tools
+
+      - name: Test release privacy guard
+        run: node --test scripts/privacy-publication.test.mjs
+
       - name: Verify approved upgrade baseline
         if: inputs.verify_upgrade
         env:
@@ -372,7 +377,10 @@ jobs:
             node ci/private-step.mjs offline source/apps/reader node scripts/smoke-desktop-offline.mjs release/core/${{ matrix.platform }}-${{ matrix.arch }}
           fi
 
-      - name: Upload verified candidate artifacts only
+      - name: Audit final candidate files before upload
+        run: node ci/private-step.mjs privacy source node ../ci/privacy-candidates.mjs apps/reader/release/core/${{ matrix.platform }}-${{ matrix.arch }}
+
+      - name: Upload privacy-checked candidate artifacts only
         uses: actions/upload-artifact@v4
         with:
           name: reader-${{ matrix.platform }}-${{ matrix.arch }}-candidate
