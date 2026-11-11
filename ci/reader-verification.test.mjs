@@ -166,9 +166,18 @@ test('missing evidence reports error and a newer pending run cannot be overwritt
 test('hosted verification keeps personal credentials out of test jobs and uploads only named safe artifacts',()=>{
   const yaml=readFileSync(new URL('../.github/workflows/reader-private-verify.yml',import.meta.url),'utf8');
   const full=yaml.slice(yaml.indexOf('  full:'),yaml.indexOf('  report:'));
-  assert.doesNotMatch(full,/READER_VERIFICATION_TOKEN|INTERNAL_RELEASE_PUBLISH_TOKEN|SIGNING|actions\/cache|pull_request_target/);
+  assert.doesNotMatch(full,/READER_VERIFICATION_TOKEN|INTERNAL_RELEASE_PUBLISH_TOKEN|SIGNING|pull_request_target/);
   assert.match(full,/persist-credentials: false/);assert.match(full,/node ci\/private-step.mjs full-verification source node scripts\/verify.mjs --profile full/);
-  for(const upload of full.split('uses: actions/upload-artifact@').slice(1))assert.match(upload,/path: verification-output\/(verification.json|diagnostics.enc.json)/);
+  for(const upload of full.split('uses: actions/upload-artifact@').slice(1))assert.match(upload,/path: verification-output\/(verification.json|diagnostics.enc.json|progress.json)/);
+  const caches = full.match(/uses: actions\/cache@/g) ?? [];
+  assert.equal(caches.length, 1);
+  const start = full.indexOf('      - uses: actions/cache@');
+  const block = full.slice(start, full.indexOf('      - name:', start));
+  assert.match(block, /path: \$\{\{ runner.temp \}\}\/reader-mobile-public-cache\/_cacache/);
+  assert.match(block, /key: reader-mobile-public-/);
+  assert.doesNotMatch(block, /pnpm|node_modules|_logs|restore-keys/);
+  assert(full.indexOf('node ci/reader-download-cache.mjs') < start);
+  assert.match(full, /npm_config_cache: \$\{\{ runner.temp \}\}\/reader-mobile-public-cache/);
   assert.doesNotMatch(yaml,/pull_request_target|workflow_run:/);
 });
 test('manual discovery uses the default-branch controller and cannot enter source execution',()=>{

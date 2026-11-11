@@ -75,3 +75,67 @@ Required checks must explicitly select the new `reader-public/full` context rath
 than impersonating the old `test`/`verify` Actions checks. Keep managed local
 pre-push governance. A full PASS covers the task graph, not physical-device,
 signed-package or native installation acceptance.
+
+
+Informational task progress is read only from the source verifier's bounded
+`progress.jsonl`, restricted to this public repository's fixed 33 task IDs,
+statuses and durations. The wrapper emits at most a RUNNING and terminal event
+per task while retaining private stdout/stderr in the encrypted diagnostic log.
+The separate `progress.json` binds head/base/tested/workflow/run/attempt and
+records runner preparation separately from the graph wrapper. It is never a
+verification receipt; missing, malformed or incomplete progress cannot produce
+a required-check success. The final 33-task receipt/reporting contract is unchanged.
+
+Only Mobile public registry download content may be cached. Before restoring a
+cache, the public workflow independently validates every locked dependency's
+public HTTPS origin and SHA-512 integrity. The cache lives in a dedicated runner
+temporary directory and includes only `_cacache`, excluding npm logs. Reader's
+pnpm store is deliberately excluded because it includes private local `file:`
+packages. Frozen installation and all assertions still run after a cache hit.
+The checked-in source selection policy remains disabled, and task execution
+remains serial pending separate review and public qualification.
+
+## Native CPU gate
+
+The same registered workflow now also runs the original private `reader-llama`
+CPU gate in an independent Ubuntu job. The default `scope: full` preserves all
+33 Reader tasks and runs CPU work in parallel on a separate runner. Its separate
+`reader-public/llama-cpu` status requires all nine original stages: exact-gitlink
+CPU compilation, parity controls, aligner-overlay controls, speech-release
+controls, GGUF tooling, ASR conversion, model-distribution controls, forced-aligner
+conversion and CLI help. This is compilation and source/format conformance; it
+is not inference with actual model weights, hardware acceptance or an application
+release.
+
+For focused repairs, dispatch the existing `reader-private-verify.yml` with the
+same immutable source/PR/workflow inputs plus `scope: llama-cpu`. This mode never
+creates or updates `reader-public/full`. The selected scope is bound into the
+CPU receipt and status fingerprint. The default remains `full` for the existing
+scheduled discoverer, so its old three-input dispatch remains compatible.
+
+The CPU worker has the existing read-only source key, never the personal status
+credential. It initializes only the approved public llama.cpp gitlink over HTTPS;
+it does not recursively initialize private submodules. GGUF tooling uses an
+isolated Python environment. Build output, command logs and the generated
+binary/library/build-identity bundle are captured only in an encrypted artifact,
+with seven-day retention. No private compiler-object cache or plaintext native
+bundle is published. The public CPU receipt has only fixed task IDs, bounded
+statuses/durations, exact source/workflow/run/attempt/scope bindings and opaque
+build/diagnostic digests. Library links must resolve inside the generated bin
+directory; source and credentials are not archived.
+
+The independent CPU reporter verifies the actual job conclusion as well as the
+receipt digest/schema and current source identity. Failed setup, compilation,
+controls, encryption or artifact upload cannot produce a successful status.
+The original full receipt still requires exactly 33 fresh PASS tasks; CPU evidence
+cannot substitute for it, and a full receipt cannot substitute for CPU evidence.
+
+Retire the private automatic `reader-llama` workflow only after a focused public
+CPU run is qualified. Then independently qualify the final private source with
+both full 33 and CPU 9 before restoring automatic discovery. Historical private
+billing failures remain failed/not-started under their own identities. Do not use
+`workflow_call` from a private caller: its billing would still follow that caller.
+If branch protection is available, required-check rollout must explicitly use
+both new contexts after qualification rather than impersonating `build-cpu`.
+A commit status alone does not enable enforcement; private repository plan or
+administrative restrictions must be recorded separately.
