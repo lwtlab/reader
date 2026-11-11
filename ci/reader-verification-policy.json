@@ -1,6 +1,7 @@
 {
   "schemaVersion": 1,
   "workflowRef": "reader-public-full-verification",
+  "shadowWorkflowRef": "ci/shadow-plan-20261111",
   "trustedAssociations": ["OWNER", "MEMBER", "COLLABORATOR"],
   "defaultBranch": "main",
   "retentionDays": 7
