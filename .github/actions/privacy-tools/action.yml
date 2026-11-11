@@ -9,11 +9,13 @@ runs:
         cache: false
     - shell: bash
       run: |
-        go install github.com/zricethezav/gitleaks/v8@v8.30.1
+        go install -ldflags "-X=github.com/zricethezav/gitleaks/v8/version.Version=8.30.1" github.com/zricethezav/gitleaks/v8@v8.30.1
         echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
         npm install --prefix "$RUNNER_TEMP/privacy-tools" --ignore-scripts --no-audit --no-fund @electron/asar@3.4.1
         echo "READER_PRIVACY_TOOLS=$RUNNER_TEMP/privacy-tools" >> "$GITHUB_ENV"
         echo "PRIVACY_TEST_TOOLS=$RUNNER_TEMP/privacy-tools" >> "$GITHUB_ENV"
+    - shell: bash
+      run: test "$(gitleaks version)" = '8.30.1'
     - if: runner.os == 'macOS'
       shell: bash
       run: HOMEBREW_NO_AUTO_UPDATE=1 brew install sevenzip squashfs
