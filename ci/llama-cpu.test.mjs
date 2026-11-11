@@ -11,6 +11,7 @@ import {executeTasks,checkedBuild,snapshot} from './llama-cpu-run.mjs';
 import {pendingCpu,reportCpu} from './llama-cpu-control.mjs';
 import {readReceipt} from './reader-verification-control.mjs';
 import {decryptLog} from './log-crypto.mjs';
+import {CATALOG_POLICY,cpuCoverage} from './cpu-catalog.mjs';
 
 const value=binding({head:'a'.repeat(40),base:'b'.repeat(40),tested:'c'.repeat(40),pr:274,workflow:'d'.repeat(40)});
 const options={run:123,attempt:1,mode:'llama-cpu',execution:'success',build:{upstreamRevision:'e'.repeat(40),manifestSha256:'f'.repeat(64),runtimeSha256:'0'.repeat(64),bundleSha256:'1'.repeat(64),fileCount:1},diagnostics:'2'.repeat(64),bytes:Buffer.from('synthetic private summary')};
@@ -94,7 +95,7 @@ test('renamed, duplicate or unapproved upstream mappings fail before initializat
 });
 test('actual seal/receipt commands encrypt generated bundle and never upload a checkout or plaintext',()=>{
  const f=fixture();try{
- const publicDir=path.join(f.dir,'ci');mkdirSync(publicDir);for(const file of ['llama-cpu-run.mjs','llama-cpu-verification.mjs','reader-verification.mjs','log-crypto.mjs'])copyFileSync(new URL(file,import.meta.url),path.join(publicDir,file));
+ const publicDir=path.join(f.dir,'ci');mkdirSync(publicDir);for(const file of ['llama-cpu-run.mjs','llama-cpu-verification.mjs','reader-verification.mjs','log-crypto.mjs','cpu-catalog.mjs'])copyFileSync(new URL(file,import.meta.url),path.join(publicDir,file));
  const keys=generateKeyPairSync('rsa',{modulusLength:2048,publicKeyEncoding:{type:'spki',format:'pem'},privateKeyEncoding:{type:'pkcs8',format:'pem'}});writeFileSync(path.join(publicDir,'build-logs-public.pem'),keys.publicKey);
  const output=path.join(f.dir,'llama-cpu-output');mkdirSync(output);const snap=snapshot(f.source),v={...value,tested:snap.head};const s={...summary(),binding:v,sourceBefore:snap,sourceAfter:snap};writeFileSync(path.join(output,'private-summary.json'),JSON.stringify(s));writeFileSync(path.join(f.dir,'reader-private-build.log'),'SYNTHETIC_PRIVATE_LOG');
  const env={...process.env,VERIFICATION_BINDING:JSON.stringify(v),GITHUB_RUN_ID:'123',GITHUB_RUN_ATTEMPT:'1',VERIFICATION_SCOPE:'llama-cpu',RUNNER_TEMP:f.dir,VERIFICATION_OUTCOME:'success'};
@@ -115,8 +116,28 @@ test('CPU artifact prefix uses the real bounded ZIP reader and cannot borrow a f
   await assert.rejects(readReceipt(async()=>assert.fail(),value,123,1,'TOKEN',transport,{prefix:'other'}));
  }finally{rmSync(dir,{recursive:true,force:true})}
 });
+test('catalog-mode identity/seal/receipt/final gate verifies original bytes and rejects tampering',{skip:process.platform!=='linux'},()=>{
+ const f=fixture();try{
+  const tasks=structuredClone(CPU_TASKS).map((task,index)=>({...task,cwd:'.',dependencies:index?[CPU_TASKS[index-1].id]:[],profile:'full',products:['reader','hear'],platforms:['linux'],evidence:task.id==='cpu-build'?'native-compilation':task.id==='gguf-tooling'?'prerequisite':'source-check'}));
+  const plan={policy:CATALOG_POLICY,scope:'llama-cpu',profile:'full',selectionApplied:false,executionPlatforms:['linux'],tasks};plan.contractSha256=digest(JSON.stringify(plan));
+  mkdirSync(path.join(f.source,'scripts'));writeFileSync(path.join(f.source,'scripts/verification-execution.mjs'),`console.log(${JSON.stringify(JSON.stringify(plan))})\n`);
+  execFileSync('git',['add','scripts/verification-execution.mjs'],{cwd:f.source});execFileSync('git',['-c','core.hooksPath=/dev/null','commit','-qm','generated readonly planner','--no-gpg-sign'],{cwd:f.source});
+  const publicDir=path.join(f.dir,'ci');mkdirSync(publicDir);for(const file of ['llama-cpu-run.mjs','llama-cpu-verification.mjs','reader-verification.mjs','log-crypto.mjs','cpu-catalog.mjs'])copyFileSync(new URL(file,import.meta.url),path.join(publicDir,file));
+  const keys=generateKeyPairSync('rsa',{modulusLength:2048,publicKeyEncoding:{type:'spki',format:'pem'},privateKeyEncoding:{type:'pkcs8',format:'pem'}});writeFileSync(path.join(publicDir,'build-logs-public.pem'),keys.publicKey);
+  const before=snapshot(f.source),v={...value,tested:before.head},env={...process.env,CPU_CATALOG:'true',VERIFICATION_BINDING:JSON.stringify(v),GITHUB_RUN_ID:'123',GITHUB_RUN_ATTEMPT:'1',VERIFICATION_SCOPE:'llama-cpu',RUNNER_TEMP:f.dir,VERIFICATION_OUTCOME:'success'};
+  const call=operation=>spawnSync(process.execPath,[path.join(publicDir,'llama-cpu-run.mjs'),operation],{cwd:f.dir,env,encoding:'utf8'});
+  assert.equal(call('identity').status,0);const output=path.join(f.dir,'llama-cpu-output'),stateFile=path.join(output,'private-summary.json');
+  const s=JSON.parse(readFileSync(stateFile));s.tasks.forEach(task=>Object.assign(task,{status:'PASS',exitCode:0,durationMs:5}));s.sourceAfter=snapshot(f.source);s.catalogExecution=cpuCoverage(s.catalogPlan,s.tasks);writeFileSync(stateFile,JSON.stringify(s));
+  assert.equal(call('seal').status,0);const originalState=readFileSync(stateFile);s.executionRunId='22222222-2222-4222-8222-222222222222';writeFileSync(stateFile,JSON.stringify(s));assert.equal(call('receipt').status,0);assert.equal(JSON.parse(readFileSync(path.join(output,'catalog.json'))).status,'FAIL');writeFileSync(stateFile,originalState);
+  assert.equal(call('receipt').status,0);assert.equal(call('require-catalog').status,0);
+  const catalogFile=path.join(output,'catalog.json'),original=readFileSync(catalogFile),receipt=JSON.parse(original);assert.equal(receipt.status,'PASS');assert.equal(receipt.acceptance.modelInference,'NOT_RUN');
+  receipt.tasks[0].status='NOT_RUN';writeFileSync(catalogFile,JSON.stringify(receipt));assert.equal(call('require-catalog').status,1);writeFileSync(catalogFile,original);
+  const decrypted=decryptLog(JSON.parse(readFileSync(path.join(output,'diagnostics.enc.json'))),keys.privateKey);writeFileSync(path.join(f.dir,'catalog.tar.gz'),decrypted);assert(execFileSync('tar',['-tzf',path.join(f.dir,'catalog.tar.gz')],{encoding:'utf8'}).includes('private-summary.json'));
+  writeFileSync(path.join(f.bin,'reader-qwen3-asr'),'tampered after receipt');assert.equal(call('require-catalog').status,1);
+ }finally{f.cleanup();}
+});
 test('workflow isolates CPU credentials/results, keeps the full graph and makes focused scope explicit',()=>{
  const yaml=readFileSync(new URL('../.github/workflows/reader-private-verify.yml',import.meta.url),'utf8');const cpu=yaml.split('\n  llama-cpu:')[1].split('\n  report-llama-cpu:')[0];
  assert(!cpu.includes('READER_VERIFICATION_TOKEN'));assert(cpu.includes('persist-credentials: false'));assert(cpu.includes('retention-days: 7'));assert(cpu.includes('if-no-files-found: error'));assert(!/path:.*(?:\.llama-build|source\/)/.test(cpu));
- assert(yaml.includes("full:\n    if: inputs.scope != 'llama-cpu'"));assert(yaml.includes('Run the unchanged complete task graph'));assert(yaml.includes('reader-full-result-'));assert(yaml.includes('reader-llama-cpu-result-'));assert(yaml.includes('options: [full, llama-cpu, shadow-plan]'));
+ assert(yaml.includes("full:\n    if: inputs.scope != 'llama-cpu'"));assert(yaml.includes('Run the unchanged complete task graph'));assert(yaml.includes('reader-full-result-'));assert(yaml.includes('reader-llama-cpu-result-'));assert(yaml.includes('options: [full, llama-cpu, shadow-plan, catalog-cpu]'));
 });
