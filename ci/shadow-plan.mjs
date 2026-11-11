@@ -16,8 +16,8 @@ export const CONTROL_CLASSES = ['reader-only','hear-only','shared-core','unknown
 export const PINS = {
   "catalogSha256": "cfd40bda86e372e52405ac108cdd24942e590caa01b74ffd265bc0a76e25d094",
   "implementation": {
-    "scripts/verification-catalog.mjs": "98b19c611bc5e7cea65d4d18692c8ffa0e496f1bc12bac1c73e1b62cc423f028",
-    "scripts/verification-catalog.test.mjs": "88438cb7ea68a7b6ecaa23c531e3a7297c721dbd813f43f67714ab3257e787c1",
+    "scripts/verification-catalog.mjs": "eea00a9d9187f58d83e372c189b031a38e1b2a86b78274759f165ffdacfa1fa1",
+    "scripts/verification-catalog.test.mjs": "f872e695a10bde70bf554fc856b151ea8b23c8637591f47cc3b4888d39726f59",
     "scripts/verify-tasks.mjs": "cc313515d0d43ee84584a8b665c9361934b842bfc195d2c9fae3f135f6f5079d",
     "scripts/verify-runtime.mjs": "b3327f03b71247d8f56314b878544a2f2009a7ef621b1af967988f3166f8d528"
   }
