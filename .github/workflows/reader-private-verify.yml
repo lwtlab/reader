@@ -16,11 +16,11 @@ on:
         required: true
         type: string
       scope:
-        description: Complete Reader graph plus CPU, or focused CPU only
+        description: Complete graph plus CPU, focused CPU, or optional shadow plan only
         required: false
         default: full
         type: choice
-        options: [full, llama-cpu]
+        options: [full, llama-cpu, shadow-plan]
   schedule:
     - cron: '17,47 * * * *'
 permissions:
@@ -78,7 +78,7 @@ jobs:
           VERIFICATION_SCOPE: ${{ inputs.scope || 'full' }}
         run: node ci/reader-verification-control.mjs resolve
   full:
-    if: inputs.scope != 'llama-cpu'
+    if: inputs.scope != 'llama-cpu' && inputs.scope != 'shadow-plan'
     needs: resolve
     name: Full private Reader verification
     runs-on: ubuntu-24.04
@@ -183,7 +183,7 @@ jobs:
         run: node ci/reader-verification-run.mjs require
   report:
     needs: [resolve, full]
-    if: always() && needs.resolve.result == 'success' && inputs.scope != 'llama-cpu'
+    if: always() && needs.resolve.result == 'success' && inputs.scope != 'llama-cpu' && inputs.scope != 'shadow-plan'
     name: Report verified private commit status
     runs-on: ubuntu-24.04
     environment: reader-verification
@@ -203,6 +203,7 @@ jobs:
         run: node ci/reader-verification-control.mjs report
 
   llama-cpu:
+    if: inputs.scope != 'shadow-plan'
     needs: resolve
     name: Private Reader llama CPU verification
     runs-on: ubuntu-24.04
@@ -263,7 +264,7 @@ jobs:
         run: node ci/llama-cpu-run.mjs require
   report-llama-cpu:
     needs: [resolve, llama-cpu]
-    if: always() && needs.resolve.result == 'success'
+    if: always() && needs.resolve.result == 'success' && inputs.scope != 'shadow-plan'
     name: Report independently verified private CPU status
     runs-on: ubuntu-24.04
     environment: reader-verification
@@ -282,3 +283,65 @@ jobs:
           VERIFICATION_SCOPE: ${{ inputs.scope || 'full' }}
           VERIFICATION_JOB_RESULT: ${{ needs.llama-cpu.result }}
         run: node ci/llama-cpu-control.mjs
+
+  shadow-plan:
+    if: inputs.scope == 'shadow-plan'
+    needs: resolve
+    name: Qualify shadow product plan without running product gates
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    env:
+      VERIFICATION_BINDING: ${{ needs.resolve.outputs.binding }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24.22.0
+      - name: Read exact tested private source
+        uses: actions/checkout@v4
+        with:
+          repository: lwtlab/lwt-core
+          ref: ${{ needs.resolve.outputs.tested }}
+          path: source
+          fetch-depth: 0
+          ssh-key: ${{ secrets.PRIVATE_SOURCE_SSH_KEY }}
+          persist-credentials: false
+          submodules: false
+      - name: Validate reviewed planner and explicit immutable identity
+        run: node ci/shadow-plan.mjs identity
+      - id: controls
+        name: Qualify four generated Git change classes and edge cases
+        run: node ci/private-step.mjs shadow-plan-controls source node --test scripts/verification-catalog.test.mjs
+      - id: plan
+        name: Compute actual trusted PR shadow plan using the same planner
+        run: node ci/private-step.mjs shadow-plan source node scripts/verification-catalog.mjs --ci
+      - name: Collect bounded plan and authenticate encrypted diagnostics
+        if: always()
+        env:
+          SHADOW_CONTROLS_OUTCOME: ${{ steps.controls.outcome }}
+          SHADOW_PLAN_OUTCOME: ${{ steps.plan.outcome }}
+        run: node ci/shadow-plan.mjs collect
+      - name: Upload bounded shadow plan receipt
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: reader-shadow-plan-result-${{ github.run_id }}-${{ github.run_attempt }}
+          path: shadow-plan-output/verification.json
+          if-no-files-found: error
+          retention-days: 7
+      - name: Upload authenticated encrypted plan and control logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: reader-shadow-plan-encrypted-${{ github.run_id }}-${{ github.run_attempt }}
+          path: shadow-plan-output/*.enc.json
+          if-no-files-found: ignore
+          retention-days: 7
+      - name: Require valid complete shadow qualification
+        if: always()
+        env:
+          SHADOW_CONTROLS_OUTCOME: ${{ steps.controls.outcome }}
+          SHADOW_PLAN_OUTCOME: ${{ steps.plan.outcome }}
+        run: node ci/shadow-plan.mjs require
