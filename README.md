@@ -18,11 +18,15 @@ only in the existing encrypted log. The release publisher scans its staged asset
 before any draft upload and checks that audited asset hashes match the manifest.
 
 The local scanner is `node scripts/release-privacy.mjs <candidate> --project-dir <ASAR-tools-directory>`.
+Desktop callers also pass `--profile desktop`; web-server deliveries use the default generic profile.
 It needs Gitleaks 8.30.1, Python 3 and `@electron/asar`; container formats also need 7-Zip, squashfs tools,
 or macOS `hdiutil`. CI installs these through `.github/actions/privacy-tools`.
 For local publishing, set `READER_PRIVACY_TOOLS` to the directory containing the ASAR dependency.
 Failures and incomplete scans block publishing. Pattern scanning does not establish consent for images,
-audio or document content: review those separately. The scanner and config are exported from the parent through
+audio or document content: review those separately. Reviewed public-data matches are restricted by exact
+digests and rule/location. The Hermes v98 boundary reader also requires an exact reviewed match;
+string boundaries alone never exempt arbitrary credentials. Inactive desktop Next metadata is classified
+only when action/page manifests meet the restricted schema. The scanner, policy and synthetic boundary tests are exported from the parent through
 `scripts/sync-release-privacy.mjs`; its `--check` prevents rule drift without exporting application code.
 
 ## Desktop candidate builds

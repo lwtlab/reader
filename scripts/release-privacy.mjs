@@ -6,9 +6,15 @@ import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
+import { parseArgs } from "node:util";
+import { isHermesCrossStringMatch } from "./release/hermes-strings.mjs";
 
 const repository = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const config = path.join(repository, "scripts/release/privacy-gitleaks.toml");
+const publicDataFile = path.join(repository, "scripts/release/privacy-public-data.json");
+const hermesPolicyFile = path.join(repository, "scripts/release/hermes-strings.mjs");
+const publicData = JSON.parse(readFileSync(publicDataFile, "utf8"));
+const isRecord = value => value !== null && typeof value === "object" && !Array.isArray(value);
 export const scannerVersion = "8.30.1";
 const archiveExtensions = /\.(zip|apk|aab|ipa|asar|dmg|deb|appimage|7z|tgz|gz|bz2|xz|tar)$/i;
 const installerExtension = /\.exe$/i;
@@ -67,7 +73,14 @@ async function inspectBytes(file) {
   for await (const chunk of createReadStream(file)) {
     digest.update(chunk); bytes += chunk.length;
     const text = tail + chunk.toString("latin1");
-    for (const [name, pattern] of contentRules) if (pattern.test(text)) rules.add(name);
+    for (const [name, pattern] of contentRules) {
+      if (name !== "developer-home") { if (pattern.test(text)) rules.add(name); continue; }
+      const pathText = text.replaceAll("\\\\", "\\");
+      for (const match of pathText.matchAll(new RegExp(pattern.source, "g"))) {
+        const prefix = pathText.slice(Math.max(0, match.index - 2048), match.index);
+        if (!/https?:\/\/[^\s"'`\x00?#]*$/i.test(prefix)) rules.add(name);
+      }
+    }
     const normalized = text.replaceAll("\\n", "\n").replaceAll("\\r", "\r");
     for (const marker of normalized.matchAll(/-----BEGIN ([ A-Z0-9_-]{0,100}PRIVATE KEY(?: BLOCK)?)-----/g)) {
       if (!/^(?:RSA |EC |OPENSSH |DSA |ENCRYPTED )?PRIVATE KEY$/.test(marker[1])) { unknownMarker = true; continue; }
@@ -199,7 +212,8 @@ subprocess.run(['unsquashfs','-no-progress','-no-xattrs','-d',sys.argv[2],'-o',s
 }
 
 /** Local-only audit. A PASS describes this input hash, not permission to publish. */
-export async function scanReleasePrivacy(input, { projectDir = path.join(repository, "apps/reader"), gitleaks = "gitleaks", sevenZip = process.platform === "win32" ? "7z" : "7zz", plainFile = false } = {}) {
+export async function scanReleasePrivacy(input, { projectDir = path.join(repository, "apps/reader"), gitleaks = "gitleaks", sevenZip = process.platform === "win32" ? "7z" : "7zz", plainFile = false, profile = "generic" } = {}) {
+  if (!["generic", "desktop"].includes(profile)) throw new Error("Unknown privacy audit profile");
   input = path.resolve(input);
   const initial = lstatSync(input);
   if (initial.isSymbolicLink()) throw new Error("Audit input must not be a symlink");
@@ -234,7 +248,11 @@ export async function scanReleasePrivacy(input, { projectDir = path.join(reposit
       files.push({ file, label, sha256: bytes.sha256, bytes: bytes.bytes, markerOnly: bytes.markerOnly });
       const why = pathRule(label);
       if (why) add(why, label);
-      for (const rule of bytes.rules) add(rule, label);
+      for (const rule of bytes.rules) {
+        const reviewed = rule === "developer-home" && publicData.files.find(p => p.rule === rule && bytes.sha256 === p.sha256 && (label === p.suffix || label.endsWith("/" + p.suffix)));
+        if (reviewed) notices.push({ rule: "reviewed-public-data", reviewId: reviewed.id, file: label });
+        else add(rule, label);
+      }
       if (unsupportedArchives.test(file)) throw new Error("Nested unsupported archive; unpack it before auditing");
       if (!archiveExtensions.test(file) && !(file === input && installerExtension.test(file))) return;
       const dest = path.join(temp, `expanded-${scanRoots.length}`);
@@ -282,15 +300,54 @@ export async function scanReleasePrivacy(input, { projectDir = path.join(reposit
     // Explicit trusted config and empty ignore file prevent a payload from disabling detection.
     for (const { dir, prefix } of scanRoots) {
       const report = path.join(temp, "gitleaks.json");
+      // Raw tool results remain in the same 0700 workspace as extracted payloads.
+      // They are never forwarded, returned or retained after this invocation.
       rmSync(report, { force: true });
+      writeFileSync(report, "", { mode: 0o600 });
       const r = command(gitleaks, ["dir", dir, "--config", config, "--gitleaks-ignore-path", ignore,
-        "--ignore-gitleaks-allow", "--redact=100", "--no-banner", "--max-target-megabytes", "0",
+        "--ignore-gitleaks-allow", "--redact=0", "--no-banner", "--max-target-megabytes", "0",
         "--report-format", "json", "--report-path", report]);
       if (![0, 1].includes(r.status)) throw new Error("Secret scan did not complete");
       const results = JSON.parse(readFileSync(report, "utf8"));
       if (!Array.isArray(results) || (r.status === 1 && !results.length)) throw new Error("Invalid secret scan result");
       for (const row of results) {
         const rel = lstatSync(dir).isFile() ? path.basename(dir) : path.isAbsolute(row.File) ? path.relative(dir, row.File) : row.File;
+        const label = prefix ? `${prefix}/${rel}` : rel;
+        if (row.RuleID === "generic-api-key") {
+          const secretHash = createHash("sha256").update(row.Secret).digest("hex");
+          const reviewed = publicData.matches.find(p => p.rule === row.RuleID && p.sha256 === secretHash && (!p.label || row.Match.includes(p.label)) && (!p.suffix || label.endsWith("/" + p.suffix) || label === p.suffix));
+          // Boundaries alone cannot exclude a credential followed by another
+          // packed string. Require an exact reviewed public-data match as well.
+          if (reviewed?.format === "hermes-v98-cross-string" && /(?:^|\/)index\.android\.bundle$/.test(label)) {
+            const file = path.isAbsolute(row.File) ? row.File : path.resolve(dir, row.File);
+            if (lstatSync(file).size <= 256 * 1024 ** 2 && isHermesCrossStringMatch(readFileSync(file), row.Secret)) {
+              notices.push({ rule: "hermes-cross-string-match", reviewId: reviewed.id, file: label }); continue;
+            }
+          }
+          if (/(?:^|\/)files\.json$/.test(label) && /^chunk-[A-Z0-9]{8}\.js$/.test(row.Secret)) {
+            const file = path.isAbsolute(row.File) ? row.File : path.resolve(dir, row.File);
+            const index = JSON.parse(readFileSync(file, "utf8"));
+            if (Array.isArray(index) && index.includes(row.Secret) && index.every(p => typeof p === "string" && /^[a-zA-Z0-9_.-]+$/.test(p) && /\.(?:js|css|html|json|txt|svg|png|ico|woff2?|ttf|wasm|webmanifest)$/.test(p))) {
+              notices.push({ rule: "generated-bundle-chunk-filename", file: label }); continue;
+            }
+          }
+          if (reviewed && !reviewed.format) { notices.push({ rule: "reviewed-public-data", reviewId: reviewed.id, file: label }); continue; }
+          if (profile === "desktop") {
+            const file = path.isAbsolute(row.File) ? row.File : path.resolve(dir, row.File);
+            if (label.endsWith(".next/server/server-reference-manifest.json")) {
+              const data = JSON.parse(readFileSync(file, "utf8"));
+              if (isRecord(data.node) && isRecord(data.edge) && !Object.keys(data.node).length && !Object.keys(data.edge).length && data.encryptionKey === row.Secret && /^[A-Za-z0-9+/]{43}=$/.test(row.Secret)) {
+                notices.push({ rule: "unused-next-desktop-action-key", file: label }); continue;
+              }
+            }
+            if (label.endsWith(".next/prerender-manifest.json")) {
+              const data = JSON.parse(readFileSync(file, "utf8"));
+              if (isRecord(data.routes) && isRecord(data.dynamicRoutes) && !Object.keys(data.dynamicRoutes).length && Object.keys(data.routes).every(r => ["/_not-found", "/_global-error", "/apple-icon.png", "/favicon.ico", "/icon.png", "/manifest.webmanifest"].includes(r)) && /^[a-f0-9]{64}$/.test(row.Secret) && [data.preview?.previewModeSigningKey, data.preview?.previewModeEncryptionKey].includes(row.Secret)) {
+                notices.push({ rule: "unused-next-desktop-preview-key", file: label }); continue;
+              }
+            }
+          }
+        }
         if (row.RuleID === "private-key") {
           let match;
           try {
@@ -312,7 +369,7 @@ export async function scanReleasePrivacy(input, { projectDir = path.join(reposit
     const artifactSha256 = initial.isFile() ? files[0].sha256 : createHash("sha256").update(JSON.stringify({ entries: JSON.parse(before), files: manifest })).digest("hex");
     return { kind: "release-privacy-audit", schemaVersion: 1, status: findings.length ? "FAIL" : "PASS",
       artifactSha256, hashKind: initial.isFile() ? "file-sha256" : "sorted-tree-sha256-v2",
-      scanner: { gitleaks: scannerVersion, policySha256: createHash("sha256").update(readFileSync(fileURLToPath(import.meta.url))).update(readFileSync(config)).digest("hex") }, filesScanned: files.length,
+      profile, scanner: { gitleaks: scannerVersion, policySha256: createHash("sha256").update(readFileSync(fileURLToPath(import.meta.url))).update(readFileSync(config)).update(readFileSync(publicDataFile)).update(readFileSync(hermesPolicyFile)).digest("hex") }, filesScanned: files.length,
       findings: [...new Map(findings.map((f) => [JSON.stringify(f), f])).values()],
       notices,
       limitations: ["Pattern scanning cannot establish consent or detect all personal content; review screenshots, audio and sample assets separately."] };
@@ -332,9 +389,9 @@ export async function requireReleasePrivacy(input, options) {
 
 if (process.argv[1] && import.meta.url === pathToFileURL(path.resolve(process.argv[1])).href) {
   try {
-    const [input, flag, projectDir, ...extra] = process.argv.slice(2);
-    if (!input || extra.length || (flag && (flag !== "--project-dir" || !projectDir))) throw new Error("Invalid audit arguments");
-    const result = await scanReleasePrivacy(input, projectDir ? { projectDir: path.resolve(projectDir) } : {});
+    const { positionals, values } = parseArgs({ allowPositionals: true, options: { "project-dir": { type: "string" }, profile: { type: "string", default: "generic" } } });
+    if (positionals.length !== 1) throw new Error("Invalid audit arguments");
+    const result = await scanReleasePrivacy(positionals[0], { ...(values["project-dir"] ? { projectDir: path.resolve(values["project-dir"]) } : {}), profile: values.profile });
     console.log(JSON.stringify(result, null, 2));
     process.exitCode = result.status === "PASS" ? 0 : 1;
   } catch {

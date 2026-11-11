@@ -1,12 +1,26 @@
 import assert from 'node:assert/strict';
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
-import { generateKeyPairSync } from 'node:crypto';
+import { generateKeyPairSync, randomBytes } from 'node:crypto';
 import { execFileSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
 import { auditPublication } from './privacy-publication.mjs';
 import { scanReleasePrivacy } from './release-privacy.mjs';
+import { syntheticHermes } from './release/hermes-strings.test.mjs';
+
+test('public Hermes scanner retains unreviewed cross-string values and whole credentials', async () => {
+  const directory = mkdtempSync(path.join(tmpdir(), 'public-privacy-hermes-'));
+  try {
+    const file = path.join(directory, 'index.android.bundle'), value = 'ABCDefgh1234ijkl5678mnop9012qrst';
+    writeFileSync(file, syntheticHermes(["apiKey='", value.slice(0, 17), value.slice(17), "';"]));
+    const clean = await scanReleasePrivacy(directory);
+    assert.equal(clean.status, 'FAIL');
+    assert(!clean.notices.some(n => n.rule === 'hermes-cross-string-match'));
+    writeFileSync(file, syntheticHermes(["apiKey='", value, "';"]));
+    assert.equal((await scanReleasePrivacy(directory)).status, 'FAIL');
+  } finally { rmSync(directory, { recursive: true, force: true }); }
+});
 
 test('publication requires passing checks of the exact staged bytes and scans notes too', async () => {
   const manifest = { assets: [{ name: 'candidate.zip', sha256: 'a'.repeat(64) }] };
@@ -34,6 +48,22 @@ test('compiler route names and PEM parsing literals pass; actual private key mat
     const { privateKey } = generateKeyPairSync('ed25519');
     writeFileSync(file, JSON.stringify({ privateKey: privateKey.export({ format: 'pem', type: 'pkcs8' }) }));
     assert.equal((await scanReleasePrivacy(directory)).status, 'FAIL');
+  } finally { rmSync(directory, { recursive: true, force: true }); }
+});
+
+test('desktop-only inactive Next action metadata never exempts account keys or active actions', async () => {
+  const directory = mkdtempSync(path.join(tmpdir(), 'public-privacy-next-'));
+  try {
+    const file = path.join(directory, '.next/server/server-reference-manifest.json');
+    mkdirSync(path.dirname(file), { recursive: true });
+    const metadata = { node: {}, edge: {}, encryptionKey: randomBytes(32).toString('base64') };
+    writeFileSync(file, JSON.stringify(metadata));
+    assert.equal((await scanReleasePrivacy(directory)).status, 'FAIL');
+    assert.equal((await scanReleasePrivacy(directory, { profile: 'desktop' })).status, 'PASS');
+    writeFileSync(file, JSON.stringify({ ...metadata, node: { action: {} } }));
+    assert.equal((await scanReleasePrivacy(directory, { profile: 'desktop' })).status, 'FAIL');
+    writeFileSync(file, JSON.stringify({ ...metadata, accountApiKey: ['ghp_', 'abcdefghijklmnopqrstuvwxyz0123456789'].join('') }));
+    assert.equal((await scanReleasePrivacy(directory, { profile: 'desktop' })).status, 'FAIL');
   } finally { rmSync(directory, { recursive: true, force: true }); }
 });
 
