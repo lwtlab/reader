@@ -15,13 +15,19 @@ on:
         description: Exact executing public workflow commit SHA
         required: true
         type: string
+      scope:
+        description: Complete Reader graph plus CPU, or focused CPU only
+        required: false
+        default: full
+        type: choice
+        options: [full, llama-cpu]
   schedule:
     - cron: '17,47 * * * *'
 permissions:
   contents: read
   actions: read
 concurrency:
-  group: reader-private-full-${{ github.event_name }}-${{ inputs.pr_number || 'poll' }}
+  group: reader-private-full-${{ github.event_name }}-${{ inputs.pr_number || 'poll' }}-${{ inputs.scope || 'full' }}
   cancel-in-progress: false
 jobs:
   poll:
@@ -69,8 +75,10 @@ jobs:
           SOURCE_REF: ${{ inputs.source_ref }}
           PR_NUMBER: ${{ inputs.pr_number }}
           WORKFLOW_SHA: ${{ inputs.workflow_sha }}
+          VERIFICATION_SCOPE: ${{ inputs.scope || 'full' }}
         run: node ci/reader-verification-control.mjs resolve
   full:
+    if: inputs.scope != 'llama-cpu'
     needs: resolve
     name: Full private Reader verification
     runs-on: ubuntu-24.04
@@ -175,7 +183,7 @@ jobs:
         run: node ci/reader-verification-run.mjs require
   report:
     needs: [resolve, full]
-    if: always() && needs.resolve.result == 'success'
+    if: always() && needs.resolve.result == 'success' && inputs.scope != 'llama-cpu'
     name: Report verified private commit status
     runs-on: ubuntu-24.04
     environment: reader-verification
@@ -193,3 +201,84 @@ jobs:
           VERIFICATION_BINDING: ${{ needs.resolve.outputs.binding }}
           VERIFICATION_JOB_RESULT: ${{ needs.full.result }}
         run: node ci/reader-verification-control.mjs report
+
+  llama-cpu:
+    needs: resolve
+    name: Private Reader llama CPU verification
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    env:
+      VERIFICATION_BINDING: ${{ needs.resolve.outputs.binding }}
+      VERIFICATION_SCOPE: ${{ inputs.scope || 'full' }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24.22.0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Read exact private source without persisted credentials
+        uses: actions/checkout@v4
+        with:
+          repository: lwtlab/lwt-core
+          ref: ${{ needs.resolve.outputs.tested }}
+          path: source
+          ssh-key: ${{ secrets.PRIVATE_SOURCE_SSH_KEY }}
+          persist-credentials: false
+          submodules: false
+      - name: Validate fresh CPU source identity
+        run: node ci/llama-cpu-run.mjs identity
+      - id: cpu
+        name: Compile pinned CPU runtime and run all nine controls
+        run: node ci/llama-cpu-run.mjs verify
+      - name: Encrypt private CPU logs and generated build bundle
+        if: always()
+        run: node ci/llama-cpu-run.mjs seal
+      - name: Produce bounded CPU receipt
+        if: always()
+        env:
+          VERIFICATION_OUTCOME: ${{ steps.cpu.outcome }}
+        run: node ci/llama-cpu-run.mjs receipt
+      - name: Upload bounded CPU result
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: reader-llama-cpu-result-${{ github.run_id }}-${{ github.run_attempt }}
+          path: llama-cpu-output/verification.json
+          if-no-files-found: error
+          retention-days: 7
+      - name: Upload encrypted CPU diagnostics only
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: reader-llama-cpu-encrypted-${{ github.run_id }}-${{ github.run_attempt }}
+          path: llama-cpu-output/diagnostics.enc.json
+          if-no-files-found: error
+          retention-days: 7
+      - name: Require complete CPU success
+        if: always()
+        run: node ci/llama-cpu-run.mjs require
+  report-llama-cpu:
+    needs: [resolve, llama-cpu]
+    if: always() && needs.resolve.result == 'success'
+    name: Report independently verified private CPU status
+    runs-on: ubuntu-24.04
+    environment: reader-verification
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24.22.0
+      - name: Verify CPU receipt, run, attempt and current source before reporting
+        env:
+          GH_TOKEN: ${{ secrets.READER_VERIFICATION_TOKEN }}
+          VERIFICATION_BINDING: ${{ needs.resolve.outputs.binding }}
+          VERIFICATION_SCOPE: ${{ inputs.scope || 'full' }}
+          VERIFICATION_JOB_RESULT: ${{ needs.llama-cpu.result }}
+        run: node ci/llama-cpu-control.mjs

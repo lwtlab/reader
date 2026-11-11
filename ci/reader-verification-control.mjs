@@ -71,9 +71,10 @@ export async function liveBinding(api,value) {
   const ref=await api(endpoint('git/ref/heads/main'));
   return {head:ref.object.sha,base:ref.object.sha};
 }
-export async function readReceipt(api,value,run,attempt,token,transport=fetch) {
+export async function readReceipt(api,value,run,attempt,token,transport=fetch,{prefix='reader-full-result'}={}) {
+  assert(['reader-full-result','reader-llama-cpu-result'].includes(prefix));
   const pages=await api(publicEndpoint(`actions/runs/${positive(run)}/artifacts?per_page=100`));
-  const rows=pages.artifacts.filter(a=>a.name===`reader-full-result-${run}-${attempt}`&&!a.expired);
+  const rows=pages.artifacts.filter(a=>a.name===`${prefix}-${run}-${attempt}`&&!a.expired);
   assert.equal(rows.length,1,'One exact current-attempt result is required');
   const artifact=rows[0]; assert.equal(artifact.workflow_run.id,run);assert.equal(artifact.workflow_run.head_sha,value.workflow);
   assert.match(artifact.digest,/^sha256:[a-f0-9]{64}$/); assert(artifact.size_in_bytes>0&&artifact.size_in_bytes<=262144);
@@ -158,7 +159,10 @@ async function main() {
     assert.equal(process.env.WORKFLOW_SHA,process.env.GITHUB_SHA,'Executing workflow must match the requested immutable pin');
     const value=await resolveInput(api,{source:process.env.SOURCE_REF,pr:Number(process.env.PR_NUMBER||0),workflow:process.env.GITHUB_SHA});
     appendFileSync(process.env.GITHUB_OUTPUT,`binding=${JSON.stringify(value)}\ntested=${value.tested}\n`);
-    await postStatus(api,value,'pending',`full pending ${fingerprint(value)}`,runUrl(process.env.GITHUB_RUN_ID,process.env.GITHUB_RUN_ATTEMPT));
+    const mode=process.env.VERIFICATION_SCOPE||'full';assert(['full','llama-cpu'].includes(mode));
+    if(mode==='full')await postStatus(api,value,'pending',`full pending ${fingerprint(value)}`,runUrl(process.env.GITHUB_RUN_ID,process.env.GITHUB_RUN_ATTEMPT));
+    const {pendingCpu}=await import('./llama-cpu-control.mjs');
+    await pendingCpu(api,value,{run:process.env.GITHUB_RUN_ID,attempt:process.env.GITHUB_RUN_ATTEMPT,mode});
     console.log('Trusted immutable verification input accepted');return;
   }
   assert.equal(command,'report');
