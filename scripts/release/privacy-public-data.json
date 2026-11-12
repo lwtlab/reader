@@ -1,0 +1,49 @@
+{
+  "schemaVersion": 1,
+  "reviewedOn": "2026-11-11",
+  "files": [
+    {
+      "id": "bindings-1.5.0-documentation-paths",
+      "suffix": "node_modules/bindings/bindings.js",
+      "sha256": "8e32a0d37f20bd6f7d5bdbf99d041aa27be47cbbe5172ac13ebf7380a10b3bf6",
+      "rule": "developer-home",
+      "source": "https://registry.npmjs.org/bindings/-/bindings-1.5.0.tgz",
+      "reason": "Unmodified public package examples in getRoot documentation; other rules still apply."
+    },
+    {
+      "id": "next-16.2.6-error-inspect-example-path",
+      "suffix": "node_modules/next/dist/server/patch-error-inspect.js",
+      "sha256": "a7c3d3531f3aa2c9a21bb0f70da15be84bb7a0129953f0809e5f468769b58cd0",
+      "rule": "developer-home",
+      "source": "https://registry.npmjs.org/next/-/next-16.2.6.tgz",
+      "reason": "Unmodified public source-map example, not the application's build directory."
+    }
+  ],
+  "matches": [
+    {
+      "id": "hermes98-packed-filename-fragment",
+      "sha256": "1b196d45c898e8f507c6f166c249b0e2cd2e9aee586b1e42b524abd2a4546385",
+      "rule": "generic-api-key",
+      "suffix": "index.android.bundle",
+      "format": "hermes-v98-cross-string",
+      "source": "https://github.com/facebook/hermes/blob/hermes-v250829098.0.17/include/hermes/BCGen/HBC/BytecodeFileFormat.h",
+      "reason": "Reviewed packed-string fragment spans a list label, a JavaScript filename and error text; confirmed with hermesc 250829098.0.17 read-only disassembly. Requires HBC v98 checksum and string-boundary verification; a complete literal or any other value still blocks."
+    },
+    {
+      "id": "edge-tts-shared-protocol-identifier",
+      "sha256": "558d7c6a7f7db444895946fe23a54ad172fd6d159f46cb34dd4db21bb27c07d7",
+      "rule": "generic-api-key",
+      "label": "TRUSTED_CLIENT_TOKEN",
+      "source": "https://github.com/rany2/edge-tts/blob/bd44c1d1aaebdc1db7f47456ee12431b42ec7cac/src/edge_tts/constants.py",
+      "reason": "Exact public shared Edge read-aloud client identifier; not a user or account credential."
+    },
+    {
+      "id": "transformers-3.8.1-minified-assignment-fragment",
+      "sha256": "4dd8f006b84f77a686412a162d8725bf27d6ad91b1f9769f99fd2231a24314db",
+      "rule": "generic-api-key",
+      "suffix": "kokoro-worker.js",
+      "source": "https://registry.npmjs.org/@huggingface/transformers/-/transformers-3.8.1.tgz",
+      "reason": "Exact fragment spans a minified AssignmentExpression in public Transformers code, not a string credential."
+    }
+  ]
+}

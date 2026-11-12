@@ -20,7 +20,9 @@ jobs:
           node-version: 24.22.0
           cache: npm
           cache-dependency-path: site/package-lock.json
+      - uses: ./.github/actions/privacy-tools
       - name: Public infrastructure and publishing contracts
+        # No private checkout or signing credentials: tests use synthetic artifacts only.
         run: node --test ci/*.test.mjs scripts/*.test.mjs
       - name: Install website dependencies only
         run: npm --prefix site ci

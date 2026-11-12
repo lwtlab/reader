@@ -1,0 +1,6 @@
+title = "Release artifact secret detection"
+
+[extend]
+useDefault = true
+
+# No repository-controlled ignores or release baselines: each payload is checked in full.
