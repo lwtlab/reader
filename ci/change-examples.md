@@ -105,3 +105,45 @@ executed 49 tasks with 48 PASS/one FAIL; independent receipt recomputation confi
 final aggregate rejects every partial acceptance. Their failed diagnostics are retained.
 Original PASS results never qualify the new cohort. No original branch, environment policy,
 operator pin, task contract, default status reporter or required check is rewritten.
+
+## Independently checked second cohort (2026-11-12)
+
+The exact tested public workflow is `df673187ee33020429376faaecda92ce793219c1`, with private base
+`ec325430d64713cbe7d80800a7938ceadbdd279b`. These are separately bound runs; the
+documentation branch recording them does not become their workflow/source identity. Original
+cohort failures above remain unchanged.
+
+| Class | Run / attempt | Private head | Actual tested merge | Complete qualification |
+| --- | --- | --- | --- | --- |
+| reader-only | [43200433975 / 1](https://github.com/lwtlab/reader/actions/runs/43200433975/attempts/1) | `6da6a2b7ebb1e4ddebce9286c844eb8c4bd45837` | `218b2a44b8d8662d6f9c910416ac27a54e79a34d` | 49/49 PASS |
+| hear-only | [43200462150 / 1](https://github.com/lwtlab/reader/actions/runs/43200462150/attempts/1) | `e8e877ce3b20ccc9db7efda24ebab7336c6fcbce` | `a800b2a6b8f62f685e59294a3629a9ded5724607` | 49/49 PASS |
+| shared-core | [43200491148 / 1](https://github.com/lwtlab/reader/actions/runs/43200491148/attempts/1) | `1756c3d8612b6344a1206d005b5eea999b3ec765` | `e2c8f4688eb804bf71266f7afc6df32f227b1a56` | 49/49 PASS |
+| unknown | [43200518105 / 1](https://github.com/lwtlab/reader/actions/runs/43200518105/attempts/1) | `86fdcad318a8a1558e67c0f956596e7f66952d00` | `ca259ce7e6405c3c6fba406ff5bd5a0e6bc269f5` | 49/49 PASS |
+
+All four runs each independently pass original Reader33, CPU9 and Hear7, all49
+actual tasks, plus the actual Git change plan. Each preserves seven authenticated diagnostic
+objects, checked artifact ZIP digests, original native/build identities, independently
+recomputed receipts, complete coverage and run/attempt freshness. Component-only success
+cannot supply final acceptance; all four original full graphs and final aggregates were checked.
+
+| Class | Reader preparation | Reader graph | Workflow wall |
+| --- | ---: | ---: | ---: |
+| reader-only | 3.33 min | 49.31 min | 53.53 min |
+| hear-only | 2.68 min | 44.33 min | 47.85 min |
+| shared-core | 2.99 min | 48.48 min | 52.30 min |
+| unknown | 3.90 min | 60.14 min | 64.88 min |
+
+These measurements separate preparation from graph and wall time; they do not establish a
+portable speedup against a different source or runner. The graph requirements were retained.
+No new native/result preparation cache or shared writable task state was introduced.
+
+Selection is still OFF: selected plans44/30/49/49 execute all49 in each case. Local mandatory14
+and default full33/reporters remain unchanged. These optional receipts do not satisfy the
+default required-check contexts. Private required-check enforcement remains unavailable under
+the current repository plan; no enforcement or rollout is claimed. Actual selection enablement
+requires separate review.
+
+This cohort does not include the separate readonly-model or long-chunk native fixes, and
+qualifies no real model inference, signing, notarization, installed-package UI, system audio or
+physical hardware. No PR was merged, installer replaced, application Release created or site
+deployed. Expired artifact bytes require a fresh separately bound run.
