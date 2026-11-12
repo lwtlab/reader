@@ -1,5 +1,5 @@
 name: Private Reader verification on public runners
-run-name: Reader full verification
+run-name: ${{ inputs.scope == 'change-example' && 'Reader/Hear real change qualification' || 'Reader full verification' }}
 on:
   workflow_dispatch:
     inputs:
@@ -20,7 +20,13 @@ on:
         required: false
         default: full
         type: choice
-        options: [full, llama-cpu, shadow-plan, catalog-cpu]
+        options: [full, llama-cpu, shadow-plan, catalog-cpu, change-example]
+      example:
+        description: Reviewed real source-change example (optional scope only)
+        required: false
+        default: unknown
+        type: choice
+        options: [reader-only, hear-only, shared-core, unknown]
   schedule:
     - cron: '17,47 * * * *'
 permissions:
@@ -53,7 +59,7 @@ jobs:
           VERIFICATION_WORKFLOW_SHA: ${{ vars.READER_VERIFICATION_WORKFLOW_SHA }}
         run: node ci/reader-verification-control.mjs poll
   resolve:
-    if: github.event_name == 'workflow_dispatch'
+    if: github.event_name == 'workflow_dispatch' && inputs.scope != 'change-example'
     name: Resolve and mark exact private input
     runs-on: ubuntu-24.04
     environment: reader-verification
@@ -78,7 +84,7 @@ jobs:
           VERIFICATION_SCOPE: ${{ inputs.scope || 'full' }}
         run: node ci/reader-verification-control.mjs resolve
   full:
-    if: inputs.scope != 'llama-cpu' && inputs.scope != 'shadow-plan' && inputs.scope != 'catalog-cpu'
+    if: inputs.scope != 'llama-cpu' && inputs.scope != 'shadow-plan' && inputs.scope != 'catalog-cpu' && inputs.scope != 'change-example'
     needs: resolve
     name: Full private Reader verification
     runs-on: ubuntu-24.04
@@ -183,7 +189,7 @@ jobs:
         run: node ci/reader-verification-run.mjs require
   report:
     needs: [resolve, full]
-    if: always() && needs.resolve.result == 'success' && inputs.scope != 'llama-cpu' && inputs.scope != 'shadow-plan' && inputs.scope != 'catalog-cpu'
+    if: always() && needs.resolve.result == 'success' && inputs.scope != 'llama-cpu' && inputs.scope != 'shadow-plan' && inputs.scope != 'catalog-cpu' && inputs.scope != 'change-example'
     name: Report verified private commit status
     runs-on: ubuntu-24.04
     environment: reader-verification
@@ -203,7 +209,7 @@ jobs:
         run: node ci/reader-verification-control.mjs report
 
   llama-cpu:
-    if: inputs.scope != 'shadow-plan' && inputs.scope != 'catalog-cpu'
+    if: inputs.scope != 'shadow-plan' && inputs.scope != 'catalog-cpu' && inputs.scope != 'change-example'
     needs: resolve
     name: Private Reader llama CPU verification
     runs-on: ubuntu-24.04
@@ -264,7 +270,7 @@ jobs:
         run: node ci/llama-cpu-run.mjs require
   report-llama-cpu:
     needs: [resolve, llama-cpu]
-    if: always() && needs.resolve.result == 'success' && inputs.scope != 'shadow-plan' && inputs.scope != 'catalog-cpu'
+    if: always() && needs.resolve.result == 'success' && inputs.scope != 'shadow-plan' && inputs.scope != 'catalog-cpu' && inputs.scope != 'change-example'
     name: Report independently verified private CPU status
     runs-on: ubuntu-24.04
     environment: reader-verification
@@ -411,3 +417,434 @@ jobs:
         env:
           VERIFICATION_OUTCOME: ${{ steps.cpu.outcome }}
         run: node ci/llama-cpu-run.mjs require-catalog
+
+  resolve-example:
+    if: github.event_name == 'workflow_dispatch' && inputs.scope == 'change-example'
+    name: Resolve independently reviewed real source change
+    runs-on: ubuntu-24.04
+    environment: reader-verification
+    timeout-minutes: 10
+    outputs:
+      binding: ${{ steps.resolve.outputs.binding }}
+      tested: ${{ steps.resolve.outputs.tested }}
+      head: ${{ steps.resolve.outputs.head }}
+      base: ${{ steps.resolve.outputs.base }}
+      pr: ${{ steps.resolve.outputs.pr }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24.22.0
+      - id: resolve
+        name: Validate pinned example, trusted nested PR and actual merge parents
+        env:
+          GH_TOKEN: ${{ secrets.READER_VERIFICATION_TOKEN }}
+          CHANGE_EXAMPLE: ${{ inputs.example }}
+          WORKFLOW_SHA: ${{ inputs.workflow_sha }}
+          SOURCE_REF: ${{ inputs.source_ref }}
+          PR_NUMBER: ${{ inputs.pr_number }}
+        run: node ci/change-examples.mjs resolve
+
+  example-plan:
+    if: inputs.scope == 'change-example'
+    needs: resolve-example
+    name: Real change source selection qualification
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    env:
+      CHANGE_EXAMPLE: ${{ inputs.example }}
+      VERIFICATION_BINDING: ${{ needs.resolve-example.outputs.binding }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24.22.0
+      - name: Read exact tested private source
+        uses: actions/checkout@v4
+        with:
+          repository: lwtlab/lwt-core
+          ref: ${{ needs.resolve-example.outputs.tested }}
+          path: source
+          fetch-depth: 0
+          ssh-key: ${{ secrets.PRIVATE_SOURCE_SSH_KEY }}
+          persist-credentials: false
+          submodules: false
+      - name: Validate reviewed planner and explicit immutable identity
+        run: node ci/change-examples.mjs plan-identity
+      - id: controls
+        name: Qualify four generated Git change classes and edge cases
+        run: node ci/private-step.mjs shadow-plan-controls source node --test scripts/verification-catalog.test.mjs
+      - id: plan
+        name: Compute actual trusted PR shadow plan using the same planner
+        run: node ci/private-step.mjs shadow-plan source node scripts/verification-catalog.mjs --ci
+      - name: Collect bounded plan and authenticate encrypted diagnostics
+        if: always()
+        env:
+          SHADOW_CONTROLS_OUTCOME: ${{ steps.controls.outcome }}
+          SHADOW_PLAN_OUTCOME: ${{ steps.plan.outcome }}
+        run: node ci/change-examples.mjs plan-collect
+      - name: Upload bounded shadow plan receipt
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: reader-change-plan-result-${{ github.run_id }}-${{ github.run_attempt }}
+          path: change-plan-output/verification.json
+          if-no-files-found: error
+          retention-days: 7
+      - name: Upload authenticated encrypted plan and control logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: reader-change-plan-encrypted-${{ github.run_id }}-${{ github.run_attempt }}
+          path: change-plan-output/*.enc.json
+          if-no-files-found: ignore
+          retention-days: 7
+      - name: Require valid complete shadow qualification
+        if: always()
+        env:
+          SHADOW_CONTROLS_OUTCOME: ${{ steps.controls.outcome }}
+          SHADOW_PLAN_OUTCOME: ${{ steps.plan.outcome }}
+        run: node ci/change-examples.mjs plan-require
+
+
+  example-full:
+    if: inputs.scope == 'change-example'
+    needs: resolve-example
+    name: Real change complete Reader graph
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    env:
+      CHANGE_EXAMPLE: ${{ inputs.example }}
+      VERIFICATION_BINDING: ${{ needs.resolve-example.outputs.binding }}
+    steps:
+      - name: Mark runner preparation start
+        run: echo "READER_PREPARATION_STARTED_MS=$(date +%s%3N)" >> "$GITHUB_ENV"
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24.22.0
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11.5.2
+          package_json_file: site/package.json
+          run_install: false
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: '1.88.0'
+      - name: Prepare public system tools
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y ffmpeg build-essential pkg-config libssl-dev
+          docker --host unix:///var/run/docker.sock pull postgres:17.7-bookworm
+      - name: Read exact private source without persisted credentials
+        uses: actions/checkout@v4
+        with:
+          repository: lwtlab/lwt-core
+          ref: ${{ needs.resolve-example.outputs.tested }}
+          path: source
+          fetch-depth: 0
+          ssh-key: ${{ secrets.PRIVATE_SOURCE_SSH_KEY }}
+          persist-credentials: false
+          submodules: false
+      - name: Validate clean immutable checkout
+        run: node ci/reader-verification-run.mjs identity
+      - name: Initialize fixed public submodules
+        run: >-
+          node ci/private-step.mjs submodules source git
+          -c submodule.aspeak.url=https://github.com/XUJiahua/aspeak.git
+          -c submodule.srtparse.url=https://github.com/XUJiahua/srtparse.git
+          submodule update --init -- aspeak srtparse
+      - name: Verify public registry download policy
+        run: node ci/reader-download-cache.mjs
+      - uses: actions/cache@v4
+        with:
+          path: ${{ runner.temp }}/reader-mobile-public-cache/_cacache
+          key: reader-mobile-public-${{ runner.os }}-${{ runner.arch }}-node24.22.0-${{ hashFiles('source/apps/reader-mobile/package-lock.json') }}
+      - name: Install frozen private dependencies and managed hooks
+        env:
+          READER_INSTALL_NETWORK: direct
+        run: |
+          node ci/private-step.mjs hooks source bash scripts/install-git-hooks.sh
+          node ci/private-step.mjs dependencies source bash apps/reader/scripts/install.sh --frozen-lockfile
+      - name: Install frozen Mobile registry dependencies
+        env:
+          npm_config_cache: ${{ runner.temp }}/reader-mobile-public-cache
+        run: node ci/private-step.mjs mobile-dependencies source npm --prefix apps/reader-mobile ci --include=dev --legacy-peer-deps
+      - name: Install browser runtimes
+        run: node ci/private-step.mjs browsers source pnpm --dir apps/reader exec playwright install --with-deps chromium firefox webkit chrome
+      - id: full
+        name: Run the unchanged complete task graph
+        run: node ci/private-step.mjs full-verification source node scripts/verify.mjs --profile full
+      - name: Produce bounded result without private output
+        if: always()
+        env:
+          VERIFICATION_OUTCOME: ${{ steps.full.outcome }}
+        run: node ci/reader-verification-run.mjs receipt
+      - name: Collect current-run Reader full execution companion
+        if: always()
+        env:
+          EXAMPLE_FULL_OUTCOME: ${{ steps.full.outcome }}
+        run: node ci/change-examples.mjs full-collect
+      - name: Encrypt complete synthetic diagnostics
+        if: always()
+        run: node ci/reader-verification-run.mjs seal
+      - name: Upload bounded result only
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: reader-change-full-result-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            verification-output/verification.json
+            verification-output/full-execution.json
+          if-no-files-found: error
+          retention-days: 7
+      - name: Upload informational progress only
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: reader-change-full-progress-${{ github.run_id }}-${{ github.run_attempt }}
+          path: verification-output/progress.json
+          if-no-files-found: ignore
+          retention-days: 7
+      - name: Upload encrypted diagnostics only
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: reader-change-full-encrypted-${{ github.run_id }}-${{ github.run_attempt }}
+          path: verification-output/diagnostics.enc.json
+          if-no-files-found: ignore
+          retention-days: 7
+      - name: Require complete success
+        if: always()
+        env:
+          EXAMPLE_FULL_OUTCOME: ${{ steps.full.outcome }}
+        run: |
+          node ci/reader-verification-run.mjs require
+          node ci/change-examples.mjs full-require
+
+  example-cpu:
+    if: inputs.scope == 'change-example'
+    needs: resolve-example
+    name: Real change shared CPU compilation and controls
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    env:
+      CHANGE_EXAMPLE: ${{ inputs.example }}
+      VERIFICATION_BINDING: ${{ needs.resolve-example.outputs.binding }}
+      VERIFICATION_SCOPE: llama-cpu
+      CPU_CATALOG: 'true'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24.22.0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Read exact private source without persisted credentials
+        uses: actions/checkout@v4
+        with:
+          repository: lwtlab/lwt-core
+          ref: ${{ needs.resolve-example.outputs.tested }}
+          path: source
+          ssh-key: ${{ secrets.PRIVATE_SOURCE_SSH_KEY }}
+          persist-credentials: false
+          submodules: false
+      - name: Validate fresh CPU source identity
+        run: node ci/llama-cpu-run.mjs identity
+      - id: cpu
+        name: Compile pinned CPU runtime and run all nine controls
+        run: node ci/llama-cpu-run.mjs verify
+      - name: Encrypt private CPU logs and generated build bundle
+        if: always()
+        run: node ci/llama-cpu-run.mjs seal
+      - name: Produce bounded CPU receipt
+        if: always()
+        env:
+          VERIFICATION_OUTCOME: ${{ steps.cpu.outcome }}
+        run: node ci/llama-cpu-run.mjs receipt
+      - name: Upload bounded CPU result
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: reader-change-cpu-result-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            llama-cpu-output/verification.json
+            llama-cpu-output/catalog.json
+          if-no-files-found: error
+          retention-days: 7
+      - name: Upload encrypted CPU diagnostics only
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: reader-change-cpu-encrypted-${{ github.run_id }}-${{ github.run_attempt }}
+          path: llama-cpu-output/diagnostics.enc.json
+          if-no-files-found: error
+          retention-days: 7
+      - name: Require complete CPU success
+        if: always()
+        env:
+          VERIFICATION_OUTCOME: ${{ steps.cpu.outcome }}
+        run: node ci/llama-cpu-run.mjs require-catalog
+  example-hear:
+    if: inputs.scope == 'change-example'
+    needs: resolve-example
+    name: Real change Hear native and scripted GUI
+    runs-on: macos-26
+    timeout-minutes: 75
+    defaults:
+      run:
+        shell: bash
+    env:
+      HEAD_REF: ${{ needs.resolve-example.outputs.head }}
+      BASE_REF: ${{ needs.resolve-example.outputs.base }}
+      TESTED_REF: ${{ needs.resolve-example.outputs.tested }}
+      DESKTOP_APP_REF: ''
+      DESKTOP_CORE_REF: ''
+      DESKTOP_FUNCTIONAL_RUNTIME: 'false'
+      DESKTOP_REUSE_NATIVE: 'false'
+      DESKTOP_REUSE_RUNTIME: 'false'
+      DESKTOP_WINDOWS_SIGNAL: 'false'
+      PR_NUMBER: ${{ needs.resolve-example.outputs.pr }}
+      SOURCE_REF: ${{ needs.resolve-example.outputs.tested }}
+      APP_REF: ${{ needs.resolve-example.outputs.tested }}
+      CORE_REF: ${{ needs.resolve-example.outputs.tested }}
+      SOURCE_LAYOUT: monorepo
+      HEAR_APP_PATH: core/apps/hear
+      HEAR_CORE_DIR: ${{ github.workspace }}/core
+      ELECTRON_MIRROR: https://github.com/electron/electron/releases/download/
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24.22.0
+      - name: Read independently pinned public Hear adapter
+        uses: actions/checkout@v4
+        with:
+          repository: lwtlab/hear
+          ref: 3cf181b04a953e647ae28e54d0e5d5279f2f250a
+          path: hear-ci
+          persist-credentials: false
+      - name: Load the existing public diagnostic encryption key
+        run: |
+          {
+            echo 'HEAR_LOG_PUBLIC_KEY<<LWT_PUBLIC_KEY'
+            cat ci/build-logs-public.pem
+            echo 'LWT_PUBLIC_KEY'
+          } >> "$GITHUB_ENV"
+      - name: Validate explicit desktop scope and encryption
+        run: node hear-ci/ci/desktop-catalog.mjs --start
+      - uses: actions/checkout@v4
+        with:
+          repository: lwtlab/lwt-core
+          ref: ${{ env.TESTED_REF }}
+          path: core
+          fetch-depth: 2
+          ssh-key: ${{ secrets.PRIVATE_SOURCE_SSH_KEY }}
+          persist-credentials: false
+          submodules: false
+      - name: Verify independent executor pins before private execution
+        run: node hear-ci/ci/desktop-catalog.mjs --verify-input
+      - name: Verify immutable source ownership
+        run: node hear-ci/ci/assert-sources.mjs
+      - uses: pnpm/action-setup@v4
+        with:
+          package_json_file: core/apps/hear/package.json
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Prepare only required core source dependencies
+        run: node hear-ci/ci/private-step.mjs prepare core bash scripts/hear.sh init
+      - name: Link source core
+        run: node hear-ci/ci/private-step.mjs link app node scripts/link-core.mjs
+      - name: Install frozen application dependencies
+        run: node hear-ci/ci/private-step.mjs install app pnpm install --frozen-lockfile
+      - id: desktop_checks
+        name: Execute all seven shared native and scripted GUI tasks
+        run: |
+          node hear-ci/ci/desktop-catalog.mjs --verify-input
+          node hear-ci/ci/private-step.mjs desktop-catalog core bash scripts/hear.sh desktop-check
+      - id: result
+        name: Independently collect source-bound desktop result
+        if: always()
+        env:
+          DESKTOP_EXECUTION_OUTCOME: ${{ steps.desktop_checks.outcome }}
+        run: node hear-ci/ci/desktop-catalog.mjs --collect
+      - uses: actions/upload-artifact@v4
+        if: always() && steps.result.outcome == 'success'
+        with:
+          name: reader-change-hear-result-${{ github.run_id }}-${{ github.run_attempt }}
+          path: desktop-catalog-receipt/verification.json
+          retention-days: 7
+          if-no-files-found: error
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: reader-change-hear-encrypted-${{ github.run_id }}-${{ github.run_attempt }}
+          path: diagnostics/desktop-*.enc.json
+          retention-days: 7
+          if-no-files-found: ignore
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: reader-change-hear-progress-${{ github.run_id }}-${{ github.run_attempt }}
+          path: desktop-catalog-progress/progress.json
+          retention-days: 7
+          if-no-files-found: ignore
+      - name: Require fresh native and scripted GUI success
+        if: always()
+        env:
+          DESKTOP_EXECUTION_OUTCOME: ${{ steps.desktop_checks.outcome }}
+        run: node hear-ci/ci/desktop-catalog.mjs --require-pass
+
+  aggregate-example:
+    needs: [resolve-example, example-plan, example-full, example-cpu, example-hear]
+    if: always() && needs.resolve-example.result == 'success'
+    name: Require source-bound complete real change coverage
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    env:
+      CHANGE_EXAMPLE: ${{ inputs.example }}
+      VERIFICATION_BINDING: ${{ needs.resolve-example.outputs.binding }}
+      CHANGE_OUTCOMES: '{"plan":"${{ needs.example-plan.result }}","full":"${{ needs.example-full.result }}","cpu":"${{ needs.example-cpu.result }}","hear":"${{ needs.example-hear.result }}"}'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24.22.0
+      - uses: actions/download-artifact@v4
+        with:
+          name: reader-change-plan-result-${{ github.run_id }}-${{ github.run_attempt }}
+          path: change-inputs/plan
+      - uses: actions/download-artifact@v4
+        with:
+          name: reader-change-full-result-${{ github.run_id }}-${{ github.run_attempt }}
+          path: change-inputs/full
+      - uses: actions/download-artifact@v4
+        with:
+          name: reader-change-cpu-result-${{ github.run_id }}-${{ github.run_attempt }}
+          path: change-inputs/cpu
+      - uses: actions/download-artifact@v4
+        with:
+          name: reader-change-hear-result-${{ github.run_id }}-${{ github.run_attempt }}
+          path: change-inputs/hear
+      - name: Join only this source, workflow, run and attempt
+        if: always()
+        run: node ci/change-examples.mjs aggregate
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: reader-change-qualification-${{ github.run_id }}-${{ github.run_attempt }}
+          path: change-result/qualification.json
+          retention-days: 7
+          if-no-files-found: error

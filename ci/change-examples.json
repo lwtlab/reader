@@ -1,0 +1,51 @@
+{
+  "schemaVersion": 1,
+  "baseBranch": "unlucky-shark",
+  "base": "fbed656836e0c49aa13c03985d47194d97f3d875",
+  "publicBranch": "ci/change-examples-20261112",
+  "hearAdapter": "3cf181b04a953e647ae28e54d0e5d5279f2f250a",
+  "examples": [
+    {
+      "id": "reader-only",
+      "branch": "qa/change-reader-only-20261112",
+      "head": "196069fa546bc921512498be7e80d45507169820",
+      "changesSha256": "86970803843f74d7ff49d80249c14ef929905d9fc4a82b390f8f0cfa1e125b5d",
+      "pr": 276,
+      "products": [
+        "reader"
+      ]
+    },
+    {
+      "id": "hear-only",
+      "branch": "qa/change-hear-only-20261112",
+      "head": "762ca57f9940d1398c407baa06439bfeb1546073",
+      "changesSha256": "adc9c750e1abde536e37721c60362f458ebdf1d7d45a5a60e6abc6b1afab0f0a",
+      "pr": 277,
+      "products": [
+        "hear"
+      ]
+    },
+    {
+      "id": "shared-core",
+      "branch": "qa/change-shared-core-20261112",
+      "head": "98e710a95c6650809d303c09400ec1126bd6f8d0",
+      "changesSha256": "02901d37d92dce000a462501e8ce920e46ac9e06edc81cd25577d8b61d87882d",
+      "pr": 278,
+      "products": [
+        "reader",
+        "hear"
+      ]
+    },
+    {
+      "id": "unknown",
+      "branch": "qa/change-unknown-20261112",
+      "head": "9e076510dff01aa56024d6bda100e4045ab2e2ab",
+      "changesSha256": "cd6f5e70979f66d0b7080843beb5e9c38d5fd726c774bb4abf17631eb72c216f",
+      "pr": 279,
+      "products": [
+        "reader",
+        "hear"
+      ]
+    }
+  ]
+}
