@@ -15,13 +15,13 @@ export const RELEASE_GATES = ['reader-signed-installation','hear-signed-installa
 export const CONTROL_CLASSES = ['reader-only','hear-only','shared-core','unknown'];
 // Independently reviewed pins; private implementation bytes never enter this repository.
 export const PINS = {
-  "catalogSha256": "294c46013197954c26f11aa84abe5c2362187716d6cc7f4e69bdd9bd0635f3f5",
+  "catalogSha256": "1780e733a727572fabb24c67cfccae190d52fff1b4a3e2d71c424b5450e61d32",
   "implementation": {
-    "scripts/verification-catalog.mjs": "da63bd8ecbbff9d506d8c9266a46b210e9383a64b46fd626a376f97caab80406",
+    "scripts/verification-catalog.mjs": "d76f0617729d80ed40c4707c7d4d41f26ef27370d8c813ddd00db967b0e9e49a",
     "scripts/verification-catalog.test.mjs": "f872e695a10bde70bf554fc856b151ea8b23c8637591f47cc3b4888d39726f59",
     "scripts/verification-cpu-tasks.mjs": "a5ed5d7c5601b9af72d17d1b45a16a5f4f8ca21016622743687c15362517b958",
     "scripts/verify-tasks.mjs": "ed75ec8b8c609597c16f6dcbcc7ee622211e5e3f7d31869fc70e6663295b39b3",
-    "scripts/verify-runtime.mjs": "9720dd5d306a08b3d31284821ef523389b3b05383d88a4a3d7df127afda79eac"
+    "scripts/verify-runtime.mjs": "d9bab01d1d42c6bef7e6305a7beb40c62cc4e011174eb3354204fe8dc9367417"
   }
 };
 export function planIdentity(value, run, attempt) {

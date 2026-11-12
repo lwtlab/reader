@@ -14,11 +14,11 @@ export const EXECUTOR_POLICY = 'shared-owned-cpu-execution-v1';
 // Pin the complete local module graph before importing private executable code.
 export const EXECUTOR_PINS = {
   "scripts/verification-cpu-execution.mjs": "45549129e04282e85bc38ec7268b116132599341bff7483d2c817270471c9d1b",
-  "scripts/verification-execution.mjs": "3aca6808f210166122f54a3383c3723b231ab3c971322cefcb7cc3b1be27dbfd",
-  "scripts/verification-catalog.mjs": "da63bd8ecbbff9d506d8c9266a46b210e9383a64b46fd626a376f97caab80406",
+  "scripts/verification-execution.mjs": "c9ff6cf3fb37bffd87eb68d9cff054a916d676b959d017248b0899a95610e78c",
+  "scripts/verification-catalog.mjs": "d76f0617729d80ed40c4707c7d4d41f26ef27370d8c813ddd00db967b0e9e49a",
   "scripts/verification-cpu-tasks.mjs": "a5ed5d7c5601b9af72d17d1b45a16a5f4f8ca21016622743687c15362517b958",
   "scripts/verify-tasks.mjs": "ed75ec8b8c609597c16f6dcbcc7ee622211e5e3f7d31869fc70e6663295b39b3",
-  "scripts/verify-runtime.mjs": "9720dd5d306a08b3d31284821ef523389b3b05383d88a4a3d7df127afda79eac"
+  "scripts/verify-runtime.mjs": "d9bab01d1d42c6bef7e6305a7beb40c62cc4e011174eb3354204fe8dc9367417"
 };
 export const EXECUTOR_CONTRACT = digest(JSON.stringify(EXECUTOR_PINS));
 export function verifyCpuExecutorGraph(source) {

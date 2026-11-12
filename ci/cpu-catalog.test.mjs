@@ -64,7 +64,7 @@ test('real readonly private-plan CLI output is validated before commands can exe
   writeFileSync(file,"console.log('invalid plan')\n");assert.throws(()=>readCpuPlan(source));
 });
 test('optional CPU catalog scope keeps credentials, uploads and status contexts isolated',()=>{
-  const yaml=readFileSync(new URL('../.github/workflows/reader-private-verify.yml',import.meta.url),'utf8'),job=yaml.slice(yaml.indexOf('\n  catalog-cpu:'));
+  const yaml=readFileSync(new URL('../.github/workflows/reader-private-verify.yml',import.meta.url),'utf8'),job=yaml.slice(yaml.indexOf('\n  catalog-cpu:'),yaml.indexOf('\n  resolve-example:'));
   assert.match(job,/if: inputs.scope == 'catalog-cpu'/);assert.match(job,/CPU_CATALOG: 'true'/);assert.match(job,/VERIFICATION_SCOPE: llama-cpu/);assert.match(job,/VERIFICATION_OUTCOME: \$\{\{ steps.cpu.outcome \}\}/);
   assert.doesNotMatch(job,/READER_VERIFICATION_TOKEN|SIGNING|continue-on-error|pull_request_target|actions\/cache/);
   assert.match(job,/reader-catalog-cpu-result-/);assert.match(job,/reader-catalog-cpu-encrypted-/);assert.match(job,/llama-cpu-output\/catalog.json/);assert.doesNotMatch(job,/path:.*private-summary|path:.*source\//);
