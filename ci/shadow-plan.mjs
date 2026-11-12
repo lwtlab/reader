@@ -7,19 +7,21 @@ import { fileURLToPath } from 'node:url';
 import { isDeepStrictEqual } from 'node:util';
 import { TASKS, binding, digest, positive } from './reader-verification.mjs';
 import { encryptLog } from './log-crypto.mjs';
+import { CPU_TASKS } from './llama-cpu-verification.mjs';
 
 export const POLICY = 'reader-hear-shadow-v2';
-export const EXTRA_TASKS = ['hear-tools','hear-types','hear-unit','core-sources','core-asr-controls','hear-native','hear-gui'];
+export const EXTRA_TASKS = ['hear-tools','hear-types','hear-unit','core-sources','core-asr-controls','hear-native','hear-gui',...CPU_TASKS.map(task=>task.id)];
 export const RELEASE_GATES = ['reader-signed-installation','hear-signed-installation','hear-model-recovery','hear-physical-audio'];
 export const CONTROL_CLASSES = ['reader-only','hear-only','shared-core','unknown'];
 // Independently reviewed pins; private implementation bytes never enter this repository.
 export const PINS = {
-  "catalogSha256": "cfd40bda86e372e52405ac108cdd24942e590caa01b74ffd265bc0a76e25d094",
+  "catalogSha256": "294c46013197954c26f11aa84abe5c2362187716d6cc7f4e69bdd9bd0635f3f5",
   "implementation": {
-    "scripts/verification-catalog.mjs": "eea00a9d9187f58d83e372c189b031a38e1b2a86b78274759f165ffdacfa1fa1",
+    "scripts/verification-catalog.mjs": "da63bd8ecbbff9d506d8c9266a46b210e9383a64b46fd626a376f97caab80406",
     "scripts/verification-catalog.test.mjs": "f872e695a10bde70bf554fc856b151ea8b23c8637591f47cc3b4888d39726f59",
-    "scripts/verify-tasks.mjs": "cc313515d0d43ee84584a8b665c9361934b842bfc195d2c9fae3f135f6f5079d",
-    "scripts/verify-runtime.mjs": "b3327f03b71247d8f56314b878544a2f2009a7ef621b1af967988f3166f8d528"
+    "scripts/verification-cpu-tasks.mjs": "a5ed5d7c5601b9af72d17d1b45a16a5f4f8ca21016622743687c15362517b958",
+    "scripts/verify-tasks.mjs": "ed75ec8b8c609597c16f6dcbcc7ee622211e5e3f7d31869fc70e6663295b39b3",
+    "scripts/verify-runtime.mjs": "9720dd5d306a08b3d31284821ef523389b3b05383d88a4a3d7df127afda79eac"
   }
 };
 export function planIdentity(value, run, attempt) {

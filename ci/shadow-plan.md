@@ -1,14 +1,14 @@
 # Optional shared shadow-plan qualification
 
 The existing `reader-private-verify.yml` accepts `scope=shadow-plan` on the independently reviewed
-`ci/shadow-plan-20261111` ref. Full/CPU dispatch, polling, contexts, caches, task contracts and
+`ci/catalog-cpu-20261112` ref. Full/CPU dispatch, polling, contexts, caches, task contracts and
 required-check policy remain unchanged. Shadow resolve performs the existing trusted PR/main and
 immutable merge-parent checks, emits the exact binding, and returns before either pending-status write.
 
 Dispatch metadata only after pushing reviewed private source and independently reviewing this public ref:
 
 ```sh
-gh workflow run reader-private-verify.yml --repo lwtlab/reader --ref ci/shadow-plan-20261111 \
+gh workflow run reader-private-verify.yml --repo lwtlab/reader --ref ci/catalog-cpu-20261112 \
   -f source_ref=<exact-private-head> -f pr_number=<trusted-open-PR> \
   -f workflow_sha=<exact-public-workflow-SHA> -f scope=shadow-plan
 ```

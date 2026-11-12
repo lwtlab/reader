@@ -90,14 +90,14 @@ test('actual collector produces a failed receipt for unreviewed source and rejec
   assert.equal(invoke('require').status,1);receipt.status='PASS';writeFileSync(file,JSON.stringify(receipt));assert.equal(invoke('require').status,1);
 });
 test('workflow isolates optional shadow scope and never uploads private plan bytes',()=>{
-  const yaml=readFileSync(new URL('../.github/workflows/reader-private-verify.yml',import.meta.url),'utf8'),block=yaml.slice(yaml.indexOf('  shadow-plan:'));
+  const yaml=readFileSync(new URL('../.github/workflows/reader-private-verify.yml',import.meta.url),'utf8'),block=yaml.slice(yaml.indexOf('  shadow-plan:'),yaml.indexOf('  catalog-cpu:'));
   assert.match(block,/if: inputs.scope == 'shadow-plan'/);assert.match(block,/fetch-depth: 0/);
   assert.match(block,/node --test scripts\/verification-catalog.test.mjs/);assert.match(block,/scripts\/verification-catalog.mjs --ci/);
   assert.match(block,/SHADOW_CONTROLS_OUTCOME: \$\{\{ steps.controls.outcome \}\}/);assert.match(block,/SHADOW_PLAN_OUTCOME: \$\{\{ steps.plan.outcome \}\}/);
   assert.match(block,/node ci\/shadow-plan.mjs require/);assert.doesNotMatch(block,/READER_VERIFICATION_TOKEN|SIGNING|pnpm|pull_request_target|continue-on-error/);
   for(const upload of block.split('uses: actions/upload-artifact@').slice(1))assert.match(upload,/path: shadow-plan-output\/(verification.json|\*.enc.json)/);
   const control=readFileSync(new URL('./reader-verification-control.mjs',import.meta.url),'utf8');
-  assert(control.indexOf("if(mode==='shadow-plan')")<control.indexOf("if(mode==='full')await postStatus"));
+  assert(control.indexOf("if(mode==='shadow-plan'||mode==='catalog-cpu')")<control.indexOf("if(mode==='full')await postStatus"));
   assert.match(yaml,/report-llama-cpu:[\s\S]+inputs.scope != 'shadow-plan'/);
   assert.match(yaml,/full:[\s\S]+inputs.scope != 'llama-cpu' && inputs.scope != 'shadow-plan'/);
 });

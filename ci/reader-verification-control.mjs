@@ -155,13 +155,13 @@ async function main() {
     console.log(JSON.stringify(await poll(api,process.env.VERIFICATION_WORKFLOW_SHA,{enabled:process.env.AUTOMATIC_VERIFICATION==='true'})));return;
   }
   if(command==='resolve') {
-    const mode=process.env.VERIFICATION_SCOPE||'full';assert(['full','llama-cpu','shadow-plan'].includes(mode));
-    assert.equal(process.env.GITHUB_REF,`refs/heads/${mode==='shadow-plan'?policy.shadowWorkflowRef:policy.workflowRef}`);
+    const mode=process.env.VERIFICATION_SCOPE||'full';assert(['full','llama-cpu','shadow-plan','catalog-cpu'].includes(mode));
+    assert.equal(process.env.GITHUB_REF,`refs/heads/${mode==='shadow-plan'?policy.shadowWorkflowRef:mode==='catalog-cpu'?policy.cpuCatalogWorkflowRef:policy.workflowRef}`);
     assert.equal(process.env.WORKFLOW_SHA,process.env.GITHUB_SHA,'Executing workflow must match the requested immutable pin');
     const value=await resolveInput(api,{source:process.env.SOURCE_REF,pr:Number(process.env.PR_NUMBER||0),workflow:process.env.GITHUB_SHA});
     appendFileSync(process.env.GITHUB_OUTPUT,`binding=${JSON.stringify(value)}\ntested=${value.tested}\n`);
     // Shadow qualification never writes the full/CPU contexts or dispatches work.
-    if(mode==='shadow-plan') {console.log('Trusted immutable shadow-plan input accepted; existing gates unchanged');return;}
+    if(mode==='shadow-plan'||mode==='catalog-cpu') {console.log('Trusted immutable optional input accepted; existing gates unchanged');return;}
     if(mode==='full')await postStatus(api,value,'pending',`full pending ${fingerprint(value)}`,runUrl(process.env.GITHUB_RUN_ID,process.env.GITHUB_RUN_ATTEMPT));
     const {pendingCpu}=await import('./llama-cpu-control.mjs');
     await pendingCpu(api,value,{run:process.env.GITHUB_RUN_ID,attempt:process.env.GITHUB_RUN_ATTEMPT,mode});
