@@ -7,8 +7,8 @@ import { test } from 'node:test';
 import { fileURLToPath } from 'node:url';
 import { digest } from './reader-verification.mjs';
 import { CPU_TASKS, CPU_CONTRACT, cpuResult } from './llama-cpu-verification.mjs';
-import { executeTasks } from './llama-cpu-run.mjs';
-import { CATALOG_POLICY, CATALOG_CONTRACT, validateCpuPlan, readCpuPlan, cpuCoverage, catalogResult } from './cpu-catalog.mjs';
+import { executeTasks, executeOwnedCpu } from './llama-cpu-run.mjs';
+import { CATALOG_POLICY, CATALOG_CONTRACT, validateCpuPlan, readCpuPlan, cpuCoverage, catalogResult, validateCpuExecution, loadCpuExecutor, EXECUTOR_POLICY, EXECUTOR_PINS } from './cpu-catalog.mjs';
 
 function fixturePlan() {
   const tasks=structuredClone(CPU_TASKS).map((task,index)=>({...task,cwd:'.',dependencies:index?[CPU_TASKS[index-1].id]:[],profile:'full',products:['reader','hear'],platforms:['linux'],evidence:task.id==='cpu-build'?'native-compilation':task.id==='gguf-tooling'?'prerequisite':'source-check'}));
@@ -21,7 +21,8 @@ function state(status='PASS') {
   const before={head:value.tested,dirty:false,upstreamRevision:options.build.upstreamRevision};
   const tasks=CPU_TASKS.map(({id})=>({id,status,exitCode:status==='PASS'?0:null,durationMs:status==='PASS'?5:null}));
   const plan=fixturePlan();
-  return {executionRunId:'11111111-1111-4111-8111-111111111111',binding:structuredClone(value),run:123,attempt:1,scope:'llama-cpu',contract:CPU_CONTRACT,sourceBefore:before,sourceAfter:structuredClone(before),tasks,catalogPlan:plan,catalogExecution:cpuCoverage(plan,tasks)};
+  const cpuExecutor={policy:EXECUTOR_POLICY,platform:'linux',catalogExecution:cpuCoverage(plan,tasks),tasks,commands:status==='PASS'?plan.tasks.flatMap(task=>task.commands.map((_,commandIndex)=>({taskId:task.id,commandIndex,exitCode:0,signal:null,resources:{samples:1,detachedProcessesCleaned:0}}))):[]};
+  return {cpuExecutor,executionRunId:'11111111-1111-4111-8111-111111111111',binding:structuredClone(value),run:123,attempt:1,scope:'llama-cpu',contract:CPU_CONTRACT,sourceBefore:before,sourceAfter:structuredClone(before),tasks,catalogPlan:plan,catalogExecution:cpuCoverage(plan,tasks)};
 }
 function result(summary,overrides={}) {
   const bytes=Buffer.from(JSON.stringify(summary)),opts={...options,...overrides,bytes};
@@ -33,7 +34,7 @@ test('shared CPU plan independently matches all nine original stages and strict 
   assert.deepEqual(plan.tasks.map(({id,commands})=>({id,commands})),CPU_TASKS);assert.equal(CPU_CONTRACT,'63bb538e2077bdd6ad3759b06cd4a16e10264bc592de894c7cba70b83b8b8011');
   for(const change of [p=>p.tasks.pop(),p=>p.tasks[0].commands.pop(),p=>p.tasks[1].dependencies=[],p=>p.tasks[0].env={PRIVATE:'x'},p=>p.executionPlatforms.push('darwin'),p=>p.selectionApplied=true,p=>p.scope='reader']){const p=fixturePlan();change(p);assert.throws(()=>validateCpuPlan(p));}
 });
-test('actual CPU adapter executes supplied catalog groups and preserves failure dependencies',async()=>{
+test('legacy CPU adapter preserves supplied catalog groups and preserves failure dependencies',async()=>{
   const plan=fixturePlan(),commands=plan.tasks.flatMap(task=>task.commands);
   for(const failIndex of [-1,0,1,5,6]) {
     const summary=state('NOT_RUN'),called=[];
@@ -50,7 +51,7 @@ test('coverage rejects stale, missing, duplicated and dependency-invalid PASS re
 });
 test('CPU catalog receipt binds exact source/run/plan/legacy bytes without exposing private output',()=>{
   const s=state();s.private='SYNTHETIC_PRIVATE_TEXT';s.tasks[0].error='SYNTHETIC_PRIVATE_ERROR';const actual=result(s);assert.equal(actual.status,'PASS');assert.equal(actual.acceptance.cpuCompilation,'PASS');assert.equal(actual.acceptance.modelInference,'NOT_RUN');assert(actual.tasks.every(task=>task.status==='PASS'));assert.doesNotMatch(JSON.stringify(actual),/SYNTHETIC_PRIVATE|commands|cwd/);
-  for(const change of [s=>s.run++,s=>s.attempt++,s=>s.scope='full',s=>s.binding.head='f'.repeat(40),s=>s.sourceBefore.dirty=true,s=>s.sourceAfter.head='f'.repeat(40),s=>s.executionRunId='old',s=>s.catalogPlan.tasks.pop(),s=>s.catalogExecution.status='INCOMPLETE',s=>s.tasks[0].status='REUSED']) {
+  for(const change of [s=>s.run++,s=>s.attempt++,s=>s.scope='full',s=>s.binding.head='f'.repeat(40),s=>s.sourceBefore.dirty=true,s=>s.sourceAfter.head='f'.repeat(40),s=>s.executionRunId='old',s=>s.catalogPlan.tasks.pop(),s=>s.catalogExecution.status='INCOMPLETE',s=>s.tasks[0].status='REUSED',s=>delete s.cpuExecutor,s=>s.cpuExecutor.policy='old',s=>s.cpuExecutor.commands.pop(),s=>s.cpuExecutor.commands[0].resources=null]) {
     const s=state();change(s);const bad=result(s);assert.equal(bad.status,'FAIL');assert.equal(bad.summarySha256,null);assert(bad.tasks.every(task=>task.status==='NOT_RUN'));
   }
   for(const execution of ['failure','cancelled','skipped',undefined])assert.equal(result(state(),{execution}).status,'FAIL');
@@ -78,4 +79,31 @@ test('actual catalog final gate rejects missing mode even with an otherwise vali
   const cli=fileURLToPath(new URL('./llama-cpu-run.mjs',import.meta.url));
   assert.equal(spawnSync(process.execPath,[cli,'require'],{cwd:root,env}).status,0);
   assert.equal(spawnSync(process.execPath,[cli,'require-catalog'],{cwd:root,env}).status,1);
+});
+
+test('owned CPU adapter consumes shared executor results and persists all coverage',async()=>{
+ for(const fail of [false,true]){
+  const s=state('NOT_RUN'),saved=[],signal=new AbortController().signal,output=()=>{};
+  const returned=await executeOwnedCpu(s,'owned-source',output,{signal,persist:summary=>saved.push(structuredClone(summary)),load:async source=>{
+   assert.equal(source,'owned-source');return async context=>{
+    assert.equal(context.root,source);assert.equal(context.signal,signal);assert.equal(context.output,output);assert.deepEqual(context.contract,fixturePlan());assert.equal(context.env.PYTHONDONTWRITEBYTECODE,'1');
+    const complete=state();if(fail){complete.tasks.forEach((task,index)=>Object.assign(task,{status:index?'NOT_RUN':'FAIL',exitCode:index?null:1,durationMs:index?null:5}));complete.cpuExecutor.commands=complete.cpuExecutor.commands.slice(0,1);complete.cpuExecutor.commands[0].exitCode=1;complete.cpuExecutor.catalogExecution=cpuCoverage(complete.catalogPlan,complete.tasks);}
+    for(const task of complete.tasks)context.onResult(task);
+    return complete.cpuExecutor;
+   };
+  }});
+  assert.equal(returned,!fail);assert.equal(saved.length,10);assert.deepEqual(s.cpuExecutor.tasks,s.tasks);assert.equal(s.cpuExecutor.catalogExecution.status,fail?'FAIL':'PASS');
+ }
+ const summary=state('NOT_RUN');await assert.rejects(executeOwnedCpu(summary,'unused',()=>{},{load:async()=>()=>({...state().cpuExecutor,policy:'old'})}));
+});
+test('owned CPU proof rejects old adapters, partial command coverage and wrong platform',()=>{
+ for(const change of [r=>r.policy='old',r=>r.platform='darwin',r=>r.commands.pop(),r=>r.commands.push(r.commands[0]),r=>r.commands.reverse(),r=>r.commands[1].commandIndex=0,r=>r.commands[0].exitCode=1,r=>r.commands[0].signal='SIGTERM',r=>r.commands[0].resources=null,r=>r.catalogExecution.status='INCOMPLETE']){
+  const summary=state(),report=structuredClone(summary.cpuExecutor);change(report);assert.throws(()=>validateCpuExecution(report,summary.catalogPlan,summary.tasks));
+ }
+});
+test('private executable imports are hash-checked before evaluation',async t=>{
+ const root=mkdtempSync(path.join(tmpdir(),'cpu-executor-pin-'));t.after(()=>rmSync(root,{recursive:true,force:true}));mkdirSync(path.join(root,'scripts'));
+ assert.equal(Object.keys(EXECUTOR_PINS).length,6);
+ const marker=path.join(root,'unexpected-import');writeFileSync(path.join(root,'scripts/verification-cpu-execution.mjs'),`import{writeFileSync}from'node:fs';writeFileSync(${JSON.stringify(marker)},'unexpected');export const cpuExecutorPolicy=${JSON.stringify(EXECUTOR_POLICY)};export function executeCpuPlan(){}`);
+ await assert.rejects(loadCpuExecutor(root));assert.throws(()=>readFileSync(marker));
 });

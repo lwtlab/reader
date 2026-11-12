@@ -15,14 +15,20 @@ The CPU adapter reads the private `verification-execution.mjs --scope llama-cpu 
 Before the first command it checks the independently pinned full plan, original nine-stage/eleven-command
 contract, products/platform and complete ordered dependencies. It executes the supplied commands,
 records actual exits/timings and stops at the first failure. Unexecuted stages remain NOT_RUN.
-This shares catalog/plan/coverage; the existing CPU process adapter remains separate from the Unix
-owned-process executor. Hear native/GUI and broader isolation/concurrency are not qualified here.
+This now uses the same private `executePlan`/`runCommand` Unix ownership executor as Reader/Hear.
+Before importing executable private modules, the public adapter independently checks the entire six-file
+module graph. Each of the eleven ordered commands records exit/signal/resource results in encrypted
+diagnostics. Interruption, output sink failure and failed owned-process cleanup cannot pass.
+The public summary prints only allowlisted task IDs/statuses. Fresh Linux runner execution is covered;
+Hear native/GUI, Windows process ownership and stateful concurrency are not qualified here.
 
 The original CPU contract remains `63bb538e2077bdd6ad3759b06cd4a16e10264bc592de894c7cba70b83b8b8011`.
 Its receipt still requires exact source/run/attempt, nine actual stages, stable clean parent source,
 approved upstream mapping/revision, real compiled binaries/license/manifest and authenticated diagnostics.
 The additional `catalog.json` binds the original private summary and exact legacy receipt bytes to
-the selected catalog policy/contract and complete execution coverage. The sealing marker binds the
+the selected catalog policy/contract and complete execution coverage. Schema v2 additionally requires
+the shared executor policy/module digest and complete command-level records. Nine old adapter PASS
+results cannot supply this proof. Process/resource details stay private. The sealing marker binds the
 summary hash; replacing it after encryption cannot pass. Final `require-catalog` requires explicit
 catalog mode, recomputes the companion, and rechecks live native/diagnostic hashes.
 

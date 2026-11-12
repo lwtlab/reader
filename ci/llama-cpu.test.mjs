@@ -11,7 +11,7 @@ import {executeTasks,checkedBuild,snapshot} from './llama-cpu-run.mjs';
 import {pendingCpu,reportCpu} from './llama-cpu-control.mjs';
 import {readReceipt} from './reader-verification-control.mjs';
 import {decryptLog} from './log-crypto.mjs';
-import {CATALOG_POLICY,cpuCoverage} from './cpu-catalog.mjs';
+import {CATALOG_POLICY,cpuCoverage,EXECUTOR_POLICY} from './cpu-catalog.mjs';
 
 const value=binding({head:'a'.repeat(40),base:'b'.repeat(40),tested:'c'.repeat(40),pr:274,workflow:'d'.repeat(40)});
 const options={run:123,attempt:1,mode:'llama-cpu',execution:'success',build:{upstreamRevision:'e'.repeat(40),manifestSha256:'f'.repeat(64),runtimeSha256:'0'.repeat(64),bundleSha256:'1'.repeat(64),fileCount:1},diagnostics:'2'.repeat(64),bytes:Buffer.from('synthetic private summary')};
@@ -116,18 +116,20 @@ test('CPU artifact prefix uses the real bounded ZIP reader and cannot borrow a f
   await assert.rejects(readReceipt(async()=>assert.fail(),value,123,1,'TOKEN',transport,{prefix:'other'}));
  }finally{rmSync(dir,{recursive:true,force:true})}
 });
-test('catalog-mode identity/seal/receipt/final gate verifies original bytes and rejects tampering',{skip:process.platform!=='linux'},()=>{
+test('catalog-mode seals exact bytes, rejects tampering and checks graph before any private CLI',{skip:process.platform!=='linux'},()=>{
  const f=fixture();try{
   const tasks=structuredClone(CPU_TASKS).map((task,index)=>({...task,cwd:'.',dependencies:index?[CPU_TASKS[index-1].id]:[],profile:'full',products:['reader','hear'],platforms:['linux'],evidence:task.id==='cpu-build'?'native-compilation':task.id==='gguf-tooling'?'prerequisite':'source-check'}));
   const plan={policy:CATALOG_POLICY,scope:'llama-cpu',profile:'full',selectionApplied:false,executionPlatforms:['linux'],tasks};plan.contractSha256=digest(JSON.stringify(plan));
-  mkdirSync(path.join(f.source,'scripts'));writeFileSync(path.join(f.source,'scripts/verification-execution.mjs'),`console.log(${JSON.stringify(JSON.stringify(plan))})\n`);
+  const marker=path.join(f.dir,'unapproved-private-cli');mkdirSync(path.join(f.source,'scripts'));writeFileSync(path.join(f.source,'scripts/verification-execution.mjs'),`import{writeFileSync}from'node:fs';writeFileSync(${JSON.stringify(marker)},'executed');console.log(${JSON.stringify(JSON.stringify(plan))});`);
   execFileSync('git',['add','scripts/verification-execution.mjs'],{cwd:f.source});execFileSync('git',['-c','core.hooksPath=/dev/null','commit','-qm','generated readonly planner','--no-gpg-sign'],{cwd:f.source});
   const publicDir=path.join(f.dir,'ci');mkdirSync(publicDir);for(const file of ['llama-cpu-run.mjs','llama-cpu-verification.mjs','reader-verification.mjs','log-crypto.mjs','cpu-catalog.mjs'])copyFileSync(new URL(file,import.meta.url),path.join(publicDir,file));
   const keys=generateKeyPairSync('rsa',{modulusLength:2048,publicKeyEncoding:{type:'spki',format:'pem'},privateKeyEncoding:{type:'pkcs8',format:'pem'}});writeFileSync(path.join(publicDir,'build-logs-public.pem'),keys.publicKey);
   const before=snapshot(f.source),v={...value,tested:before.head},env={...process.env,CPU_CATALOG:'true',VERIFICATION_BINDING:JSON.stringify(v),GITHUB_RUN_ID:'123',GITHUB_RUN_ATTEMPT:'1',VERIFICATION_SCOPE:'llama-cpu',RUNNER_TEMP:f.dir,VERIFICATION_OUTCOME:'success'};
   const call=operation=>spawnSync(process.execPath,[path.join(publicDir,'llama-cpu-run.mjs'),operation],{cwd:f.dir,env,encoding:'utf8'});
-  assert.equal(call('identity').status,0);const output=path.join(f.dir,'llama-cpu-output'),stateFile=path.join(output,'private-summary.json');
-  const s=JSON.parse(readFileSync(stateFile));s.tasks.forEach(task=>Object.assign(task,{status:'PASS',exitCode:0,durationMs:5}));s.sourceAfter=snapshot(f.source);s.catalogExecution=cpuCoverage(s.catalogPlan,s.tasks);writeFileSync(stateFile,JSON.stringify(s));
+  assert.equal(call('identity').status,1);assert.throws(()=>readFileSync(marker));
+  const output=path.join(f.dir,'llama-cpu-output'),stateFile=path.join(output,'private-summary.json');
+  const beforeState={executionRunId:'11111111-1111-4111-8111-111111111111',binding:v,run:123,attempt:1,scope:'llama-cpu',contract:CPU_CONTRACT,sourceBefore:before,tasks:CPU_TASKS.map(({id})=>({id,status:'NOT_RUN',exitCode:null,durationMs:null})),catalogPlan:plan};
+  writeFileSync(stateFile,JSON.stringify(beforeState));assert.equal(call('verify').status,1);assert.throws(()=>readFileSync(marker));const s=JSON.parse(readFileSync(stateFile));s.tasks.forEach(task=>Object.assign(task,{status:'PASS',exitCode:0,durationMs:5}));s.sourceAfter=snapshot(f.source);s.catalogExecution=cpuCoverage(s.catalogPlan,s.tasks);s.cpuExecutor={policy:EXECUTOR_POLICY,platform:'linux',catalogExecution:s.catalogExecution,tasks:s.tasks,commands:plan.tasks.flatMap(task=>task.commands.map((_,commandIndex)=>({taskId:task.id,commandIndex,exitCode:0,signal:null,resources:{samples:1,detachedProcessesCleaned:0}})))};writeFileSync(stateFile,JSON.stringify(s));
   assert.equal(call('seal').status,0);const originalState=readFileSync(stateFile);s.executionRunId='22222222-2222-4222-8222-222222222222';writeFileSync(stateFile,JSON.stringify(s));assert.equal(call('receipt').status,0);assert.equal(JSON.parse(readFileSync(path.join(output,'catalog.json'))).status,'FAIL');writeFileSync(stateFile,originalState);
   assert.equal(call('receipt').status,0);assert.equal(call('require-catalog').status,0);
   const catalogFile=path.join(output,'catalog.json'),original=readFileSync(catalogFile),receipt=JSON.parse(original);assert.equal(receipt.status,'PASS');assert.equal(receipt.acceptance.modelInference,'NOT_RUN');

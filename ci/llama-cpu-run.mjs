@@ -7,7 +7,7 @@ import {randomUUID} from 'node:crypto';
 import {binding,digest,positive} from './reader-verification.mjs';
 import {CPU_TASKS,CPU_CONTRACT,cpuResult,validateCpuResult,scope} from './llama-cpu-verification.mjs';
 import {encryptLog} from './log-crypto.mjs';
-import {readCpuPlan,validateCpuPlan,cpuCoverage,catalogResult} from './cpu-catalog.mjs';
+import {readCpuPlan,validateCpuPlan,cpuCoverage,catalogResult,loadCpuExecutor,validateCpuExecution,verifyCpuExecutorGraph} from './cpu-catalog.mjs';
 
 export function snapshot(source,run=execFileSync){const git=args=>run('git',args,{cwd:source,encoding:'utf8',timeout:10000});
   const upstream='third_party/llama.cpp-upstream',key=`submodule.${upstream}`;
@@ -26,6 +26,19 @@ export async function executeTasks(summary,source,log,{execute,now=Date.now,pers
   }
   return true;
 }
+export async function executeOwnedCpu(summary,source,log,{persist=()=>{},signal,load=loadCpuExecutor}={}) {
+  const plan=validateCpuPlan(summary.catalogPlan);
+  assert(summary.tasks.every(task=>task.status==='NOT_RUN'));
+  const execute=await load(source);
+  const report=await execute({root:source,contract:plan,env:{...process.env,PYTHONDONTWRITEBYTECODE:'1'},signal,output:log,onResult:task=>{
+    const index=summary.tasks.findIndex(existing=>existing.id===task.id);assert(index>=0);
+    summary.tasks[index]=task;summary.catalogExecution=cpuCoverage(plan,summary.tasks);persist(summary);
+    console.log(`CPU ${task.id}: ${task.status}`);
+  }});
+  validateCpuExecution(report,plan,summary.tasks);
+  summary.cpuExecutor=report;persist(summary);
+  return report.catalogExecution.status==='PASS'&&!signal?.aborted;
+}
 export function checkedBuild(source,expected){
   const directory=path.join(source,'.llama-build/upstream-cpu'),manifest=path.join(directory,'reader-build.json');assert(!lstatSync(directory).isSymbolicLink());const buildRoot=realpathSync(directory);assert(buildRoot.startsWith(realpathSync(source)+path.sep));assert(!lstatSync(manifest).isSymbolicLink());const bytes=readFileSync(manifest),record=JSON.parse(bytes);assert.equal(record.runtime,'upstream-asr');assert.equal(record.backend,'cpu');assert.equal(record.platform,'linux');assert.equal(record.arch,'x64');assert.equal(record.revision,expected.upstreamRevision);
   const upstream=path.join(source,'third_party/llama.cpp-upstream');assert.equal(execFileSync('git',['rev-parse','HEAD'],{cwd:upstream,encoding:'utf8'}).trim(),expected.upstreamRevision);assert.equal(execFileSync('git',['status','--porcelain'],{cwd:upstream,encoding:'utf8'}).trim(),'');
@@ -40,8 +53,18 @@ async function main(){
   assert([undefined,'true'].includes(process.env.CPU_CATALOG));const catalogMode=process.env.CPU_CATALOG==='true';if(catalogMode){assert.equal(process.platform,'linux');assert.equal(mode,'llama-cpu');}
   const load=()=>JSON.parse(readFileSync(state));const save=s=>writeFileSync(state,JSON.stringify(s,null,2),{mode:0o600});
   const append=chunk=>{const size=existsSync(log)?statSync(log).size:0;assert(size+chunk.length<=256*1024*1024);appendFileSync(log,chunk,{mode:0o600});};
+  if(catalogMode&&['identity','verify'].includes(operation))verifyCpuExecutorGraph(source);
   if(operation==='identity'){assert(!existsSync(state));const before=snapshot(source);assert.equal(before.head,value.tested);assert.equal(before.dirty,false);const summary={executionRunId:randomUUID(),binding:value,run,attempt,scope:mode,contract:CPU_CONTRACT,sourceBefore:before,tasks:CPU_TASKS.map(t=>({id:t.id,status:'NOT_RUN',exitCode:null,durationMs:null}))};if(catalogMode){summary.catalogPlan=readCpuPlan(source);summary.catalogExecution=cpuCoverage(summary.catalogPlan,summary.tasks);}save(summary);console.log('Exact clean CPU input accepted');return;}
-  if(operation==='verify'){const summary=load();assert.deepEqual(snapshot(source),summary.sourceBefore);if(catalogMode)assert.deepEqual(readCpuPlan(source),summary.catalogPlan);const passed=await executeTasks(summary,source,append,{persist:save,...(catalogMode?{catalogPlan:summary.catalogPlan}:{})});summary.sourceAfter=snapshot(source);save(summary);if(!passed)process.exitCode=1;return;}
+  if(operation==='verify'){
+    const summary=load();assert.deepEqual(snapshot(source),summary.sourceBefore);if(catalogMode)assert.deepEqual(readCpuPlan(source),summary.catalogPlan);
+    const controller=new AbortController(),interrupt=()=>controller.abort();
+    if(catalogMode){process.on('SIGINT',interrupt);process.on('SIGTERM',interrupt);}
+    try {
+      const passed=catalogMode?await executeOwnedCpu(summary,source,append,{persist:save,signal:controller.signal}):await executeTasks(summary,source,append,{persist:save});
+      summary.sourceAfter=snapshot(source);save(summary);if(!passed)process.exitCode=controller.signal.aborted?130:1;
+    } finally {if(catalogMode){process.off('SIGINT',interrupt);process.off('SIGTERM',interrupt);}}
+    return;
+  }
   if(operation==='seal'){
     const encrypted=path.join(output,'diagnostics.enc.json'),sealed=path.join(output,'sealed-build.json');rmSync(encrypted,{force:true});rmSync(sealed,{force:true});
     const files=[];if(existsSync(log))files.push(log);if(existsSync(state))files.push(state);
