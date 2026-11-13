@@ -1,0 +1,6 @@
+{
+  "apps/hear/apps/desktop/e2e/model-switch.spec.ts": "03bb2d737b8136c6e6c8db68a8defcbf0ae5babb5adb917a1bc8b335e27077e0",
+  "apps/hear/apps/desktop/e2e/launch.ts": "9b74eeda0f569f8fe3ca50d173d8df4a640490e0779ebfda3453d2beb20738af",
+  "apps/hear/apps/desktop/playwright.config.ts": "5fa9a4cea42c8e18ed6df59bf120b3e94c83b9064d3ae0353d8cbe96e7ba5c6a",
+  "apps/hear/scripts/link-core.mjs": "44c9127aaafefad5a1af3117c1a9cbd049b03b04db993bd298018415bf96184a"
+}

@@ -20,7 +20,7 @@ on:
         required: false
         default: full
         type: choice
-        options: [full, llama-cpu, shadow-plan, catalog-cpu, change-example, selected-source]
+        options: [full, llama-cpu, shadow-plan, catalog-cpu, change-example, selected-source, selected-gui-diagnostic]
       example:
         description: Reviewed real source-change example (optional scope only)
         required: false
@@ -64,7 +64,7 @@ jobs:
           VERIFICATION_WORKFLOW_SHA: ${{ vars.READER_VERIFICATION_WORKFLOW_SHA }}
         run: node ci/reader-verification-control.mjs poll
   resolve:
-    if: github.event_name == 'workflow_dispatch' && inputs.scope != 'change-example' && inputs.scope != 'selected-source'
+    if: github.event_name == 'workflow_dispatch' && inputs.scope != 'change-example' && inputs.scope != 'selected-source' && inputs.scope != 'selected-gui-diagnostic'
     name: Resolve and mark exact private input
     runs-on: ubuntu-24.04
     environment: reader-verification
@@ -1387,3 +1387,87 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.READER_VERIFICATION_TOKEN }}
         run: node ci/selected-source.mjs report
+
+  resolve-gui-diagnostic:
+    if: github.event_name == 'workflow_dispatch' && inputs.scope == 'selected-gui-diagnostic'
+    name: Resolve fixed synthetic GUI diagnostic source
+    runs-on: ubuntu-24.04
+    environment: reader-verification
+    timeout-minutes: 10
+    outputs:
+      binding: ${{ steps.resolve.outputs.binding }}
+      tested: ${{ steps.resolve.outputs.tested }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24.22.0
+      - id: resolve
+        env:
+          GH_TOKEN: ${{ secrets.READER_VERIFICATION_TOKEN }}
+          WORKFLOW_SHA: ${{ inputs.workflow_sha }}
+          SOURCE_REF: ${{ inputs.source_ref }}
+          PR_NUMBER: ${{ inputs.pr_number }}
+        run: node ci/gui-diagnostic.mjs resolve
+
+  focused-gui-diagnostic:
+    needs: resolve-gui-diagnostic
+    name: Fixed synthetic HUD regression repetitions
+    runs-on: macos-26
+    timeout-minutes: 30
+    env:
+      VERIFICATION_BINDING: ${{ needs.resolve-gui-diagnostic.outputs.binding }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24.22.0
+      - uses: actions/checkout@v4
+        with:
+          repository: lwtlab/lwt-core
+          ref: ${{ needs.resolve-gui-diagnostic.outputs.tested }}
+          path: source
+          fetch-depth: 0
+          ssh-key: ${{ secrets.PRIVATE_SOURCE_SSH_KEY }}
+          persist-credentials: false
+          submodules: false
+      - name: Verify reviewed source and fixed diagnostic inputs
+        run: node ci/gui-diagnostic.mjs identity
+      - uses: pnpm/action-setup@v4
+        with:
+          package_json_file: source/apps/hear/package.json
+      - name: Prepare frozen isolated application dependencies
+        run: node ci/private-step.mjs gui-setup source bash scripts/hear.sh setup
+      - name: Rebuild the exact scripted application
+        run: node ci/private-step.mjs gui-build source pnpm --dir apps/hear/apps/desktop exec electron-vite build
+      - id: gui
+        env:
+          PLAYWRIGHT_JSON_OUTPUT_NAME: ${{ runner.temp }}/hear-focused-results.json
+        name: Repeat the unchanged three model switch cases twenty times
+        run: node ci/private-step.mjs gui-focused source pnpm --dir apps/hear/apps/desktop exec playwright test e2e/model-switch.spec.ts --repeat-each 20 --trace retain-on-failure --reporter=list,json
+      - name: Encrypt explicit reports, traces and private logs
+        if: always()
+        env:
+          GUI_DIAGNOSTIC_OUTCOME: ${{ steps.gui.outcome }}
+        run: node ci/gui-diagnostic.mjs collect
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: reader-focused-gui-receipt-${{ github.run_id }}-${{ github.run_attempt }}
+          path: gui-diagnostic-output/diagnostic.json
+          retention-days: 7
+          if-no-files-found: error
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: reader-focused-gui-encrypted-${{ github.run_id }}-${{ github.run_attempt }}
+          path: gui-diagnostic-output/diagnostics.enc.json
+          retention-days: 7
+          if-no-files-found: error
+      - name: Require complete diagnostic controls without source gate success
+        if: always()
+        run: node ci/gui-diagnostic.mjs require
