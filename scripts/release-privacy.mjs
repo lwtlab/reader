@@ -1,12 +1,12 @@
 #!/usr/bin/env node
 import { createHash } from "node:crypto";
 import { spawnSync } from "node:child_process";
-import { createReadStream, lstatSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, readlinkSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { closeSync, createReadStream, lstatSync, mkdirSync, mkdtempSync, openSync, readSync, readdirSync, readFileSync, readlinkSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
-import { parseArgs } from "node:util";
+import { isDeepStrictEqual, parseArgs } from "node:util";
 import { isHermesCrossStringMatch } from "./release/hermes-strings.mjs";
 
 const repository = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
@@ -26,7 +26,7 @@ const unsupportedArchives = /\.rar$/i;
 const contentRules = [
   ["github-token", /\b(?:gh[pousr]_[A-Za-z0-9]{36,}|github_pat_[A-Za-z0-9_]{40,})/],
   ["provider-token", /\b(?:sk-(?:proj-)?[A-Za-z0-9_-]{40,}|AKIA[A-Z0-9]{16})/],
-  ["developer-home", /(?:\/Users\/(?!runner\/)[a-zA-Z0-9._-]+\/|\/home\/(?!runner\/)[a-zA-Z0-9._-]+\/|[A-Za-z]:\\Users\\(?!runneradmin\\)[^\\\s]+\\)/],
+  ["developer-home", /(?:\/Users\/(?!runner\/)[a-zA-Z0-9._-]+\/|\/home\/(?!runner\/)[a-zA-Z0-9._-]+\/|[A-Za-z]:\\{1,2}Users\\{1,2}(?!runneradmin\\{1,2})[^\\\s]+\\{1,2})/],
 ];
 
 export function pathRule(name) {
@@ -53,8 +53,12 @@ function loadAsar(projectDir) {
   const req = createRequire(path.join(projectDir, "package.json"));
   try { return req("@electron/asar"); }
   catch {
-    try { return createRequire(req.resolve("app-builder-lib"))("@electron/asar"); }
-    catch { throw new Error("ASAR reader unavailable; install application build dependencies"); }
+    try {
+      let builder;
+      try { builder = req.resolve("app-builder-lib"); }
+      catch { builder = createRequire(req.resolve("electron-builder")).resolve("app-builder-lib"); }
+      return createRequire(builder)("@electron/asar");
+    } catch { throw new Error("ASAR reader unavailable; install application build dependencies"); }
   }
 }
 
@@ -65,7 +69,7 @@ function inventory(root, name = "") {
   return [[name, "file", stat.size]];
 }
 
-async function inspectBytes(file) {
+async function inspectBytes(file, reviewedHomeRanges = []) {
   const digest = createHash("sha256");
   const rules = new Set();
   let tail = "", bytes = 0;
@@ -75,10 +79,13 @@ async function inspectBytes(file) {
     const text = tail + chunk.toString("latin1");
     for (const [name, pattern] of contentRules) {
       if (name !== "developer-home") { if (pattern.test(text)) rules.add(name); continue; }
-      const pathText = text.replaceAll("\\\\", "\\");
-      for (const match of pathText.matchAll(new RegExp(pattern.source, "g"))) {
-        const prefix = pathText.slice(Math.max(0, match.index - 2048), match.index);
-        if (!/https?:\/\/[^\s"'`\x00?#]*$/i.test(prefix)) rules.add(name);
+      // Latin-1 preserves raw byte indexes, including escaped Windows separators.
+      const textOffset = bytes - chunk.length - tail.length;
+      for (const match of text.matchAll(new RegExp(pattern.source, "g"))) {
+        const start = textOffset + match.index, end = start + match[0].length;
+        const reviewed = reviewedHomeRanges.some(range => start >= range.start && end <= range.end);
+        const prefix = text.slice(Math.max(0, match.index - 2048), match.index).replaceAll("\\\\", "\\");
+        if (!reviewed && !/https?:\/\/[^\s"'`\x00?#]*$/i.test(prefix)) rules.add(name);
       }
     }
     const normalized = text.replaceAll("\\n", "\n").replaceAll("\\r", "\r");
@@ -94,6 +101,93 @@ async function inspectBytes(file) {
   }
   if (keyMaterial) rules.add("private-key");
   return { sha256: digest.digest("hex"), bytes, rules: [...rules], markerOnly: standardMarker && !unknownMarker && !keyMaterial };
+}
+
+// Only exact published file bytes in validated packed ranges can classify a
+// container-level home-path match. Header/tail bytes and crossing matches remain
+// unreviewed. Other content/secret rules never consume these ranges.
+function readAsarHeader(file) {
+  const fileSize = lstatSync(file).size;
+  const descriptor = openSync(file, "r"), prefix = Buffer.alloc(16);
+  try {
+    if (readSync(descriptor, prefix, 0, prefix.length, 0) !== prefix.length || prefix.readUInt32LE(0) !== 4) throw new Error("Invalid ASAR header frame");
+    const headerSize = prefix.readUInt32LE(4), jsonSize = prefix.readUInt32LE(12);
+    if (headerSize < 8 || headerSize % 4 || headerSize > 16 * 1024 ** 2 || 8 + headerSize > fileSize || prefix.readUInt32LE(8) !== headerSize - 4 || jsonSize < 2 || jsonSize > headerSize - 8) throw new Error("Invalid ASAR header bound");
+    const data = Buffer.alloc(jsonSize);
+    if (readSync(descriptor, data, 0, jsonSize, 16) !== jsonSize) throw new Error("Truncated ASAR header");
+    const header = JSON.parse(data.toString("utf8"));
+    if (!isRecord(header) || !isRecord(header.files)) throw new Error("Invalid ASAR file tree");
+    return { headerSize, header };
+  } finally { closeSync(descriptor); }
+}
+
+// ASAR headers use literal path components. Reader listPackage() instead joins
+// them using the host separator, so it is not an archive-path authority on Windows.
+function canonicalAsarEntries(header, asar, file) {
+  const entries = [], names = new Set(), pending = [{ files: header.files, prefix: "", depth: 0 }];
+  while (pending.length) {
+    const { files, prefix, depth } = pending.pop();
+    if (!isRecord(files) || depth > 128) throw new Error("Invalid ASAR directory bound");
+    for (const [part, node] of Object.entries(files)) {
+      if (!safeArchiveName(part) || part === "." || part.includes("/") || !isRecord(node)) throw new Error("Unsafe ASAR entry");
+      const name = prefix ? `${prefix}/${part}` : part, key = name.toLowerCase();
+      if (names.has(key) || entries.length >= 200000) throw new Error("Unsafe ASAR entry or entry bound");
+      names.add(key);
+      const info = asar.statFile(file, name.split("/").join(path.sep), false);
+      entries.push({ name, info });
+      if (Object.hasOwn(node, "files")) {
+        if (!isRecord(node.files)) throw new Error("Invalid ASAR directory metadata");
+        pending.push({ files: node.files, prefix: name, depth: depth + 1 });
+      }
+    }
+  }
+  return entries;
+}
+
+export function reviewedAsarRanges(file, headerSize, entries) {
+  const fileSize = lstatSync(file).size, raw = readAsarHeader(file);
+  if (headerSize !== raw.headerSize) throw new Error("ASAR reader/header mismatch");
+  if (!Number.isSafeInteger(headerSize) || headerSize < 4 || headerSize % 4 || headerSize > 16 * 1024 ** 2 || 8 + headerSize > fileSize) throw new Error("Invalid ASAR header bound");
+  const dataStart = 8 + headerSize, packed = [];
+  for (const { name, info } of entries) {
+    let original = raw.header;
+    for (const part of name.split("/")) {
+      if (!isRecord(original.files) || !Object.hasOwn(original.files, part)) throw new Error("ASAR entry absent from raw header");
+      original = original.files[part];
+    }
+    if (!isDeepStrictEqual(original, info)) throw new Error("ASAR reader/raw entry mismatch");
+    if (Object.hasOwn(info, "link")) throw new Error("ASAR links require explicit review");
+    if (info.files) continue;
+    if (!Number.isSafeInteger(info.size) || info.size < 0 || info.size > 256 * 1024 ** 2 || (info.unpacked !== undefined && typeof info.unpacked !== "boolean")) throw new Error("Invalid ASAR file bound");
+    if (info.unpacked) continue;
+    if (typeof info.offset !== "string" || !/^(?:0|[1-9][0-9]*)$/.test(info.offset)) throw new Error("Invalid ASAR packed offset");
+    const offset = Number(info.offset), start = dataStart + offset, end = start + info.size;
+    if (!Number.isSafeInteger(offset) || !Number.isSafeInteger(start) || !Number.isSafeInteger(end) || start < dataStart || end > fileSize) throw new Error("ASAR packed file exceeds input");
+    packed.push({ name, start, end });
+  }
+  packed.sort((a, b) => a.start - b.start || a.end - b.end);
+  let previousEnd = dataStart;
+  for (const range of packed) {
+    if (range.end === range.start) continue;
+    if (range.start < previousEnd) throw new Error("Overlapping ASAR packed files");
+    previousEnd = range.end;
+  }
+  const reviewed = [], descriptor = openSync(file, "r"), buffer = Buffer.alloc(64 * 1024);
+  try {
+    for (const range of packed) {
+      const candidates = publicData.files.filter(p => p.rule === "developer-home" && (range.name === p.suffix || range.name.endsWith("/" + p.suffix)));
+      if (!candidates.length) continue;
+      const digest = createHash("sha256");let position = range.start;
+      while (position < range.end) {
+        const count = readSync(descriptor, buffer, 0, Math.min(buffer.length, range.end - position), position);
+        if (!count) throw new Error("ASAR packed bytes truncated");
+        digest.update(buffer.subarray(0, count));position += count;
+      }
+      const sha256 = digest.digest("hex"), match = candidates.find(p => p.sha256 === sha256);
+      if (match) reviewed.push({ start: range.start, end: range.end, reviewId: match.id });
+    }
+  } finally { closeSync(descriptor); }
+  return reviewed;
 }
 
 // ZIPs are extracted by Python only after validating every entry. No execution of payload code.
@@ -249,6 +343,7 @@ export async function scanReleasePrivacy(input, { projectDir = path.join(reposit
       const why = pathRule(label);
       if (why) add(why, label);
       for (const rule of bytes.rules) {
+        if (rule === "developer-home" && /\.asar$/i.test(file)) continue;
         const reviewed = rule === "developer-home" && publicData.files.find(p => p.rule === rule && bytes.sha256 === p.sha256 && (label === p.suffix || label.endsWith("/" + p.suffix)));
         if (reviewed) notices.push({ rule: "reviewed-public-data", reviewId: reviewed.id, file: label });
         else add(rule, label);
@@ -266,22 +361,29 @@ export async function scanReleasePrivacy(input, { projectDir = path.join(reposit
         await visit(dest, `${label}!`, realpathSync(dest), depth + 1, true);
         return;
       } else if (/\.asar$/i.test(file)) {
+        const rawHeader = readAsarHeader(file);
         const asar = loadAsar(projectDir);
-        const names = new Set();
-        for (const entry of asar.listPackage(file)) {
-          const name = entry.replace(/^\//, "");
-          const key = path.posix.normalize(name).toLowerCase();
-          if (!safeArchiveName(name) || names.has(key)) throw new Error("Unsafe ASAR entry");
-          names.add(key);
-          const info = asar.statFile(file, name, false);
+        asar.uncache(file);
+        const headerSize = asar.getRawHeader(file).headerSize;
+        if (headerSize !== rawHeader.headerSize) throw new Error("ASAR header changed during inspection");
+        const entries = canonicalAsarEntries(rawHeader.header, asar, file);
+        for (const { info } of entries) {
           if (info.link) throw new Error("ASAR links require explicit review");
           if (info.files) continue;
           expandedBytes += info.size;
           if (expandedBytes > 8 * 1024 ** 3 || info.size > 256 * 1024 ** 2) throw new Error("ASAR expansion bound exceeded");
+        }
+        const ranges = reviewedAsarRanges(file, headerSize, entries);
+        for (const { name, info } of entries) {
+          if (info.files) continue;
           const target = path.join(dest, name);
           mkdirSync(path.dirname(target), { recursive: true, mode: 0o700 });
-          writeFileSync(target, asar.extractFile(file, name), { mode: 0o600 });
+          writeFileSync(target, asar.extractFile(file, name.split("/").join(path.sep)), { mode: 0o600 });
         }
+        const checked = await inspectBytes(file, ranges);
+        if (checked.sha256 !== bytes.sha256) throw new Error("ASAR changed during inspection");
+        if (checked.rules.includes("developer-home")) add("developer-home", label);
+        else if (bytes.rules.includes("developer-home")) notices.push({ rule: "reviewed-asar-public-data", reviewIds: ranges.map(r => r.reviewId), file: label });
       } else if (/\.appimage$/i.test(file)) {
         unpackAppImage(file, dest);
       } else if (/\.(zip|apk|aab|ipa)$/i.test(file)) {

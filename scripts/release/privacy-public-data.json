@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "reviewedOn": "2026-11-11",
+  "reviewedOn": "2026-11-12",
   "files": [
     {
       "id": "bindings-1.5.0-documentation-paths",
@@ -17,6 +17,30 @@
       "rule": "developer-home",
       "source": "https://registry.npmjs.org/next/-/next-16.2.6.tgz",
       "reason": "Unmodified public source-map example, not the application's build directory."
+    },
+    {
+      "id": "otel-semconv-1.43.0-esm-path-examples",
+      "suffix": "node_modules/@opentelemetry/semantic-conventions/build/esm/experimental_attributes.js",
+      "sha256": "f54ca8e6872115818943ec484ab92e5ce9fb2c5c7ea9b093c4123f940583e4be",
+      "rule": "developer-home",
+      "source": "https://registry.npmjs.org/@opentelemetry/semantic-conventions/-/semantic-conventions-1.43.0.tgz",
+      "reason": "Unmodified Apache-2.0 public semantic-convention documentation examples; official npm SHA-512 integrity and exact file bytes verified. Only developer-home is reviewed; other rules still apply."
+    },
+    {
+      "id": "otel-semconv-1.43.0-esnext-path-examples",
+      "suffix": "node_modules/@opentelemetry/semantic-conventions/build/esnext/experimental_attributes.js",
+      "sha256": "f54ca8e6872115818943ec484ab92e5ce9fb2c5c7ea9b093c4123f940583e4be",
+      "rule": "developer-home",
+      "source": "https://registry.npmjs.org/@opentelemetry/semantic-conventions/-/semantic-conventions-1.43.0.tgz",
+      "reason": "Unmodified Apache-2.0 public semantic-convention documentation examples; official npm SHA-512 integrity and exact file bytes verified. Only developer-home is reviewed; other rules still apply."
+    },
+    {
+      "id": "otel-semconv-1.43.0-src-path-examples",
+      "suffix": "node_modules/@opentelemetry/semantic-conventions/build/src/experimental_attributes.js",
+      "sha256": "18e9b78725c08761537a4b0161236e69eb68e68c1037587c5a83fce411b0238c",
+      "rule": "developer-home",
+      "source": "https://registry.npmjs.org/@opentelemetry/semantic-conventions/-/semantic-conventions-1.43.0.tgz",
+      "reason": "Unmodified Apache-2.0 public semantic-convention documentation examples; official npm SHA-512 integrity and exact file bytes verified. Only developer-home is reviewed; other rules still apply."
     }
   ],
   "matches": [
