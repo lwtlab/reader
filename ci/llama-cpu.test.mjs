@@ -141,5 +141,5 @@ test('catalog-mode seals exact bytes, rejects tampering and checks graph before 
 test('workflow isolates CPU credentials/results, keeps the full graph and makes focused scope explicit',()=>{
  const yaml=readFileSync(new URL('../.github/workflows/reader-private-verify.yml',import.meta.url),'utf8');const cpu=yaml.split('\n  llama-cpu:')[1].split('\n  report-llama-cpu:')[0];
  assert(!cpu.includes('READER_VERIFICATION_TOKEN'));assert(cpu.includes('persist-credentials: false'));assert(cpu.includes('retention-days: 7'));assert(cpu.includes('if-no-files-found: error'));assert(!/path:.*(?:\.llama-build|source\/)/.test(cpu));
- assert(yaml.includes("full:\n    if: inputs.scope != 'llama-cpu'"));assert(yaml.includes('Run the unchanged complete task graph'));assert(yaml.includes('reader-full-result-'));assert(yaml.includes('reader-llama-cpu-result-'));assert(yaml.includes('options: [full, llama-cpu, shadow-plan, catalog-cpu, change-example]'));
+ assert(yaml.includes("full:\n    if: inputs.scope != 'llama-cpu'"));assert(yaml.includes('Run the unchanged complete task graph'));assert(yaml.includes('reader-full-result-'));assert(yaml.includes('reader-llama-cpu-result-'));assert(yaml.includes('options: [full, llama-cpu, shadow-plan, catalog-cpu, change-example, selected-source]'));
 });

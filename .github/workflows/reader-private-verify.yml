@@ -20,13 +20,18 @@ on:
         required: false
         default: full
         type: choice
-        options: [full, llama-cpu, shadow-plan, catalog-cpu, change-example]
+        options: [full, llama-cpu, shadow-plan, catalog-cpu, change-example, selected-source]
       example:
         description: Reviewed real source-change example (optional scope only)
         required: false
         default: unknown
         type: choice
-        options: [reader-only, hear-only, shared-core, unknown]
+        options: [reader-only, hear-only, shared-core, unknown, implementation]
+      selection_probe:
+        description: Reader-only core and CPU diagnostics; no gate receipt or private status
+        required: false
+        default: false
+        type: boolean
   schedule:
     - cron: '17,47 * * * *'
 permissions:
@@ -59,7 +64,7 @@ jobs:
           VERIFICATION_WORKFLOW_SHA: ${{ vars.READER_VERIFICATION_WORKFLOW_SHA }}
         run: node ci/reader-verification-control.mjs poll
   resolve:
-    if: github.event_name == 'workflow_dispatch' && inputs.scope != 'change-example'
+    if: github.event_name == 'workflow_dispatch' && inputs.scope != 'change-example' && inputs.scope != 'selected-source'
     name: Resolve and mark exact private input
     runs-on: ubuntu-24.04
     environment: reader-verification
@@ -848,3 +853,534 @@ jobs:
           path: change-result/qualification.json
           retention-days: 7
           if-no-files-found: error
+
+  resolve-selected:
+    if: github.event_name == 'workflow_dispatch' && inputs.scope == 'selected-source'
+    name: Resolve reviewed selected source execution
+    runs-on: ubuntu-24.04
+    environment: reader-verification
+    timeout-minutes: 10
+    outputs:
+      binding: ${{ steps.resolve.outputs.binding }}
+      tested: ${{ steps.resolve.outputs.tested }}
+      head: ${{ steps.resolve.outputs.head }}
+      base: ${{ steps.resolve.outputs.base }}
+      pr: ${{ steps.resolve.outputs.pr }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24.22.0
+      - id: resolve
+        name: Validate pinned example, trusted nested PR and actual merge parents
+        env:
+          GH_TOKEN: ${{ secrets.READER_VERIFICATION_TOKEN }}
+          SELECTION_PROBE: ${{ inputs.selection_probe }}
+          SELECTION_CASE: ${{ inputs.example }}
+          WORKFLOW_SHA: ${{ inputs.workflow_sha }}
+          SOURCE_REF: ${{ inputs.source_ref }}
+          PR_NUMBER: ${{ inputs.pr_number }}
+        run: node ci/selected-source.mjs resolve
+
+  selected-plan:
+    if: inputs.scope == 'selected-source'
+    needs: resolve-selected
+    name: Selected source plan and controls
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    env:
+      SELECTION_PROBE: ${{ inputs.selection_probe }}
+      SELECTION_CASE: ${{ inputs.example }}
+      VERIFICATION_BINDING: ${{ needs.resolve-selected.outputs.binding }}
+    outputs:
+      reader_profile: ${{ steps.collect.outputs.reader_profile }}
+      hear_required: ${{ steps.collect.outputs.hear_required }}
+      core_required: ${{ steps.collect.outputs.core_required }}
+      plan_sha: ${{ steps.collect.outputs.plan_sha }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24.22.0
+      - name: Read exact tested private source
+        uses: actions/checkout@v4
+        with:
+          repository: lwtlab/lwt-core
+          ref: ${{ needs.resolve-selected.outputs.tested }}
+          path: source
+          fetch-depth: 0
+          ssh-key: ${{ secrets.PRIVATE_SOURCE_SSH_KEY }}
+          persist-credentials: false
+          submodules: false
+      - name: Validate independently pinned selected implementation
+        run: node ci/selected-source.mjs identity
+      - id: controls
+        name: Qualify actual planner, CLI, executors and failure propagation
+        run: node ci/private-step.mjs selected-controls source node --test scripts/verification-catalog.test.mjs scripts/verification-execution.test.mjs
+      - id: plan
+        name: Compute source-bound selected plan with no task success claims
+        run: node ci/private-step.mjs selected-plan source node scripts/verify-selected.mjs plan
+      - id: collect
+        name: Validate bounded selected plan and encrypt original bytes
+        if: always()
+        env:
+          SELECTION_CONTROLS_OUTCOME: ${{ steps.controls.outcome }}
+          SELECTION_PLAN_OUTCOME: ${{ steps.plan.outcome }}
+        run: node ci/selected-source.mjs plan-collect
+      - name: Encrypt private control output
+        if: always()
+        run: node ci/selected-source.mjs seal
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: reader-selected-plan-result-${{ github.run_id }}-${{ github.run_attempt }}
+          path: selected-output/plan.json
+          if-no-files-found: error
+          retention-days: 7
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: reader-selected-plan-encrypted-${{ github.run_id }}-${{ github.run_attempt }}
+          path: selected-output/*.enc.json
+          if-no-files-found: ignore
+          retention-days: 7
+      - name: Require the independently validated plan
+        if: always()
+        run: node ci/selected-source.mjs plan-require
+
+  selected-reader:
+    if: inputs.scope == 'selected-source' && (!inputs.selection_probe || needs.selected-plan.outputs.reader_profile == 'quick')
+    needs: [resolve-selected, selected-plan]
+    name: Selected Reader source verification
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    env:
+      SELECTION_PROBE: ${{ inputs.selection_probe }}
+      SELECTION_CASE: ${{ inputs.example }}
+      VERIFICATION_BINDING: ${{ needs.resolve-selected.outputs.binding }}
+    steps:
+      - name: Mark runner preparation start
+        run: echo "READER_PREPARATION_STARTED_MS=$(date +%s%3N)" >> "$GITHUB_ENV"
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24.22.0
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11.5.2
+          package_json_file: site/package.json
+          run_install: false
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: '1.88.0'
+      - name: Prepare public system tools
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y ffmpeg build-essential pkg-config libssl-dev
+          docker --host unix:///var/run/docker.sock pull postgres:17.7-bookworm
+      - name: Read exact private source without persisted credentials
+        uses: actions/checkout@v4
+        with:
+          repository: lwtlab/lwt-core
+          ref: ${{ needs.resolve-selected.outputs.tested }}
+          path: source
+          fetch-depth: 0
+          ssh-key: ${{ secrets.PRIVATE_SOURCE_SSH_KEY }}
+          persist-credentials: false
+          submodules: false
+      - name: Verify selected implementation and immutable merge identity
+        run: node ci/selected-source.mjs identity
+      - name: Compute the same canonical selected plan in this checkout
+        run: node ci/private-step.mjs selected-plan source node scripts/verify-selected.mjs plan
+      - uses: actions/download-artifact@v4
+        with:
+          name: reader-selected-plan-result-${{ github.run_id }}-${{ github.run_attempt }}
+          path: selected-inputs/plan
+      - name: Initialize fixed public submodules
+        run: >-
+          node ci/private-step.mjs submodules source git
+          -c submodule.aspeak.url=https://github.com/XUJiahua/aspeak.git
+          -c submodule.srtparse.url=https://github.com/XUJiahua/srtparse.git
+          submodule update --init -- aspeak srtparse
+      - name: Verify public registry download policy
+        run: node ci/reader-download-cache.mjs
+      - uses: actions/cache@v4
+        with:
+          path: ${{ runner.temp }}/reader-mobile-public-cache/_cacache
+          key: reader-mobile-public-${{ runner.os }}-${{ runner.arch }}-node24.22.0-${{ hashFiles('source/apps/reader-mobile/package-lock.json') }}
+      - name: Install frozen private dependencies and managed hooks
+        env:
+          READER_INSTALL_NETWORK: direct
+        run: |
+          node ci/private-step.mjs hooks source bash scripts/install-git-hooks.sh
+          node ci/private-step.mjs dependencies source bash apps/reader/scripts/install.sh --frozen-lockfile
+      - name: Install frozen Mobile registry dependencies
+        env:
+          npm_config_cache: ${{ runner.temp }}/reader-mobile-public-cache
+        run: node ci/private-step.mjs mobile-dependencies source npm --prefix apps/reader-mobile ci --include=dev --legacy-peer-deps
+      - name: Install browser runtimes
+        if: needs.selected-plan.outputs.reader_profile == 'full'
+        run: node ci/private-step.mjs browsers source pnpm --dir apps/reader exec playwright install --with-deps chromium firefox webkit chrome
+      - id: reader
+        name: Execute exactly the selected Reader profile
+        env:
+          READER_SELECTED_PROFILE: ${{ needs.selected-plan.outputs.reader_profile }}
+        run: |
+          case "$READER_SELECTED_PROFILE" in full|quick) ;; *) exit 1 ;; esac
+          if [ "$READER_SELECTED_PROFILE" = full ]; then phase=full-verification; else phase=selected-reader-quick; fi
+          node ci/private-step.mjs "$phase" source node scripts/verify.mjs --profile "$READER_SELECTED_PROFILE"
+      - name: Produce legacy full33 receipt only for the full profile
+        if: always() && needs.selected-plan.outputs.reader_profile == 'full'
+        env:
+          VERIFICATION_OUTCOME: ${{ steps.reader.outcome }}
+        run: node ci/reader-verification-run.mjs receipt
+      - name: Collect source-bound Reader execution and raw summary
+        if: always()
+        env:
+          SELECTED_READER_OUTCOME: ${{ steps.reader.outcome }}
+        run: node ci/selected-source.mjs reader-collect
+      - name: Encrypt selected plan, summary and private output
+        if: always()
+        run: node ci/selected-source.mjs seal
+      - name: Encrypt complete synthetic diagnostics
+        if: always()
+        run: node ci/reader-verification-run.mjs seal
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: reader-selected-reader-result-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            selected-output/selection.json
+            selected-output/verification.json
+          if-no-files-found: error
+          retention-days: 7
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: reader-selected-reader-encrypted-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            selected-output/*.enc.json
+            verification-output/diagnostics.enc.json
+          if-no-files-found: ignore
+          retention-days: 7
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: reader-selected-reader-progress-${{ github.run_id }}-${{ github.run_attempt }}
+          path: verification-output/progress.json
+          if-no-files-found: ignore
+          retention-days: 7
+      - name: Require actual selected Reader execution
+        if: always()
+        run: node ci/selected-source.mjs reader-require
+
+  selected-cpu:
+    if: inputs.scope == 'selected-source'
+    needs: [resolve-selected, selected-plan]
+    name: Selected shared CPU compilation and controls
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    env:
+      SELECTION_PROBE: ${{ inputs.selection_probe }}
+      SELECTION_CASE: ${{ inputs.example }}
+      VERIFICATION_BINDING: ${{ needs.resolve-selected.outputs.binding }}
+      VERIFICATION_SCOPE: llama-cpu
+      CPU_CATALOG: 'true'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24.22.0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: '1.88.0'
+      - name: Read exact private source without persisted credentials
+        uses: actions/checkout@v4
+        with:
+          repository: lwtlab/lwt-core
+          ref: ${{ needs.resolve-selected.outputs.tested }}
+          path: source
+          fetch-depth: 0
+          ssh-key: ${{ secrets.PRIVATE_SOURCE_SSH_KEY }}
+          persist-credentials: false
+          submodules: false
+      - name: Verify selected implementation and immutable merge identity
+        run: node ci/selected-source.mjs identity
+      - name: Compute the same canonical selected plan in this checkout
+        run: node ci/private-step.mjs selected-plan source node scripts/verify-selected.mjs plan
+      - uses: actions/download-artifact@v4
+        with:
+          name: reader-selected-plan-result-${{ github.run_id }}-${{ github.run_attempt }}
+          path: selected-inputs/plan
+      - id: core
+        if: needs.selected-plan.outputs.core_required == 'true'
+        name: Execute selected core source and native ASR controls
+        run: node ci/private-step.mjs selected-core source node scripts/verify-selected.mjs core
+      - name: Collect selected core initialization and Rust control proof
+        if: always() && needs.selected-plan.outputs.core_required == 'true'
+        env:
+          SELECTED_CORE_OUTCOME: ${{ steps.core.outcome }}
+        run: node ci/selected-source.mjs core-collect
+      - name: Validate fresh CPU source identity
+        run: node ci/llama-cpu-run.mjs identity
+      - id: cpu
+        name: Compile pinned CPU runtime and run all nine controls
+        run: node ci/llama-cpu-run.mjs verify
+      - name: Encrypt private CPU logs and generated build bundle
+        if: always()
+        run: node ci/llama-cpu-run.mjs seal
+      - name: Produce bounded CPU receipt
+        if: always()
+        env:
+          VERIFICATION_OUTCOME: ${{ steps.cpu.outcome }}
+        run: node ci/llama-cpu-run.mjs receipt
+      - name: Upload bounded CPU result
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: reader-selected-cpu-result-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            llama-cpu-output/verification.json
+            llama-cpu-output/catalog.json
+            llama-cpu-output/core.json
+          if-no-files-found: error
+          retention-days: 7
+      - name: Upload encrypted CPU diagnostics only
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: reader-selected-cpu-encrypted-${{ github.run_id }}-${{ github.run_attempt }}
+          path: llama-cpu-output/diagnostics.enc.json
+          if-no-files-found: error
+          retention-days: 7
+      - name: Encrypt selected plan and core diagnostics
+        if: always()
+        run: node ci/selected-source.mjs seal
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: reader-selected-core-encrypted-${{ github.run_id }}-${{ github.run_attempt }}
+          path: selected-output/*.enc.json
+          if-no-files-found: ignore
+          retention-days: 7
+      - name: Require complete CPU success
+        if: always()
+        env:
+          VERIFICATION_OUTCOME: ${{ steps.cpu.outcome }}
+        run: |
+          node ci/llama-cpu-run.mjs require-catalog
+          node ci/selected-source.mjs cpu-require
+  selected-hear:
+    if: inputs.scope == 'selected-source' && needs.selected-plan.outputs.hear_required == 'true'
+    needs: [resolve-selected, selected-plan]
+    name: Selected Hear native and scripted GUI
+    runs-on: macos-26
+    timeout-minutes: 75
+    defaults:
+      run:
+        shell: bash
+    env:
+      SELECTION_SOURCE_DIR: core
+      SELECTION_CASE: ${{ inputs.example }}
+      SELECTION_PROBE: ${{ inputs.selection_probe }}
+      VERIFICATION_BINDING: ${{ needs.resolve-selected.outputs.binding }}
+      HEAD_REF: ${{ needs.resolve-selected.outputs.head }}
+      BASE_REF: ${{ needs.resolve-selected.outputs.base }}
+      TESTED_REF: ${{ needs.resolve-selected.outputs.tested }}
+      DESKTOP_APP_REF: ''
+      DESKTOP_CORE_REF: ''
+      DESKTOP_FUNCTIONAL_RUNTIME: 'false'
+      DESKTOP_REUSE_NATIVE: 'false'
+      DESKTOP_REUSE_RUNTIME: 'false'
+      DESKTOP_WINDOWS_SIGNAL: 'false'
+      PR_NUMBER: ${{ needs.resolve-selected.outputs.pr }}
+      SOURCE_REF: ${{ needs.resolve-selected.outputs.tested }}
+      APP_REF: ${{ needs.resolve-selected.outputs.tested }}
+      CORE_REF: ${{ needs.resolve-selected.outputs.tested }}
+      SOURCE_LAYOUT: monorepo
+      HEAR_APP_PATH: core/apps/hear
+      HEAR_CORE_DIR: ${{ github.workspace }}/core
+      ELECTRON_MIRROR: https://github.com/electron/electron/releases/download/
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24.22.0
+      - name: Read independently pinned public Hear adapter
+        uses: actions/checkout@v4
+        with:
+          repository: lwtlab/hear
+          ref: 3cf181b04a953e647ae28e54d0e5d5279f2f250a
+          path: hear-ci
+          persist-credentials: false
+      - name: Load the existing public diagnostic encryption key
+        run: |
+          {
+            echo 'HEAR_LOG_PUBLIC_KEY<<LWT_PUBLIC_KEY'
+            cat ci/build-logs-public.pem
+            echo 'LWT_PUBLIC_KEY'
+          } >> "$GITHUB_ENV"
+      - name: Validate explicit desktop scope and encryption
+        run: node hear-ci/ci/desktop-catalog.mjs --start
+      - uses: actions/checkout@v4
+        with:
+          repository: lwtlab/lwt-core
+          ref: ${{ env.TESTED_REF }}
+          path: core
+          fetch-depth: 0
+          ssh-key: ${{ secrets.PRIVATE_SOURCE_SSH_KEY }}
+          persist-credentials: false
+          submodules: false
+      - name: Verify selected implementation and immutable merge identity
+        run: node ci/selected-source.mjs identity
+      - name: Compute the same canonical selected plan in this checkout
+        run: node hear-ci/ci/private-step.mjs selected-plan core node scripts/verify-selected.mjs plan
+      - uses: actions/download-artifact@v4
+        with:
+          name: reader-selected-plan-result-${{ github.run_id }}-${{ github.run_attempt }}
+          path: selected-inputs/plan
+      - name: Verify independent executor pins before private execution
+        run: node hear-ci/ci/desktop-catalog.mjs --verify-input
+      - name: Verify immutable source ownership
+        run: node hear-ci/ci/assert-sources.mjs
+      - uses: pnpm/action-setup@v4
+        with:
+          package_json_file: core/apps/hear/package.json
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Prepare only required core source dependencies
+        run: node hear-ci/ci/private-step.mjs prepare core bash scripts/hear.sh init
+      - name: Link source core
+        run: node hear-ci/ci/private-step.mjs link app node scripts/link-core.mjs
+      - name: Install frozen application dependencies
+        run: node hear-ci/ci/private-step.mjs install app pnpm install --frozen-lockfile
+      - id: desktop_checks
+        name: Execute all seven shared native and scripted GUI tasks
+        run: |
+          node hear-ci/ci/desktop-catalog.mjs --verify-input
+          node hear-ci/ci/private-step.mjs desktop-catalog core bash scripts/hear.sh desktop-check
+      - id: result
+        name: Independently collect source-bound desktop result
+        if: always()
+        env:
+          DESKTOP_EXECUTION_OUTCOME: ${{ steps.desktop_checks.outcome }}
+        run: node hear-ci/ci/desktop-catalog.mjs --collect
+      - uses: actions/upload-artifact@v4
+        if: always() && steps.result.outcome == 'success'
+        with:
+          name: reader-selected-hear-result-${{ github.run_id }}-${{ github.run_attempt }}
+          path: desktop-catalog-receipt/verification.json
+          retention-days: 7
+          if-no-files-found: error
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: reader-selected-hear-encrypted-${{ github.run_id }}-${{ github.run_attempt }}
+          path: diagnostics/desktop-*.enc.json
+          retention-days: 7
+          if-no-files-found: ignore
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: reader-selected-hear-progress-${{ github.run_id }}-${{ github.run_attempt }}
+          path: desktop-catalog-progress/progress.json
+          retention-days: 7
+          if-no-files-found: ignore
+      - name: Require fresh native and scripted GUI success
+        if: always()
+        env:
+          DESKTOP_EXECUTION_OUTCOME: ${{ steps.desktop_checks.outcome }}
+        run: node hear-ci/ci/desktop-catalog.mjs --require-pass
+
+
+  aggregate-selected:
+    needs: [resolve-selected, selected-plan, selected-reader, selected-cpu, selected-hear]
+    if: always() && needs.resolve-selected.result == 'success'
+    name: Require selected source coverage
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    env:
+      SELECTION_CASE: ${{ inputs.example }}
+      SELECTION_PROBE: ${{ inputs.selection_probe }}
+      VERIFICATION_BINDING: ${{ needs.resolve-selected.outputs.binding }}
+      SELECTION_OUTCOMES: '{"plan":"${{ needs.selected-plan.result }}","reader":"${{ needs.selected-reader.result }}","cpu":"${{ needs.selected-cpu.result }}","hear":"${{ needs.selected-hear.result }}"}'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24.22.0
+      - uses: actions/download-artifact@v4
+        with:
+          name: reader-selected-plan-result-${{ github.run_id }}-${{ github.run_attempt }}
+          path: selected-inputs/plan
+      - uses: actions/download-artifact@v4
+        if: '!inputs.selection_probe'
+        with:
+          name: reader-selected-reader-result-${{ github.run_id }}-${{ github.run_attempt }}
+          path: selected-inputs/reader
+      - uses: actions/download-artifact@v4
+        with:
+          name: reader-selected-cpu-result-${{ github.run_id }}-${{ github.run_attempt }}
+          path: selected-inputs/cpu
+      - uses: actions/download-artifact@v4
+        if: needs.selected-plan.outputs.hear_required == 'true'
+        with:
+          name: reader-selected-hear-result-${{ github.run_id }}-${{ github.run_attempt }}
+          path: selected-inputs/hear
+      - name: Require complete actual selected coverage
+        if: always() && !inputs.selection_probe
+        run: node ci/selected-source.mjs aggregate
+      - name: Record focused diagnostic without a gate receipt
+        if: always() && inputs.selection_probe
+        run: node ci/selected-source.mjs probe
+      - uses: actions/upload-artifact@v4
+        if: always() && !inputs.selection_probe
+        with:
+          name: reader-selected-qualification-result-${{ github.run_id }}-${{ github.run_attempt }}
+          path: selected-output/qualification.json
+          if-no-files-found: error
+          retention-days: 7
+      - uses: actions/upload-artifact@v4
+        if: always() && inputs.selection_probe
+        with:
+          name: reader-selected-component-probe-${{ github.run_id }}-${{ github.run_attempt }}
+          path: selected-output/probe.json
+          if-no-files-found: error
+          retention-days: 7
+
+  report-selected:
+    needs: [resolve-selected, aggregate-selected]
+    if: always() && needs.resolve-selected.result == 'success' && !inputs.selection_probe
+    name: Independently report selected source result
+    runs-on: ubuntu-24.04
+    environment: reader-verification
+    timeout-minutes: 10
+    env:
+      SELECTION_CASE: ${{ inputs.example }}
+      SELECTION_PROBE: ${{ inputs.selection_probe }}
+      VERIFICATION_BINDING: ${{ needs.resolve-selected.outputs.binding }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24.22.0
+      - name: Revalidate actual run, artifacts, complete coverage and live private refs
+        env:
+          GH_TOKEN: ${{ secrets.READER_VERIFICATION_TOKEN }}
+        run: node ci/selected-source.mjs report
