@@ -27,8 +27,9 @@ path classifier. Unselected and unexecuted tasks remain `NOT_RUN`.
 
 The three execution lanes use separate runners, checkouts, processes and data.
 Reader uses Linux, CPU compilation uses a separate Linux runner, and Hear uses
-macOS with an independently pinned Hear adapter. Only the Reader full profile
-installs browser runtimes and produces the legacy full receipt. A quick result
+macOS with an independently pinned Hear adapter. The quick profile
+installs Chromium and Chrome required by the unchanged Reader preflight. The full
+profile also installs Firefox/WebKit and produces the legacy full receipt. A quick result
 cannot generate a Reader full success. Core initialization records a bounded
 transition to the two pinned clean prerequisites; it cannot permit source edits.
 

@@ -1024,6 +1024,9 @@ jobs:
         env:
           npm_config_cache: ${{ runner.temp }}/reader-mobile-public-cache
         run: node ci/private-step.mjs mobile-dependencies source npm --prefix apps/reader-mobile ci --include=dev --legacy-peer-deps
+      - name: Install quick preflight Chromium and Chrome
+        if: needs.selected-plan.outputs.reader_profile == 'quick'
+        run: node ci/private-step.mjs browsers source pnpm --dir apps/reader exec playwright install --with-deps chromium chrome
       - name: Install browser runtimes
         if: needs.selected-plan.outputs.reader_profile == 'full'
         run: node ci/private-step.mjs browsers source pnpm --dir apps/reader exec playwright install --with-deps chromium firefox webkit chrome

@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import {test} from 'node:test';
 import {spawnSync,execFileSync} from 'node:child_process';
-import {mkdtempSync,writeFileSync,readFileSync,mkdirSync,rmSync,realpathSync} from 'node:fs';
+import {mkdtempSync,writeFileSync,readFileSync,mkdirSync,rmSync,realpathSync,chmodSync} from 'node:fs';
 import {join} from 'node:path';
 import {tmpdir} from 'node:os';
 import {aggregate,validatePlan,readerFromBytes,coreFromBytes,validateReader,selectedDescriptor,planFromBytes} from './selected-contract.mjs';
@@ -117,4 +117,14 @@ test('actual aggregate and focused probe CLIs consume valid generated receipts w
 test('workflow isolates selected scope, privileged reporting and diagnostic probes without changing full defaults',()=>{
  const yaml=readFileSync(new URL('../.github/workflows/reader-private-verify.yml',import.meta.url),'utf8'),selected=yaml.slice(yaml.indexOf('  resolve-selected:')),reader=selected.split('  selected-reader:')[1].split('  selected-cpu:')[0],cpu=selected.split('  selected-cpu:')[1].split('  selected-hear:')[0],report=selected.split('  report-selected:')[1];
  assert.match(yaml,/default: full/);assert.match(yaml,/inputs.scope != 'change-example' && inputs.scope != 'selected-source'/);assert.match(reader,/READER_SELECTED_PROFILE: \$\{\{ needs.selected-plan.outputs.reader_profile \}\}/);assert.match(reader,/always\(\) && needs.selected-plan.outputs.reader_profile == 'full'/);assert(!reader.includes('READER_VERIFICATION_TOKEN'));assert(!cpu.includes('READER_VERIFICATION_TOKEN'));assert(!report.includes('PRIVATE_SOURCE_SSH_KEY'));assert(!report.includes('repository: lwtlab/lwt-core'));assert.match(report,/!inputs.selection_probe/);assert.match(selected,/reader-selected-component-probe-/);assert.match(selected,/node hear-ci\/ci\/private-step.mjs selected-plan core node scripts\/verify-selected.mjs plan/);assert.match(selected,/core_required == 'true'/);assert.match(selected,/hear_required == 'true'/);assert(!/path:.*(?:\.artifacts\/verify|source\/)/.test(selected));
+});
+
+test('actual quick browser preparation wrapper executes required Chromium/Chrome installer in the source checkout',t=>{
+ const yaml=readFileSync(new URL('../.github/workflows/reader-private-verify.yml',import.meta.url),'utf8'),reader=yaml.split('  selected-reader:')[1].split('  selected-cpu:')[0];
+ const block=reader.split('      - name: Install quick preflight Chromium and Chrome')[1]?.split('      - name:')[0];assert(block);assert.match(block,/reader_profile == 'quick'/);
+ const command=block.match(/        run: (.+)/)[1],args=command.split(' ');assert.deepEqual(args.slice(0,4),['node','ci/private-step.mjs','browsers','source']);
+ const root=realpathSync(mkdtempSync(join(tmpdir(),'selected-quick-browser-')));t.after(()=>rmSync(root,{recursive:true,force:true}));mkdirSync(join(root,'source'));mkdirSync(join(root,'runtime'));mkdirSync(join(root,'bin'));
+ const record=join(root,'installer.json'),fake=join(root,'bin','pnpm');writeFileSync(fake,`#!${process.execPath}\nimport{writeFileSync}from'node:fs';writeFileSync(process.env.GENERATED_INSTALLER_RECORD,JSON.stringify({args:process.argv.slice(2),cwd:process.cwd()}));`);chmodSync(fake,0o700);
+ const wrapper=new URL('./private-step.mjs',import.meta.url).pathname,child=spawnSync(process.execPath,[wrapper,...args.slice(2)],{cwd:root,env:{...process.env,RUNNER_TEMP:join(root,'runtime'),GENERATED_INSTALLER_RECORD:record,PATH:join(root,'bin')+':'+process.env.PATH},encoding:'utf8'});assert.equal(child.status,0,child.stdout+child.stderr);
+ assert.deepEqual(JSON.parse(readFileSync(record)),{args:['--dir','apps/reader','exec','playwright','install','--with-deps','chromium','chrome'],cwd:join(root,'source')});
 });
