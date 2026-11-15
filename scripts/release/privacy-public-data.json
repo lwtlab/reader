@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "reviewedOn": "2026-11-12",
+  "reviewedOn": "2026-11-15",
   "files": [
     {
       "id": "bindings-1.5.0-documentation-paths",
@@ -68,6 +68,246 @@
       "suffix": "kokoro-worker.js",
       "source": "https://registry.npmjs.org/@huggingface/transformers/-/transformers-3.8.1.tgz",
       "reason": "Exact fragment spans a minified AssignmentExpression in public Transformers code, not a string credential."
+    },
+    {
+      "id": "qwen-gpu-darwin-recipeKey-runtime-43558699190",
+      "sha256": "dddca0de7acd5472a8abcf6a8f65d89881991db462e918ee2d4196b778cbeac1",
+      "rule": "generic-api-key",
+      "label": "recipeKey",
+      "suffix": "qwen3/runtime.json",
+      "source": "https://github.com/lwtlab/hear/actions/runs/43558699190/attempts/1",
+      "reason": "Exact public native artifact fingerprint, independently verified against source inputs and compiler identity; not an account credential. Scoped to the Qwen provenance filename and field label; changed values and other rules still block.",
+      "format": "qwen-gpu-fingerprint-json-field"
+    },
+    {
+      "id": "qwen-gpu-darwin-recipeKey-consumer-origin-43558699190",
+      "sha256": "dddca0de7acd5472a8abcf6a8f65d89881991db462e918ee2d4196b778cbeac1",
+      "rule": "generic-api-key",
+      "label": "recipeKey",
+      "suffix": "qwen3/consumer-origin.json",
+      "source": "https://github.com/lwtlab/hear/actions/runs/43558699190/attempts/1",
+      "reason": "Exact public native artifact fingerprint, independently verified against source inputs and compiler identity; not an account credential. Scoped to the Qwen provenance filename and field label; changed values and other rules still block.",
+      "format": "qwen-gpu-fingerprint-json-field"
+    },
+    {
+      "id": "qwen-gpu-darwin-buildKey-runtime-43558699190",
+      "sha256": "2560e8b5cf47d2f6138e92b4a8efc47b1d9e5ef147818ebe99f53795c6354609",
+      "rule": "generic-api-key",
+      "label": "buildKey",
+      "suffix": "qwen3/runtime.json",
+      "source": "https://github.com/lwtlab/hear/actions/runs/43558699190/attempts/1",
+      "reason": "Exact public native artifact fingerprint, independently verified against source inputs and compiler identity; not an account credential. Scoped to the Qwen provenance filename and field label; changed values and other rules still block.",
+      "format": "qwen-gpu-fingerprint-json-field"
+    },
+    {
+      "id": "qwen-gpu-darwin-buildKey-consumer-origin-43558699190",
+      "sha256": "2560e8b5cf47d2f6138e92b4a8efc47b1d9e5ef147818ebe99f53795c6354609",
+      "rule": "generic-api-key",
+      "label": "buildKey",
+      "suffix": "qwen3/consumer-origin.json",
+      "source": "https://github.com/lwtlab/hear/actions/runs/43558699190/attempts/1",
+      "reason": "Exact public native artifact fingerprint, independently verified against source inputs and compiler identity; not an account credential. Scoped to the Qwen provenance filename and field label; changed values and other rules still block.",
+      "format": "qwen-gpu-fingerprint-json-field"
+    },
+    {
+      "id": "qwen-gpu-linux-recipeKey-runtime-43558699190",
+      "sha256": "7417bc6728f1776226d749ae0245b42d410f6ca3e203e7ec5d5dc08f62092354",
+      "rule": "generic-api-key",
+      "label": "recipeKey",
+      "suffix": "qwen3/runtime.json",
+      "source": "https://github.com/lwtlab/hear/actions/runs/43558699190/attempts/1",
+      "reason": "Exact public native artifact fingerprint, independently verified against source inputs and compiler identity; not an account credential. Scoped to the Qwen provenance filename and field label; changed values and other rules still block.",
+      "format": "qwen-gpu-fingerprint-json-field"
+    },
+    {
+      "id": "qwen-gpu-linux-recipeKey-consumer-origin-43558699190",
+      "sha256": "7417bc6728f1776226d749ae0245b42d410f6ca3e203e7ec5d5dc08f62092354",
+      "rule": "generic-api-key",
+      "label": "recipeKey",
+      "suffix": "qwen3/consumer-origin.json",
+      "source": "https://github.com/lwtlab/hear/actions/runs/43558699190/attempts/1",
+      "reason": "Exact public native artifact fingerprint, independently verified against source inputs and compiler identity; not an account credential. Scoped to the Qwen provenance filename and field label; changed values and other rules still block.",
+      "format": "qwen-gpu-fingerprint-json-field"
+    },
+    {
+      "id": "qwen-gpu-linux-buildKey-runtime-43558699190",
+      "sha256": "03318db93773f1b675803577d3e1dd724b62e1bda5bc7e0e8092d8bb1aab071d",
+      "rule": "generic-api-key",
+      "label": "buildKey",
+      "suffix": "qwen3/runtime.json",
+      "source": "https://github.com/lwtlab/hear/actions/runs/43558699190/attempts/1",
+      "reason": "Exact public native artifact fingerprint, independently verified against source inputs and compiler identity; not an account credential. Scoped to the Qwen provenance filename and field label; changed values and other rules still block.",
+      "format": "qwen-gpu-fingerprint-json-field"
+    },
+    {
+      "id": "qwen-gpu-linux-buildKey-consumer-origin-43558699190",
+      "sha256": "03318db93773f1b675803577d3e1dd724b62e1bda5bc7e0e8092d8bb1aab071d",
+      "rule": "generic-api-key",
+      "label": "buildKey",
+      "suffix": "qwen3/consumer-origin.json",
+      "source": "https://github.com/lwtlab/hear/actions/runs/43558699190/attempts/1",
+      "reason": "Exact public native artifact fingerprint, independently verified against source inputs and compiler identity; not an account credential. Scoped to the Qwen provenance filename and field label; changed values and other rules still block.",
+      "format": "qwen-gpu-fingerprint-json-field"
+    },
+    {
+      "id": "qwen-gpu-windows-recipeKey-runtime-43558699190",
+      "sha256": "bcdefba1429c8833454050ef321820626db921617b8ae4eefb51180043cb524c",
+      "rule": "generic-api-key",
+      "label": "recipeKey",
+      "suffix": "qwen3/runtime.json",
+      "source": "https://github.com/lwtlab/hear/actions/runs/43558699190/attempts/1",
+      "reason": "Exact public native artifact fingerprint, independently verified against source inputs and compiler identity; not an account credential. Scoped to the Qwen provenance filename and field label; changed values and other rules still block.",
+      "format": "qwen-gpu-fingerprint-json-field"
+    },
+    {
+      "id": "qwen-gpu-windows-recipeKey-consumer-origin-43558699190",
+      "sha256": "bcdefba1429c8833454050ef321820626db921617b8ae4eefb51180043cb524c",
+      "rule": "generic-api-key",
+      "label": "recipeKey",
+      "suffix": "qwen3/consumer-origin.json",
+      "source": "https://github.com/lwtlab/hear/actions/runs/43558699190/attempts/1",
+      "reason": "Exact public native artifact fingerprint, independently verified against source inputs and compiler identity; not an account credential. Scoped to the Qwen provenance filename and field label; changed values and other rules still block.",
+      "format": "qwen-gpu-fingerprint-json-field"
+    },
+    {
+      "id": "qwen-gpu-windows-buildKey-runtime-43558699190",
+      "sha256": "deb0ad613e217760b0b19aae9be6926484e90afa0181b9fc8d49f9931d187083",
+      "rule": "generic-api-key",
+      "label": "buildKey",
+      "suffix": "qwen3/runtime.json",
+      "source": "https://github.com/lwtlab/hear/actions/runs/43558699190/attempts/1",
+      "reason": "Exact public native artifact fingerprint, independently verified against source inputs and compiler identity; not an account credential. Scoped to the Qwen provenance filename and field label; changed values and other rules still block.",
+      "format": "qwen-gpu-fingerprint-json-field"
+    },
+    {
+      "id": "qwen-gpu-windows-buildKey-consumer-origin-43558699190",
+      "sha256": "deb0ad613e217760b0b19aae9be6926484e90afa0181b9fc8d49f9931d187083",
+      "rule": "generic-api-key",
+      "label": "buildKey",
+      "suffix": "qwen3/consumer-origin.json",
+      "source": "https://github.com/lwtlab/hear/actions/runs/43558699190/attempts/1",
+      "reason": "Exact public native artifact fingerprint, independently verified against source inputs and compiler identity; not an account credential. Scoped to the Qwen provenance filename and field label; changed values and other rules still block.",
+      "format": "qwen-gpu-fingerprint-json-field"
+    },
+    {
+      "id": "qwen-gpu-windows-recipeKey-runtime-43717706725",
+      "sha256": "c4dd76a328ced4d2da3fe18c22c60bda4388f97dde6f7dcf433f0b3bd06080a1",
+      "rule": "generic-api-key",
+      "label": "recipeKey",
+      "suffix": "qwen3/runtime.json",
+      "source": "https://github.com/lwtlab/hear/actions/runs/43717706725/attempts/1",
+      "reason": "Exact public source9f native artifact fingerprint, independently verified against source inputs, producer policy, compiler identity and all archived payload bytes; not an account credential. Scoped to the canonical top-level Qwen provenance field and filename; changed values and other rules still block.",
+      "format": "qwen-gpu-fingerprint-json-field"
+    },
+    {
+      "id": "qwen-gpu-windows-recipeKey-consumer-origin-43717706725",
+      "sha256": "c4dd76a328ced4d2da3fe18c22c60bda4388f97dde6f7dcf433f0b3bd06080a1",
+      "rule": "generic-api-key",
+      "label": "recipeKey",
+      "suffix": "qwen3/consumer-origin.json",
+      "source": "https://github.com/lwtlab/hear/actions/runs/43717706725/attempts/1",
+      "reason": "Exact public source9f native artifact fingerprint, independently verified against source inputs, producer policy, compiler identity and all archived payload bytes; not an account credential. Scoped to the canonical top-level Qwen provenance field and filename; changed values and other rules still block.",
+      "format": "qwen-gpu-fingerprint-json-field"
+    },
+    {
+      "id": "qwen-gpu-windows-buildKey-runtime-43717706725",
+      "sha256": "f02d66a91d17d5d41565a5dae1b3473a9da72bb4f0fcae5efa1fb63494cda4bc",
+      "rule": "generic-api-key",
+      "label": "buildKey",
+      "suffix": "qwen3/runtime.json",
+      "source": "https://github.com/lwtlab/hear/actions/runs/43717706725/attempts/1",
+      "reason": "Exact public source9f native artifact fingerprint, independently verified against source inputs, producer policy, compiler identity and all archived payload bytes; not an account credential. Scoped to the canonical top-level Qwen provenance field and filename; changed values and other rules still block.",
+      "format": "qwen-gpu-fingerprint-json-field"
+    },
+    {
+      "id": "qwen-gpu-windows-buildKey-consumer-origin-43717706725",
+      "sha256": "f02d66a91d17d5d41565a5dae1b3473a9da72bb4f0fcae5efa1fb63494cda4bc",
+      "rule": "generic-api-key",
+      "label": "buildKey",
+      "suffix": "qwen3/consumer-origin.json",
+      "source": "https://github.com/lwtlab/hear/actions/runs/43717706725/attempts/1",
+      "reason": "Exact public source9f native artifact fingerprint, independently verified against source inputs, producer policy, compiler identity and all archived payload bytes; not an account credential. Scoped to the canonical top-level Qwen provenance field and filename; changed values and other rules still block.",
+      "format": "qwen-gpu-fingerprint-json-field"
+    },
+    {
+      "id": "qwen-gpu-metal-recipeKey-runtime-43719761906",
+      "sha256": "7c6762fddc22e015b93f7c7e53281e411846c8ec4709b4c61ae62796734af1de",
+      "rule": "generic-api-key",
+      "label": "recipeKey",
+      "suffix": "qwen3/runtime.json",
+      "source": "https://github.com/lwtlab/hear/actions/runs/43719761906/attempts/1",
+      "reason": "Exact public source9f native artifact fingerprint, independently verified against source inputs, producer policy, compiler identity and all archived payload bytes; not an account credential. Scoped to the canonical top-level Qwen provenance field and filename; changed values and other rules still block.",
+      "format": "qwen-gpu-fingerprint-json-field"
+    },
+    {
+      "id": "qwen-gpu-metal-recipeKey-consumer-origin-43719761906",
+      "sha256": "7c6762fddc22e015b93f7c7e53281e411846c8ec4709b4c61ae62796734af1de",
+      "rule": "generic-api-key",
+      "label": "recipeKey",
+      "suffix": "qwen3/consumer-origin.json",
+      "source": "https://github.com/lwtlab/hear/actions/runs/43719761906/attempts/1",
+      "reason": "Exact public source9f native artifact fingerprint, independently verified against source inputs, producer policy, compiler identity and all archived payload bytes; not an account credential. Scoped to the canonical top-level Qwen provenance field and filename; changed values and other rules still block.",
+      "format": "qwen-gpu-fingerprint-json-field"
+    },
+    {
+      "id": "qwen-gpu-metal-buildKey-runtime-43719761906",
+      "sha256": "240cfd7c6b283bbb252784b5844491390c6bdf361df4defe296f287fba759f37",
+      "rule": "generic-api-key",
+      "label": "buildKey",
+      "suffix": "qwen3/runtime.json",
+      "source": "https://github.com/lwtlab/hear/actions/runs/43719761906/attempts/1",
+      "reason": "Exact public source9f native artifact fingerprint, independently verified against source inputs, producer policy, compiler identity and all archived payload bytes; not an account credential. Scoped to the canonical top-level Qwen provenance field and filename; changed values and other rules still block.",
+      "format": "qwen-gpu-fingerprint-json-field"
+    },
+    {
+      "id": "qwen-gpu-metal-buildKey-consumer-origin-43719761906",
+      "sha256": "240cfd7c6b283bbb252784b5844491390c6bdf361df4defe296f287fba759f37",
+      "rule": "generic-api-key",
+      "label": "buildKey",
+      "suffix": "qwen3/consumer-origin.json",
+      "source": "https://github.com/lwtlab/hear/actions/runs/43719761906/attempts/1",
+      "reason": "Exact public source9f native artifact fingerprint, independently verified against source inputs, producer policy, compiler identity and all archived payload bytes; not an account credential. Scoped to the canonical top-level Qwen provenance field and filename; changed values and other rules still block.",
+      "format": "qwen-gpu-fingerprint-json-field"
+    },
+    {
+      "id": "qwen-gpu-linux-recipeKey-runtime-43719783294",
+      "sha256": "c8c3953fb5304a09f9140e2e3ad2a42d3d9abc32acd4ff723e3f14e40a05ab1a",
+      "rule": "generic-api-key",
+      "label": "recipeKey",
+      "suffix": "qwen3/runtime.json",
+      "source": "https://github.com/lwtlab/hear/actions/runs/43719783294/attempts/1",
+      "reason": "Exact public source9f native artifact fingerprint, independently verified against source inputs, producer policy, compiler identity and all archived payload bytes; not an account credential. Scoped to the canonical top-level Qwen provenance field and filename; changed values and other rules still block.",
+      "format": "qwen-gpu-fingerprint-json-field"
+    },
+    {
+      "id": "qwen-gpu-linux-recipeKey-consumer-origin-43719783294",
+      "sha256": "c8c3953fb5304a09f9140e2e3ad2a42d3d9abc32acd4ff723e3f14e40a05ab1a",
+      "rule": "generic-api-key",
+      "label": "recipeKey",
+      "suffix": "qwen3/consumer-origin.json",
+      "source": "https://github.com/lwtlab/hear/actions/runs/43719783294/attempts/1",
+      "reason": "Exact public source9f native artifact fingerprint, independently verified against source inputs, producer policy, compiler identity and all archived payload bytes; not an account credential. Scoped to the canonical top-level Qwen provenance field and filename; changed values and other rules still block.",
+      "format": "qwen-gpu-fingerprint-json-field"
+    },
+    {
+      "id": "qwen-gpu-linux-buildKey-runtime-43719783294",
+      "sha256": "4ceb469c3abd4870da29e65d022b613df0f9c0b0757eacf8d07ff477533381c7",
+      "rule": "generic-api-key",
+      "label": "buildKey",
+      "suffix": "qwen3/runtime.json",
+      "source": "https://github.com/lwtlab/hear/actions/runs/43719783294/attempts/1",
+      "reason": "Exact public source9f native artifact fingerprint, independently verified against source inputs, producer policy, compiler identity and all archived payload bytes; not an account credential. Scoped to the canonical top-level Qwen provenance field and filename; changed values and other rules still block.",
+      "format": "qwen-gpu-fingerprint-json-field"
+    },
+    {
+      "id": "qwen-gpu-linux-buildKey-consumer-origin-43719783294",
+      "sha256": "4ceb469c3abd4870da29e65d022b613df0f9c0b0757eacf8d07ff477533381c7",
+      "rule": "generic-api-key",
+      "label": "buildKey",
+      "suffix": "qwen3/consumer-origin.json",
+      "source": "https://github.com/lwtlab/hear/actions/runs/43719783294/attempts/1",
+      "reason": "Exact public source9f native artifact fingerprint, independently verified against source inputs, producer policy, compiler identity and all archived payload bytes; not an account credential. Scoped to the canonical top-level Qwen provenance field and filename; changed values and other rules still block.",
+      "format": "qwen-gpu-fingerprint-json-field"
     }
   ]
 }

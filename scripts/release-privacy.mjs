@@ -306,6 +306,21 @@ subprocess.run(['unsquashfs','-no-progress','-no-xattrs','-d',sys.argv[2],'-o',s
 }
 
 /** Local-only audit. A PASS describes this input hash, not permission to publish. */
+// The Qwen fingerprints are public SHA256 identifiers, reviewed per exact value.
+// Bind each exception to the actual top-level JSON field, not a label substring.
+export function isReviewedQwenFingerprint(file, row, reviewed) {
+  try {
+    if (!["recipeKey", "buildKey"].includes(reviewed.label) || !/^[a-f0-9]{64}$/.test(row.Secret) ||
+        !Number.isSafeInteger(row.StartLine) || row.StartLine < 1 || row.EndLine !== row.StartLine ||
+        lstatSync(file).size > 1024 ** 2) return false;
+    const text = readFileSync(file, "utf8"), data = JSON.parse(text);
+    if (!data || Array.isArray(data) || typeof data !== "object" || data[reviewed.label] !== row.Secret ||
+        text !== JSON.stringify(data, null, 2) + "\n") return false;
+    const line = text.split("\n")[row.StartLine - 1], expected = `  "${reviewed.label}": "${row.Secret}"`;
+    return line === expected || line === expected + ",";
+  } catch { return false; }
+}
+
 export async function scanReleasePrivacy(input, { projectDir = path.join(repository, "apps/reader"), gitleaks = "gitleaks", sevenZip = process.platform === "win32" ? "7z" : "7zz", plainFile = false, profile = "generic" } = {}) {
   if (!["generic", "desktop"].includes(profile)) throw new Error("Unknown privacy audit profile");
   input = path.resolve(input);
@@ -417,7 +432,17 @@ export async function scanReleasePrivacy(input, { projectDir = path.join(reposit
         const label = prefix ? `${prefix}/${rel}` : rel;
         if (row.RuleID === "generic-api-key") {
           const secretHash = createHash("sha256").update(row.Secret).digest("hex");
-          const reviewed = publicData.matches.find(p => p.rule === row.RuleID && p.sha256 === secretHash && (!p.label || row.Match.includes(p.label)) && (!p.suffix || label.endsWith("/" + p.suffix) || label === p.suffix));
+          const reviewed = publicData.matches.find(p => {
+            const location = p.format === "qwen-gpu-fingerprint-json-field" ? label.replaceAll("\\", "/") : label;
+            return p.rule === row.RuleID && p.sha256 === secretHash && (!p.label || row.Match.includes(p.label)) &&
+              (!p.suffix || location.endsWith("/" + p.suffix) || location === p.suffix);
+          });
+          if (reviewed?.format === "qwen-gpu-fingerprint-json-field") {
+            const file = path.isAbsolute(row.File) ? row.File : path.resolve(dir, row.File);
+            if (isReviewedQwenFingerprint(file, row, reviewed)) {
+              notices.push({ rule: "reviewed-public-data", reviewId: reviewed.id, file: label }); continue;
+            }
+          }
           // Boundaries alone cannot exclude a credential followed by another
           // packed string. Require an exact reviewed public-data match as well.
           if (reviewed?.format === "hermes-v98-cross-string" && /(?:^|\/)index\.android\.bundle$/.test(label)) {
