@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import {binding,fingerprint,positive} from './reader-verification.mjs';
 import {CONTEXT,validatePlan,aggregate} from './selected-contract.mjs';
-import {resolveSelected,checkExamplePlan} from './selected-input.mjs';
+import {resolveSelected,checkExamplePlan,selectedBranch} from './selected-input.mjs';
 import {readSelectedArtifact} from './selected-artifacts.mjs';
 
 export const SELECTED_JOBS={
@@ -32,11 +32,11 @@ export function selectedJobOutcomes(jobs,hearRequired){
   assert.deepEqual(result,{plan:'success',reader:'success',cpu:'success',hear:hearRequired?'success':'skipped'});
   return result;
 }
-export function validateSelectedRun(actual,workflow,value,run,attempt,manifest){
+export function validateSelectedRun(actual,workflow,value,run,attempt,manifest,id){
   assert.equal(actual.id,positive(run));assert.equal(actual.run_attempt,positive(attempt));
   assert.equal(actual.repository.full_name,'lwtlab/reader');
   assert.equal(actual.event,'workflow_dispatch');assert.equal(actual.head_sha,value.workflow);
-  assert.equal(actual.head_branch,manifest.publicBranch);
+  assert.equal(actual.head_branch,selectedBranch(id,manifest));
   assert((actual.status==='in_progress'&&actual.conclusion===null)||(actual.status==='completed'&&actual.conclusion==='success'),'A cancelled or failed public run cannot report success');
   assert.equal(actual.workflow_id,workflow.id);assert.equal(workflow.path,'.github/workflows/reader-private-verify.yml');
 }
@@ -74,18 +74,18 @@ export async function reportSelected(api,value,{run,attempt,id,manifest,token,re
     const [actual,workflow,current]=await Promise.all([
       api(`repos/lwtlab/reader/actions/runs/${run}`),
       api('repos/lwtlab/reader/actions/workflows/reader-private-verify.yml'),
-      resolveSelected(api,id,value.workflow,manifest),
+      resolveSelected(api,id,value.workflow,manifest,value),
     ]);
-    assert.deepEqual(current,value);validateSelectedRun(actual,workflow,value,run,attempt,manifest);
+    assert.deepEqual(current,value);validateSelectedRun(actual,workflow,value,run,attempt,manifest,id);
     await collectSelected(api,value,{run,attempt,id,manifest,token,readArtifact});
     state='success';description=`selected PASS ${fingerprint(value)}`;
   }catch{
     // An absent, stale, failed or corrupt component cannot produce a green status.
   }
   try{
-    assert.deepEqual(await resolveSelected(api,id,value.workflow,manifest),value);
+    assert.deepEqual(await resolveSelected(api,id,value.workflow,manifest,value),value);
     const [actual,workflow]=await Promise.all([api(`repos/lwtlab/reader/actions/runs/${run}`),api('repos/lwtlab/reader/actions/workflows/reader-private-verify.yml')]);
-    validateSelectedRun(actual,workflow,value,run,attempt,manifest);
+    validateSelectedRun(actual,workflow,value,run,attempt,manifest,id);
   }catch{state='error';description=`selected superseded ${fingerprint(value)}`;}
   const currentStatus=await latest(api,value);
   if(!ownsPending(currentStatus,value,run,attempt))return 'SUPERSEDED';

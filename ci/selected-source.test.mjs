@@ -6,7 +6,8 @@ import {join} from 'node:path';
 import {tmpdir} from 'node:os';
 import {aggregate,validatePlan,readerFromBytes,coreFromBytes,validateReader,selectedDescriptor,planFromBytes} from './selected-contract.mjs';
 import {fixture,run,attempt,ids} from './selected-fixtures.mjs';
-import {resolveSelected,checkExamplePlan,MANIFEST} from './selected-input.mjs';
+import {resolveSelected,checkExamplePlan,MANIFEST,selectedInput,selectedBranch} from './selected-input.mjs';
+import {PULL_CASE,PULL_POLICY,pullRequest,resolveSelectedPull} from './selected-pull.mjs';
 import {artifactMembers,readSelectedArtifact} from './selected-artifacts.mjs';
 import {collectSelected,reportSelected,SELECTED_JOBS,selectedJobOutcomes} from './selected-report.mjs';
 import {TASKS,digest,fingerprint} from './reader-verification.mjs';
@@ -71,6 +72,58 @@ function reporterFixture(id='hear-only'){
  const options={run,attempt,id,manifest:f.manifest,token:'GENERATED_TOKEN',readArtifact};
  return {...f,api,options,files,jobs,writes,actual,pull,setStatus:s=>{status=s;}};
 }
+test('generic selected PR resolver accepts a new trusted exact input without a product or example override',async()=>{
+ const f=reporterFixture();f.pull.base.ref='main';
+ assert.deepEqual(await resolveSelectedPull(f.api,f.value),f.value);
+ assert.deepEqual(await resolveSelected(f.api,PULL_CASE,f.value.workflow,MANIFEST,f.value),f.value);
+ assert.equal(selectedBranch(PULL_CASE),PULL_POLICY.publicBranch);
+ assert.deepEqual(selectedInput(f.value,PULL_CASE),f.value);
+ assert.throws(()=>selectedInput(f.value,'hear-only',MANIFEST));
+ assert.throws(()=>pullRequest({...f.value,pr:0}));
+ assert.throws(()=>pullRequest({...f.value,base:f.value.head}));
+ for(const mutate of [p=>p.head.sha='f'.repeat(40),p=>p.state='closed',p=>p.number++,p=>p.head.repo.full_name='foreign/fork',p=>p.base.repo.full_name='foreign/fork',p=>p.author_association='CONTRIBUTOR',p=>p.base.ref='unreviewed',p=>p.mergeable=null,p=>p.mergeable=false,p=>p.merge_commit_sha=null]){
+  const g=reporterFixture();g.pull.base.ref='main';mutate(g.pull);
+  await assert.rejects(resolveSelectedPull(g.api,g.value));
+ }
+ for(const response of [
+  endpoint=>endpoint.includes('/git/ref/')?{object:{sha:'f'.repeat(40)}}:f.api(endpoint),
+  endpoint=>endpoint.includes('/git/commits/')?{sha:f.value.tested,parents:[{sha:f.value.head},{sha:f.value.base}]}:f.api(endpoint),
+  endpoint=>endpoint.includes('/git/commits/')?{sha:f.value.tested,parents:[{sha:f.value.base}]}:f.api(endpoint),
+ ])await assert.rejects(resolveSelectedPull(response,f.value));
+});
+test('generic selected reporter preserves all four coverage classes and fresh source ownership',async()=>{
+ for(const id of ['reader-only','hear-only','shared-core','unknown']){
+  const f=reporterFixture(id);f.pull.base.ref='main';f.actual.head_branch=PULL_POLICY.publicBranch;f.options.id=PULL_CASE;
+  assert.equal(await reportSelected(f.api,f.value,f.options),'success');
+  assert.equal(f.writes.length,1);assert.equal(f.writes[0].body.context,'reader-hear-public/selected');
+ }
+ for(const mutate of [f=>f.pull.head.sha='f'.repeat(40),f=>f.pull.base.ref='unreviewed',f=>f.actual.run_attempt++,f=>f.actual.head_branch=MANIFEST.publicBranch,f=>f.actual.conclusion='failure',f=>f.jobs[1].conclusion='failure',f=>f.files.reader['selection.json']=Buffer.from('{}')]){
+  const f=reporterFixture();f.pull.base.ref='main';f.actual.head_branch=PULL_POLICY.publicBranch;f.options.id=PULL_CASE;mutate(f);
+  assert.equal(await reportSelected(f.api,f.value,f.options),'error');assert(f.writes.every(w=>w.body.state!=='success'));
+ }
+ const f=reporterFixture();f.pull.base.ref='main';f.actual.head_branch=PULL_POLICY.publicBranch;f.options.id=PULL_CASE;f.setStatus({state:'pending',context:'reader-hear-public/selected',description:'newer owner',target_url:'newer'});
+ assert.equal(await reportSelected(f.api,f.value,f.options),'SUPERSEDED');assert.equal(f.writes.length,0);
+});
+test('actual generic aggregate CLI binds dispatch head/base/PR and cannot upgrade a partial receipt',t=>{
+ const root=realpathSync(mkdtempSync(join(tmpdir(),'selected-pull-cli-')));t.after(()=>rmSync(root,{recursive:true,force:true}));
+ const f=reporterFixture('hear-only'),cli=new URL('./selected-source.mjs',import.meta.url).pathname;
+ const runCase=(name,overrides={},corrupt=false)=>{
+  const folder=join(root,name);mkdirSync(folder);
+  for(const [prefix,files]of Object.entries(f.files)){
+   if(prefix==='hear'||prefix==='cpu'||prefix==='plan'||prefix==='reader'){
+    const dir=join(folder,'selected-inputs',prefix);mkdirSync(dir,{recursive:true});
+    for(const [file,bytes]of Object.entries(files))writeFileSync(join(dir,file),corrupt&&prefix==='reader'&&file==='selection.json'?'{}':bytes);
+   }
+  }
+  const env={...process.env,GITHUB_REPOSITORY:'lwtlab/reader',GITHUB_REF:`refs/heads/${PULL_POLICY.publicBranch}`,GITHUB_SHA:f.value.workflow,GITHUB_RUN_ID:String(run),GITHUB_RUN_ATTEMPT:String(attempt),SELECTION_CASE:PULL_CASE,SELECTION_PROBE:'false',SELECTION_HEAD:f.value.head,SELECTION_PR:String(f.value.pr),SELECTION_BASE:f.value.base,VERIFICATION_BINDING:JSON.stringify(f.value),SELECTION_OUTCOMES:JSON.stringify(f.outcomes),...overrides};
+  return spawnSync(process.execPath,[cli,'aggregate'],{cwd:folder,env,encoding:'utf8'});
+ };
+ assert.equal(runCase('valid').status,0);
+ for(const [name,env]of Object.entries({head:{SELECTION_HEAD:'e'.repeat(40)},base:{SELECTION_BASE:'e'.repeat(40)},pr:{SELECTION_PR:'0'},branch:{GITHUB_REF:`refs/heads/${MANIFEST.publicBranch}`},probe:{SELECTION_PROBE:'true'}}))assert.notEqual(runCase(name,env).status,0);
+ assert.notEqual(runCase('partial',{},true).status,0);
+ const valid=JSON.parse(readFileSync(join(root,'valid/selected-output/qualification.json')));
+ assert.equal(valid.tasks.filter(t=>t.status==='PASS').length,30);assert.equal(valid.readerFull,'NOT_RUN');
+});
 test('privileged reporter independently reconstructs both selected/full coverage and writes only new context',async()=>{
  for(const id of ids){const f=reporterFixture(id);assert.equal((await collectSelected(f.api,f.value,f.options)).status,'PASS');assert.equal(await reportSelected(f.api,f.value,f.options),'success');assert.equal(f.writes.length,1);assert.equal(f.writes[0].body.context,'reader-hear-public/selected');assert.equal(f.writes[0].body.state,'success');}
 });

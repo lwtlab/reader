@@ -1,0 +1,8 @@
+{
+  "schemaVersion": 1,
+  "publicBranch": "ci/selected-current-20261117",
+  "sourceRepository": "lwtlab/lwt-core",
+  "baseBranches": ["main", "qa/selected-current-baseline-20261117"],
+  "trustedAssociations": ["OWNER", "MEMBER", "COLLABORATOR"],
+  "activation": "explicit-selected-pr-only"
+}

@@ -1,5 +1,5 @@
 name: Private Reader verification on public runners
-run-name: ${{ inputs.scope == 'change-example' && 'Reader/Hear real change qualification' || 'Reader full verification' }}
+run-name: ${{ inputs.scope == 'selected-pr' && 'Reader/Hear selected PR verification' || inputs.scope == 'change-example' && 'Reader/Hear real change qualification' || 'Reader full verification' }}
 on:
   workflow_dispatch:
     inputs:
@@ -20,7 +20,11 @@ on:
         required: false
         default: full
         type: choice
-        options: [full, llama-cpu, shadow-plan, catalog-cpu, change-example, selected-source]
+        options: [full, llama-cpu, shadow-plan, catalog-cpu, change-example, selected-source, selected-pr]
+      selection_base:
+        description: Exact current private base SHA (selected-pr only)
+        required: false
+        type: string
       example:
         description: Reviewed real source-change example (optional scope only)
         required: false
@@ -34,6 +38,10 @@ on:
         type: boolean
   schedule:
     - cron: '17,47 * * * *'
+env:
+  SELECTION_HEAD: ${{ inputs.source_ref }}
+  SELECTION_PR: ${{ inputs.pr_number }}
+  SELECTION_BASE: ${{ inputs.selection_base }}
 permissions:
   contents: read
   actions: read
@@ -64,7 +72,7 @@ jobs:
           VERIFICATION_WORKFLOW_SHA: ${{ vars.READER_VERIFICATION_WORKFLOW_SHA }}
         run: node ci/reader-verification-control.mjs poll
   resolve:
-    if: github.event_name == 'workflow_dispatch' && inputs.scope != 'change-example' && inputs.scope != 'selected-source'
+    if: github.event_name == 'workflow_dispatch' && inputs.scope != 'change-example' && inputs.scope != 'selected-source' && inputs.scope != 'selected-pr'
     name: Resolve and mark exact private input
     runs-on: ubuntu-24.04
     environment: reader-verification
@@ -855,7 +863,7 @@ jobs:
           if-no-files-found: error
 
   resolve-selected:
-    if: github.event_name == 'workflow_dispatch' && inputs.scope == 'selected-source'
+    if: github.event_name == 'workflow_dispatch' && (inputs.scope == 'selected-source' || inputs.scope == 'selected-pr')
     name: Resolve reviewed selected source execution
     runs-on: ubuntu-24.04
     environment: reader-verification
@@ -878,21 +886,21 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.READER_VERIFICATION_TOKEN }}
           SELECTION_PROBE: ${{ inputs.selection_probe }}
-          SELECTION_CASE: ${{ inputs.example }}
+          SELECTION_CASE: ${{ inputs.scope == 'selected-pr' && 'pull-request' || inputs.example }}
           WORKFLOW_SHA: ${{ inputs.workflow_sha }}
           SOURCE_REF: ${{ inputs.source_ref }}
           PR_NUMBER: ${{ inputs.pr_number }}
         run: node ci/selected-source.mjs resolve
 
   selected-plan:
-    if: inputs.scope == 'selected-source'
+    if: (inputs.scope == 'selected-source' || inputs.scope == 'selected-pr')
     needs: resolve-selected
     name: Selected source plan and controls
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     env:
       SELECTION_PROBE: ${{ inputs.selection_probe }}
-      SELECTION_CASE: ${{ inputs.example }}
+      SELECTION_CASE: ${{ inputs.scope == 'selected-pr' && 'pull-request' || inputs.example }}
       VERIFICATION_BINDING: ${{ needs.resolve-selected.outputs.binding }}
     outputs:
       reader_profile: ${{ steps.collect.outputs.reader_profile }}
@@ -953,14 +961,14 @@ jobs:
         run: node ci/selected-source.mjs plan-require
 
   selected-reader:
-    if: inputs.scope == 'selected-source' && (!inputs.selection_probe || needs.selected-plan.outputs.reader_profile == 'quick')
+    if: (inputs.scope == 'selected-source' || inputs.scope == 'selected-pr') && (!inputs.selection_probe || needs.selected-plan.outputs.reader_profile == 'quick')
     needs: [resolve-selected, selected-plan]
     name: Selected Reader source verification
     runs-on: ubuntu-24.04
     timeout-minutes: 120
     env:
       SELECTION_PROBE: ${{ inputs.selection_probe }}
-      SELECTION_CASE: ${{ inputs.example }}
+      SELECTION_CASE: ${{ inputs.scope == 'selected-pr' && 'pull-request' || inputs.example }}
       VERIFICATION_BINDING: ${{ needs.resolve-selected.outputs.binding }}
     steps:
       - name: Mark runner preparation start
@@ -1084,14 +1092,14 @@ jobs:
         run: node ci/selected-source.mjs reader-require
 
   selected-cpu:
-    if: inputs.scope == 'selected-source'
+    if: (inputs.scope == 'selected-source' || inputs.scope == 'selected-pr')
     needs: [resolve-selected, selected-plan]
     name: Selected shared CPU compilation and controls
     runs-on: ubuntu-24.04
     timeout-minutes: 40
     env:
       SELECTION_PROBE: ${{ inputs.selection_probe }}
-      SELECTION_CASE: ${{ inputs.example }}
+      SELECTION_CASE: ${{ inputs.scope == 'selected-pr' && 'pull-request' || inputs.example }}
       VERIFICATION_BINDING: ${{ needs.resolve-selected.outputs.binding }}
       VERIFICATION_SCOPE: llama-cpu
       CPU_CATALOG: 'true'
@@ -1185,7 +1193,7 @@ jobs:
           node ci/llama-cpu-run.mjs require-catalog
           node ci/selected-source.mjs cpu-require
   selected-hear:
-    if: inputs.scope == 'selected-source' && needs.selected-plan.outputs.hear_required == 'true'
+    if: (inputs.scope == 'selected-source' || inputs.scope == 'selected-pr') && needs.selected-plan.outputs.hear_required == 'true'
     needs: [resolve-selected, selected-plan]
     name: Selected Hear native and scripted GUI
     runs-on: macos-26
@@ -1195,7 +1203,7 @@ jobs:
         shell: bash
     env:
       SELECTION_SOURCE_DIR: core
-      SELECTION_CASE: ${{ inputs.example }}
+      SELECTION_CASE: ${{ inputs.scope == 'selected-pr' && 'pull-request' || inputs.example }}
       SELECTION_PROBE: ${{ inputs.selection_probe }}
       VERIFICATION_BINDING: ${{ needs.resolve-selected.outputs.binding }}
       HEAD_REF: ${{ needs.resolve-selected.outputs.head }}
@@ -1315,7 +1323,7 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     env:
-      SELECTION_CASE: ${{ inputs.example }}
+      SELECTION_CASE: ${{ inputs.scope == 'selected-pr' && 'pull-request' || inputs.example }}
       SELECTION_PROBE: ${{ inputs.selection_probe }}
       VERIFICATION_BINDING: ${{ needs.resolve-selected.outputs.binding }}
       SELECTION_OUTCOMES: '{"plan":"${{ needs.selected-plan.result }}","reader":"${{ needs.selected-reader.result }}","cpu":"${{ needs.selected-cpu.result }}","hear":"${{ needs.selected-hear.result }}"}'
@@ -1373,7 +1381,7 @@ jobs:
     environment: reader-verification
     timeout-minutes: 10
     env:
-      SELECTION_CASE: ${{ inputs.example }}
+      SELECTION_CASE: ${{ inputs.scope == 'selected-pr' && 'pull-request' || inputs.example }}
       SELECTION_PROBE: ${{ inputs.selection_probe }}
       VERIFICATION_BINDING: ${{ needs.resolve-selected.outputs.binding }}
     steps:
