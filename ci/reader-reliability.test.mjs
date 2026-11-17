@@ -150,3 +150,48 @@ test('discovery exposes infrastructure failures and never overwrites a result th
   };
   await assert.rejects(pollReliability(api,value.workflow,{enabled:true}));
 });
+
+test('ineligible or changed candidates cannot starve later trusted PRs',async()=>{
+  const {pollReliability}=await import('./reader-reliability-control.mjs');
+  const good={number:2,state:'open',author_association:'MEMBER',head:{sha:value.head,repo:{full_name:'lwtlab/lwt-core'}},base:{ref:'main',repo:{full_name:'lwtlab/lwt-core'}},mergeable:true,merge_commit_sha:value.tested};
+  for(const change of [{mergeable:false},{state:'closed'},{head:{...good.head,sha:'f'.repeat(40)}},{base:{...good.base,ref:'other'}},{author_association:'NONE'}]){
+    const posts=[],bad={...good,number:1,...change};
+    const api=async(route,method,body)=>{
+      if(method==='POST'){posts.push(body);return {};}
+      if(route.includes('heads/ci/reader-reliability-20261117'))return {object:{sha:value.workflow}};
+      if(route.includes('pulls?'))return [{...good,number:1},good];
+      if(route.endsWith('/pulls/1'))return bad;
+      if(route.endsWith('/pulls/2'))return good;
+      if(route.endsWith('heads/main'))return {object:{sha:value.base}};
+      if(route.includes('/git/commits/'))return {sha:value.tested,parents:[{sha:value.base},{sha:value.head}]};
+      if(route.includes('/contents/'))return {encoding:'base64',content:Buffer.from(JSON.stringify({scripts:route.endsWith(`ref=${value.tested}`)?{'test:sync-journey':'real'}:{}})).toString('base64')};
+      if(route.includes('/statuses?'))return [];
+      assert.fail(`Unexpected discovery route ${route}`);
+    };
+    assert.equal((await pollReliability(api,value.workflow,{enabled:true})).dispatched,1);
+    assert.equal(posts.length,1);assert.equal(posts[0].inputs.pr_number,'2');
+  }
+});
+
+test('discovery defers a moved main but propagates malformed PR metadata and permission failures',async()=>{
+  const {pollReliability}=await import('./reader-reliability-control.mjs');
+  for(const failure of [null,'invalid','forbidden']){
+    let mainReads=0;const posts=[];
+    const api=async(route,method,body)=>{
+      if(method==='POST'){posts.push(body);return {};}
+      if(route.includes('heads/ci/reader-reliability-20261117'))return {object:{sha:value.workflow}};
+      if(route.includes('pulls?'))return [{number:1,author_association:'MEMBER',head:{sha:value.head,repo:{full_name:'lwtlab/lwt-core'}}}];
+      if(route.endsWith('heads/main')){mainReads++;return {object:{sha:mainReads===1?value.base:'f'.repeat(40)}};}
+      if(route.endsWith('/pulls/1')){
+        if(failure==='forbidden')throw Object.assign(new Error('Synthetic permission failure'),{code:'HTTP_403'});
+        return failure==='invalid'?{state:'open'}:{number:1,state:'open',author_association:'MEMBER',head:{sha:value.head,repo:{full_name:'lwtlab/lwt-core'}},base:{ref:'main',repo:{full_name:'lwtlab/lwt-core'}},mergeable:true,merge_commit_sha:value.tested};
+      }
+      if(route.includes('/git/commits/'))return {sha:value.tested,parents:[{sha:'f'.repeat(40)},{sha:value.head}]};
+      if(route.includes('/contents/'))return {encoding:'base64',content:Buffer.from(JSON.stringify({scripts:{'test:sync-journey':'real'}})).toString('base64')};
+      if(route.includes('/statuses?'))return [];
+      assert.fail(`Unexpected discovery route ${route}`);
+    };
+    if(failure)await assert.rejects(pollReliability(api,value.workflow,{enabled:true}));
+    else {assert.equal((await pollReliability(api,value.workflow,{enabled:true})).dispatched,1);assert.equal(posts[0].inputs.pr_number,'1');}
+  }
+});

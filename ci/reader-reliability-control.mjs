@@ -7,6 +7,29 @@ import {binding,positive,BUILD_REPOSITORY,SOURCE_REPOSITORY,WORKFLOW} from './re
 import {profiles,profile,fingerprint,validateResult,RELIABILITY_ARTIFACT,RELIABILITY_JOB} from './reader-reliability-verification.mjs';
 const source=p=>`repos/${SOURCE_REPOSITORY}/${p}`,pub=p=>`repos/${BUILD_REPOSITORY}/${p}`;
 const url=(run,attempt)=>`https://github.com/${BUILD_REPOSITORY}/actions/runs/${positive(run)}/attempts/${positive(attempt)}`;
+const trustedAssociations=['OWNER','MEMBER','COLLABORATOR'];
+function discoveryInput(api,candidate){
+  return async(route,...args)=>{
+    const response=await api(route,...args);
+    let unavailable=false;
+    if(candidate.pr&&route===source(`pulls/${candidate.pr}`)){
+      assert(['open','closed'].includes(response.state));
+      assert.match(response.head?.sha??'',/^[a-f0-9]{40}$/);
+      assert.equal(typeof response.base?.ref,'string');
+      assert.equal(typeof response.author_association,'string');
+      for(const side of [response.head,response.base]){
+        assert(side&&Object.hasOwn(side,'repo'));
+        assert(side.repo===null||typeof side.repo.full_name==='string');
+      }
+      unavailable=response.state!=='open'||response.head.sha!==candidate.source||response.mergeable===false||response.base.ref!=='main'||response.head.repo?.full_name!==SOURCE_REPOSITORY||response.base.repo?.full_name!==SOURCE_REPOSITORY||!trustedAssociations.includes(response.author_association);
+    }else if(!candidate.pr&&route===source('git/ref/heads/main')){
+      assert.match(response.object?.sha??'',/^[a-f0-9]{40}$/);
+      unavailable=response.object.sha!==candidate.source;
+    }
+    if(unavailable)throw Object.assign(new Error('Discovered source is no longer eligible'),{code:'RELIABILITY_INPUT_INELIGIBLE'});
+    return response;
+  };
+}
 export async function latest(api,value,p){
   const context=profiles[profile(p)].context;
   for(let page=1;page<=10;page++){
@@ -41,10 +64,10 @@ export async function pollReliability(api,workflow,{enabled=false,now=new Date()
   const pulls=await api(source('pulls?state=open&base=main&per_page=100'));
   assert(pulls.length<100,'Discovery pagination required');
   const main=await api(source('git/ref/heads/main'));
-  const candidates=[{source:main.object.sha,pr:0},...pulls.filter(p=>p.head.repo?.full_name===SOURCE_REPOSITORY&&['OWNER','MEMBER','COLLABORATOR'].includes(p.author_association)).map(p=>({source:p.head.sha,pr:p.number}))];
+  const candidates=[{source:main.object.sha,pr:0},...pulls.filter(p=>p.head.repo?.full_name===SOURCE_REPOSITORY&&trustedAssociations.includes(p.author_association)).map(p=>({source:p.head.sha,pr:p.number}))];
   let dispatched=0;
   for(const candidate of candidates){
-    let value;try{value=await resolveInput(api,{...candidate,workflow});}catch(error){if(error.code==='MERGE_NOT_READY')continue;throw error;}
+    let value;try{value=await resolveInput(discoveryInput(api,candidate),{...candidate,workflow});}catch(error){if(['MERGE_NOT_READY','RELIABILITY_INPUT_INELIGIBLE'].includes(error.code))continue;throw error;}
     let scripts;try{const file=await api(source(`contents/apps/reader/package.json?ref=${value.tested}`));assert.equal(file.encoding,'base64');scripts=JSON.parse(Buffer.from(file.content,'base64').toString('utf8')).scripts;}catch(error){if(error.code==='HTTP_404')continue;throw error;}
     // Older trusted PRs can predate these commands. Do not invent a successful
     // status for them or send arbitrary commands supplied by package metadata.
