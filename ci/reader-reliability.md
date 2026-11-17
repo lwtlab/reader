@@ -47,3 +47,20 @@ and may be unavailable under the private repository's current plan.
 
 The change does not publish releases, deploy the website, alter signing settings,
 change application behavior or claim Hear/shared-core/native-device coverage.
+
+## Automatic discovery prepared for rollout
+
+The `discover-reliability` job uses the existing half-hour public schedule after
+its reviewed workflow is delivered to public main. It defaults off, controlled by
+`READER_RELIABILITY_AUTOMATIC` and exact `READER_RELIABILITY_WORKFLOW_SHA`.
+It dispatches the dedicated executor ref, checks trusted PR merge parents, and
+selects sync only for sources that actually contain the command. The current main
+also receives the large-library profile once per UTC day. Failure results are not
+retried automatically for the same source/day; a new source or day is a new input.
+Terminated runs with orphaned pending status are marked error, never success.
+Soak remains manual. Metadata/permission failures do not synthesize a green check.
+
+Activation requires real scope qualification, a reviewed public-main workflow
+rollout and independently verified private status targets. Merely setting a flag
+cannot install a scheduled workflow on a branch. Keep the private fallback until
+all those conditions are met; enable only the corresponding migration flag then.

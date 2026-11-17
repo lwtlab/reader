@@ -102,3 +102,51 @@ test('status lookup follows complete bounded pages rather than losing a new cont
   assert.deepEqual(await latest(api,value,'sync-journey'),match);assert.equal(calls,2);
   await assert.rejects(latest(async()=>Array.from({length:100},()=>({context:'other'})),value,'sync-journey'));
 });
+
+test('automatic discovery is opt-in, deduplicates exact sources and retries no failures within a day',async()=>{
+  const {pollReliability}=await import('./reader-reliability-control.mjs');
+  assert.deepEqual(await pollReliability(()=>assert.fail('disabled poll reads nothing'),value.workflow,{enabled:false}),{disabled:true,dispatched:0});
+  const posts=[];let known=[];
+  const api=async(route,method,body)=>{
+    if(method==='POST'){posts.push(body);return {};}
+    if(route.includes('git/ref/heads/ci/reader-reliability-20261117'))return {object:{sha:value.workflow}};
+    if(route.includes('pulls?'))return [];
+    if(route.endsWith('/git/ref/heads/main'))return {object:{sha:value.head}};
+    if(route.includes('/contents/'))return {encoding:'base64',content:Buffer.from(JSON.stringify({scripts:{'test:sync-journey':'real command','test:reader-reliability':'real command'}})).toString('base64')};
+    if(route.includes('/statuses?'))return known;
+    assert.fail(`Unexpected poll route ${route}`);
+  };
+  assert.equal((await pollReliability(api,value.workflow,{enabled:true,now:new Date('2026-11-17T01:00:00Z')})).dispatched,2);
+  assert.deepEqual(posts.map(p=>p.inputs.scope),['sync-journey','large-library']);
+  const mainValue={...value,base:value.head,tested:value.head,pr:0};
+  known=['sync-journey','large-library'].map(p=>({context:profiles[p].context,state:'failure',description:`reliability FAIL ${fingerprint(mainValue,p)}`,created_at:'2026-11-17T00:00:00Z'}));
+  posts.length=0;assert.equal((await pollReliability(api,value.workflow,{enabled:true,now:new Date('2026-11-17T02:00:00Z')})).dispatched,0);
+  assert.equal((await pollReliability(api,value.workflow,{enabled:true,now:new Date('2026-11-18T01:00:00Z')})).dispatched,1);assert.equal(posts[0].inputs.scope,'large-library');
+});
+
+test('discovery exposes infrastructure failures and never overwrites a result that replaced pending',async()=>{
+  const {pollReliability}=await import('./reader-reliability-control.mjs');
+  const v={...value,pr:0,base:value.head,tested:value.head};
+  for(const replacement of ['success','new-pending','unchanged']){
+    const posts=[];let reads=0;
+    const pending={context:'reader-public/sync-journey',state:'pending',target_url:'https://github.com/lwtlab/reader/actions/runs/10/attempts/1',description:`reliability pending ${fingerprint(v,'sync-journey')}`};
+    const api=async(route,method,body)=>{
+      if(method==='POST'){posts.push(body);return {};}
+      if(route.includes('heads/ci/reader-reliability-20261117'))return {object:{sha:value.workflow}};
+      if(route.includes('pulls?'))return [];
+      if(route.endsWith('heads/main'))return {object:{sha:value.head}};
+      if(route.includes('/contents/'))return {encoding:'base64',content:Buffer.from(JSON.stringify({scripts:{'test:sync-journey':'real'}})).toString('base64')};
+      if(route.includes('/statuses?')){reads++;return [reads===1||replacement==='unchanged'?pending:replacement==='success'?{...pending,state:'success',description:'reliability PASS'}:{...pending,target_url:'new run'}];}
+      if(route.endsWith('actions/runs/10'))return {status:'completed'};
+      assert.fail('Unexpected discovery route');
+    };
+    await pollReliability(api,value.workflow,{enabled:true});assert.equal(posts.length,replacement==='unchanged'?1:0);
+  }
+  const api=async route=>{
+    if(route.includes('heads/ci/reader-reliability-20261117'))return {object:{sha:value.workflow}};
+    if(route.includes('pulls?'))return [];
+    if(route.endsWith('heads/main'))return {object:{sha:value.head}};
+    throw Object.assign(new Error('synthetic infrastructure error'),{code:'HTTP_403'});
+  };
+  await assert.rejects(pollReliability(api,value.workflow,{enabled:true}));
+});
