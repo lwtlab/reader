@@ -22,13 +22,19 @@ on:
         description: Exact executing public workflow commit SHA
         required: false
         type: string
+      scope:
+        description: Complete Reader graph plus CPU, or focused CPU only
+        required: false
+        default: full
+        type: choice
+        options: [full, llama-cpu, sync-journey, large-library, playback-soak, reliability-discovery]
   schedule:
     - cron: '17,47 * * * *'
 permissions:
   contents: read
   actions: read
 concurrency:
-  group: reader-private-full-${{ github.event_name }}-${{ inputs.pr_number || 'poll' }}
+  group: reader-private-full-${{ github.event_name }}-${{ inputs.pr_number || 'poll' }}-${{ inputs.scope || 'full' }}
   cancel-in-progress: false
 jobs:
   poll:
@@ -54,7 +60,7 @@ jobs:
           VERIFICATION_WORKFLOW_SHA: ${{ vars.READER_VERIFICATION_WORKFLOW_SHA }}
         run: node ci/reader-verification-control.mjs poll
   resolve:
-    if: github.event_name == 'workflow_dispatch' && inputs.operation != 'poll'
+    if: github.event_name == 'workflow_dispatch' && inputs.operation != 'poll' && (inputs.scope == 'full' || inputs.scope == 'llama-cpu' || inputs.scope == '')
     name: Resolve and mark exact private input
     runs-on: ubuntu-24.04
     environment: reader-verification
@@ -76,8 +82,10 @@ jobs:
           SOURCE_REF: ${{ inputs.source_ref }}
           PR_NUMBER: ${{ inputs.pr_number }}
           WORKFLOW_SHA: ${{ inputs.workflow_sha }}
+          VERIFICATION_SCOPE: ${{ inputs.scope || 'full' }}
         run: node ci/reader-verification-control.mjs resolve
   full:
+    if: inputs.scope == 'full' || inputs.scope == ''
     needs: resolve
     name: Full private Reader verification
     runs-on: ubuntu-24.04
@@ -85,6 +93,8 @@ jobs:
     env:
       VERIFICATION_BINDING: ${{ needs.resolve.outputs.binding }}
     steps:
+      - name: Mark runner preparation start
+        run: echo "READER_PREPARATION_STARTED_MS=$(date +%s%3N)" >> "$GITHUB_ENV"
       - uses: actions/checkout@v4
         with:
           persist-credentials: false
@@ -122,13 +132,22 @@ jobs:
           -c submodule.aspeak.url=https://github.com/XUJiahua/aspeak.git
           -c submodule.srtparse.url=https://github.com/XUJiahua/srtparse.git
           submodule update --init -- aspeak srtparse
+      - name: Verify public registry download policy
+        run: node ci/reader-download-cache.mjs
+      - uses: actions/cache@v4
+        with:
+          path: ${{ runner.temp }}/reader-mobile-public-cache/_cacache
+          key: reader-mobile-public-${{ runner.os }}-${{ runner.arch }}-node24.22.0-${{ hashFiles('source/apps/reader-mobile/package-lock.json') }}
       - name: Install frozen private dependencies and managed hooks
         env:
           READER_INSTALL_NETWORK: direct
         run: |
           node ci/private-step.mjs hooks source bash scripts/install-git-hooks.sh
           node ci/private-step.mjs dependencies source bash apps/reader/scripts/install.sh --frozen-lockfile
-          node ci/private-step.mjs mobile-dependencies source npm --prefix apps/reader-mobile ci --include=dev --legacy-peer-deps
+      - name: Install frozen Mobile registry dependencies
+        env:
+          npm_config_cache: ${{ runner.temp }}/reader-mobile-public-cache
+        run: node ci/private-step.mjs mobile-dependencies source npm --prefix apps/reader-mobile ci --include=dev --legacy-peer-deps
       - name: Install browser runtimes
         run: node ci/private-step.mjs browsers source pnpm --dir apps/reader exec playwright install --with-deps chromium firefox webkit chrome
       - id: full
@@ -150,6 +169,14 @@ jobs:
           path: verification-output/verification.json
           if-no-files-found: error
           retention-days: 7
+      - name: Upload informational progress only
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: reader-task-progress-${{ github.run_id }}-${{ github.run_attempt }}
+          path: verification-output/progress.json
+          if-no-files-found: ignore
+          retention-days: 7
       - name: Upload encrypted diagnostics only
         if: always()
         uses: actions/upload-artifact@v4
@@ -163,7 +190,7 @@ jobs:
         run: node ci/reader-verification-run.mjs require
   report:
     needs: [resolve, full]
-    if: always() && needs.resolve.result == 'success'
+    if: always() && needs.resolve.result == 'success' && inputs.scope != 'llama-cpu'
     name: Report verified private commit status
     runs-on: ubuntu-24.04
     environment: reader-verification
@@ -181,3 +208,228 @@ jobs:
           VERIFICATION_BINDING: ${{ needs.resolve.outputs.binding }}
           VERIFICATION_JOB_RESULT: ${{ needs.full.result }}
         run: node ci/reader-verification-control.mjs report
+
+  llama-cpu:
+    if: inputs.scope == 'full' || inputs.scope == 'llama-cpu' || inputs.scope == ''
+    needs: resolve
+    name: Private Reader llama CPU verification
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    env:
+      VERIFICATION_BINDING: ${{ needs.resolve.outputs.binding }}
+      VERIFICATION_SCOPE: ${{ inputs.scope || 'full' }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24.22.0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Read exact private source without persisted credentials
+        uses: actions/checkout@v4
+        with:
+          repository: lwtlab/lwt-core
+          ref: ${{ needs.resolve.outputs.tested }}
+          path: source
+          ssh-key: ${{ secrets.PRIVATE_SOURCE_SSH_KEY }}
+          persist-credentials: false
+          submodules: false
+      - name: Validate fresh CPU source identity
+        run: node ci/llama-cpu-run.mjs identity
+      - id: cpu
+        name: Compile pinned CPU runtime and run all nine controls
+        run: node ci/llama-cpu-run.mjs verify
+      - name: Encrypt private CPU logs and generated build bundle
+        if: always()
+        run: node ci/llama-cpu-run.mjs seal
+      - name: Produce bounded CPU receipt
+        if: always()
+        env:
+          VERIFICATION_OUTCOME: ${{ steps.cpu.outcome }}
+        run: node ci/llama-cpu-run.mjs receipt
+      - name: Upload bounded CPU result
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: reader-llama-cpu-result-${{ github.run_id }}-${{ github.run_attempt }}
+          path: llama-cpu-output/verification.json
+          if-no-files-found: error
+          retention-days: 7
+      - name: Upload encrypted CPU diagnostics only
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: reader-llama-cpu-encrypted-${{ github.run_id }}-${{ github.run_attempt }}
+          path: llama-cpu-output/diagnostics.enc.json
+          if-no-files-found: error
+          retention-days: 7
+      - name: Require complete CPU success
+        if: always()
+        run: node ci/llama-cpu-run.mjs require
+  report-llama-cpu:
+    needs: [resolve, llama-cpu]
+    if: always() && needs.resolve.result == 'success'
+    name: Report independently verified private CPU status
+    runs-on: ubuntu-24.04
+    environment: reader-verification
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24.22.0
+      - name: Verify CPU receipt, run, attempt and current source before reporting
+        env:
+          GH_TOKEN: ${{ secrets.READER_VERIFICATION_TOKEN }}
+          VERIFICATION_BINDING: ${{ needs.resolve.outputs.binding }}
+          VERIFICATION_SCOPE: ${{ inputs.scope || 'full' }}
+          VERIFICATION_JOB_RESULT: ${{ needs.llama-cpu.result }}
+        run: node ci/llama-cpu-control.mjs
+
+  resolve-reliability:
+    if: github.event_name == 'workflow_dispatch' && inputs.operation != 'poll' && contains(fromJSON('["sync-journey","large-library","playback-soak"]'), inputs.scope)
+    name: Resolve immutable reliability input
+    runs-on: ubuntu-24.04
+    environment: reader-verification
+    timeout-minutes: 10
+    outputs:
+      binding: ${{ steps.resolve.outputs.binding }}
+      tested: ${{ steps.resolve.outputs.tested }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24.22.0
+      - id: resolve
+        env:
+          GH_TOKEN: ${{ secrets.READER_VERIFICATION_TOKEN }}
+          SOURCE_REF: ${{ inputs.source_ref }}
+          PR_NUMBER: ${{ inputs.pr_number }}
+          WORKFLOW_SHA: ${{ inputs.workflow_sha }}
+          RELIABILITY_PROFILE: ${{ inputs.scope }}
+        run: node ci/reader-reliability-control.mjs resolve
+  reliability:
+    needs: resolve-reliability
+    name: Private Reader reliability verification
+    runs-on: ubuntu-24.04
+    timeout-minutes: ${{ inputs.scope == 'playback-soak' && 180 || inputs.scope == 'large-library' && 60 || 25 }}
+    env:
+      VERIFICATION_BINDING: ${{ needs.resolve-reliability.outputs.binding }}
+      RELIABILITY_PROFILE: ${{ inputs.scope }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24.22.0
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11.5.2
+          package_json_file: site/package.json
+          run_install: false
+      - name: Prepare public system tools
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y ffmpeg build-essential pkg-config libssl-dev
+      - name: Prepare isolated PostgreSQL image
+        if: inputs.scope != 'playback-soak'
+        run: docker pull postgres:17.7-bookworm
+      - name: Read exact private source without persisted credentials
+        uses: actions/checkout@v4
+        with:
+          repository: lwtlab/lwt-core
+          ref: ${{ needs.resolve-reliability.outputs.tested }}
+          path: source
+          fetch-depth: 0
+          ssh-key: ${{ secrets.PRIVATE_SOURCE_SSH_KEY }}
+          persist-credentials: false
+          submodules: false
+      - name: Accept fresh clean source identity
+        run: node ci/reader-reliability-run.mjs identity
+      - name: Install frozen dependencies
+        env:
+          READER_INSTALL_NETWORK: direct
+        run: node ci/private-step.mjs dependencies source bash apps/reader/scripts/install.sh --frozen-lockfile
+      - name: Install real Chrome
+        run: node ci/private-step.mjs browsers source pnpm --dir apps/reader exec playwright install --with-deps chrome
+      - id: verify
+        name: Execute fixed reliability profile
+        run: node ci/reader-reliability-run.mjs verify
+      - name: Encrypt private logs and synthetic diagnostics
+        if: always()
+        run: node ci/reader-reliability-run.mjs seal
+      - name: Produce closed result
+        if: always()
+        env:
+          VERIFICATION_OUTCOME: ${{ steps.verify.outcome }}
+        run: node ci/reader-reliability-run.mjs receipt
+      - name: Upload bounded result only
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: reader-reliability-result-${{ github.run_id }}-${{ github.run_attempt }}
+          path: reliability-output/verification.json
+          if-no-files-found: error
+          retention-days: 7
+      - name: Upload encrypted diagnostics only
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: reader-reliability-encrypted-${{ github.run_id }}-${{ github.run_attempt }}
+          path: reliability-output/diagnostics.enc.json
+          if-no-files-found: error
+          retention-days: 7
+      - name: Require complete success
+        if: always()
+        run: node ci/reader-reliability-run.mjs require
+  report-reliability:
+    needs: [resolve-reliability, reliability]
+    if: always() && needs.resolve-reliability.result == 'success'
+    name: Report independently verified reliability status
+    runs-on: ubuntu-24.04
+    environment: reader-verification
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24.22.0
+      - env:
+          GH_TOKEN: ${{ secrets.READER_VERIFICATION_TOKEN }}
+          WORKFLOW_SHA: ${{ inputs.workflow_sha }}
+          VERIFICATION_BINDING: ${{ needs.resolve-reliability.outputs.binding }}
+          RELIABILITY_PROFILE: ${{ inputs.scope }}
+          VERIFICATION_JOB_RESULT: ${{ needs.reliability.result }}
+        run: node ci/reader-reliability-control.mjs report
+
+  discover-reliability:
+    if: github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && (inputs.scope == 'reliability-discovery' || inputs.operation == 'poll'))
+    name: Discover trusted reliability inputs
+    runs-on: ubuntu-24.04
+    environment: reader-verification
+    timeout-minutes: 10
+    concurrency:
+      group: reader-reliability-discovery
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24.22.0
+      - env:
+          GH_TOKEN: ${{ secrets.READER_VERIFICATION_TOKEN }}
+          RELIABILITY_AUTOMATIC: ${{ vars.READER_RELIABILITY_AUTOMATIC }}
+          RELIABILITY_WORKFLOW_SHA: ${{ vars.READER_RELIABILITY_WORKFLOW_SHA }}
+        run: node ci/reader-reliability-control.mjs poll
