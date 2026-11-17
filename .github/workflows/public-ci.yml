@@ -21,6 +21,11 @@ jobs:
           cache: npm
           cache-dependency-path: site/package-lock.json
       - uses: ./.github/actions/privacy-tools
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11.5.2
+          package_json_file: site/package.json
+          run_install: false
       - name: Public infrastructure and publishing contracts
         # No private checkout or signing credentials: tests use synthetic artifacts only.
         run: node --test ci/*.test.mjs scripts/*.test.mjs
