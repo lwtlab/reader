@@ -1234,7 +1234,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: lwtlab/hear
-          ref: 3cf181b04a953e647ae28e54d0e5d5279f2f250a
+          ref: 1770322ce673bb5f983b4d238e726cbdc6e4d630
           path: hear-ci
           persist-credentials: false
       - name: Load the existing public diagnostic encryption key

@@ -8,6 +8,8 @@ import {catalogResult,CATALOG_CONTRACT,EXECUTOR_CONTRACT,EXECUTOR_POLICY} from '
 import {fullCompanion,validateFullCompanion,validateHear,HEAR_TASKS,ALL_TASKS} from './change-examples.mjs';
 export const POLICY='reader-hear-selected-execution-v1',CONTEXT='reader-hear-public/selected';
 export const IMPLEMENTATION=JSON.parse(readFileSync(new URL('./selected-implementation.json',import.meta.url)));
+export const DESKTOP=Object.freeze(JSON.parse(readFileSync(new URL('./selected-desktop.json',import.meta.url))));
+assert.equal(DESKTOP.schemaVersion,1);assert.equal(DESKTOP.repository,'lwtlab/hear');assert(/^[a-f0-9]{40}$/.test(DESKTOP.adapter));assert(/^[a-f0-9]{64}$/.test(DESKTOP.executorGraphSha256));assert.equal(Object.keys(DESKTOP.implementation).length,13);assert.equal(digest(JSON.stringify(DESKTOP.implementation)),DESKTOP.executorGraphSha256);
 const hex=value=>/^[a-f0-9]{64}$/.test(value??''),quick=TASKS.slice(0,14),core=['core-sources','core-asr-controls'];
 const duration=value=>assert(Number.isSafeInteger(value)&&value>=0&&value<=7*24*3600000);
 export function selectedDescriptor(shadow){
@@ -65,7 +67,7 @@ export function cpuFromRecords(legacy,catalog,coreResult,plan,value,run,attempt,
 }
 export function aggregate(records,plan,value,run,attempt,outcomes,bytes){
  validatePlan(plan,value,run,attempt);const head=header('reader-hear-selected-execution',plan,value,run,attempt),needed=plan.selection.lanes[2].tasks.length>0;assert.deepEqual(outcomes,{plan:'success',reader:'success',cpu:'success',hear:needed?'success':'skipped'});
- validateReader(records.reader,records.legacy,plan,value,run,attempt);const cpu=cpuFromRecords(records.cpu,records.catalog,records.core??null,plan,value,run,attempt,bytes);if(needed)validateHear(records.hear,value,run,attempt);else assert.equal(records.hear,null);
+ validateReader(records.reader,records.legacy,plan,value,run,attempt);const cpu=cpuFromRecords(records.cpu,records.catalog,records.core??null,plan,value,run,attempt,bytes);if(needed)validateHear(records.hear,value,run,attempt,DESKTOP.executorGraphSha256);else assert.equal(records.hear,null);
  const selected=new Set(plan.selection.tasks.filter(t=>t.selected).map(t=>t.id)),rows=[...records.reader.tasks,...cpu.tasks,...(records.hear?.tasks??[])];assert.equal(rows.length,selected.size);assert.equal(new Set(rows.map(t=>t.id)).size,rows.length);assert(rows.every(t=>selected.has(t.id)&&t.status==='PASS'));
  for(const row of rows)duration(row.durationMs);assert.deepEqual(Object.keys(bytes).sort(),['plan','reader','cpu','catalog','core','hear','legacy'].sort());for(const key of ['plan','reader','cpu','catalog','core','hear']){const data=key==='plan'?plan:records[key]??null;if(data===null)assert.equal(bytes[key],null);else{assert(Buffer.isBuffer(bytes[key]));assert.deepEqual(JSON.parse(bytes[key]),data);}}if(records.legacy===null)assert.equal(bytes.legacy,null);else assert(bytes.legacy.equals(records.legacy));
  const tasks=ALL_TASKS.map(id=>{const row=rows.find(r=>r.id===id);return {id,selected:selected.has(id),status:row?'PASS':'NOT_RUN',durationMs:row?.durationMs??null};});

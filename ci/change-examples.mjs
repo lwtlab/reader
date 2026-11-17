@@ -72,11 +72,11 @@ export function validateExamplePlan(result, value, run, attempt, id, manifest = 
   return result;
 }
 function duration(value) { assert(Number.isSafeInteger(value) && value >= 0 && value <= 7 * 24 * 3600000); }
-export function validateHear(result, value, run, attempt) {
+export function validateHear(result, value, run, attempt, executorGraph = HEAR_EXECUTOR) {
   const keys = ['schemaVersion','kind','diagnostic','releaseAcceptance','headRef','baseRef','testedRef','workflowRef','prNumber','runId','runAttempt','platform','appPath','policy','scope','profile','selectionApplied','contractSha256','executorGraphSha256','summarySha256','nativeOrigin','status','validation','executionOutcome','tasks','tests','preparationDurationMs','executionDurationMs','acceptance','diagnostics'];
   assert.deepEqual(Object.keys(result).sort(), keys.sort());
   assert.equal(result.schemaVersion,1); assert.equal(result.kind,'hear-shared-desktop-verification');
-  for (const [key, expected] of Object.entries({headRef:value.head,baseRef:value.base,testedRef:value.tested,workflowRef:value.workflow,prNumber:value.pr,runId:run,runAttempt:attempt,platform:'darwin-arm64',appPath:'apps/hear',policy:'reader-hear-source-execution-v1',scope:'hear-desktop',profile:'full',selectionApplied:false,diagnostic:true,releaseAcceptance:false,status:'PASS',validation:'PASS',executionOutcome:'success',contractSha256:HEAR_CONTRACT,executorGraphSha256:HEAR_EXECUTOR})) assert.equal(result[key], expected);
+  for (const [key, expected] of Object.entries({headRef:value.head,baseRef:value.base,testedRef:value.tested,workflowRef:value.workflow,prNumber:value.pr,runId:run,runAttempt:attempt,platform:'darwin-arm64',appPath:'apps/hear',policy:'reader-hear-source-execution-v1',scope:'hear-desktop',profile:'full',selectionApplied:false,diagnostic:true,releaseAcceptance:false,status:'PASS',validation:'PASS',executionOutcome:'success',contractSha256:HEAR_CONTRACT,executorGraphSha256:executorGraph})) assert.equal(result[key], expected);
   assert(hex(result.summarySha256)); assert.deepEqual(result.tasks.map(t=>t.id),HEAR_TASKS);
   for (const task of result.tasks) { assert.deepEqual(Object.keys(task).sort(),['id','status','durationMs'].sort()); assert.equal(task.status,'PASS'); duration(task.durationMs); }
   for (const key of ['preparationDurationMs','executionDurationMs']) duration(result[key]);

@@ -8,7 +8,7 @@ import {binding,digest,positive,fingerprint,verifyMergeParents,TASKS} from './re
 import {github} from './reader-verification-control.mjs';
 import {verifyImplementation,planIdentity} from './shadow-plan.mjs';
 import {encryptLog} from './log-crypto.mjs';
-import {POLICY,CONTEXT,IMPLEMENTATION,planFromBytes,validatePlan,readerFromBytes,validateReader,coreFromBytes,cpuFromRecords,aggregate} from './selected-contract.mjs';
+import {POLICY,CONTEXT,IMPLEMENTATION,DESKTOP,planFromBytes,validatePlan,readerFromBytes,validateReader,coreFromBytes,cpuFromRecords,aggregate} from './selected-contract.mjs';
 import {reportSelected} from './selected-report.mjs';
 import {MANIFEST,exampleFor,resolveSelected,checkExamplePlan,selectedBranch,selectedInput} from './selected-input.mjs';
 import {PULL_CASE,pullRequest} from './selected-pull.mjs';
@@ -19,7 +19,7 @@ function current(){assert.equal(process.env.GITHUB_REPOSITORY,'lwtlab/reader');c
 function sourceRoot(){assert([undefined,'source','core'].includes(process.env.SELECTION_SOURCE_DIR));return resolve(process.env.SELECTION_SOURCE_DIR??'source');}
 function identitySource(value){const source=sourceRoot();verifyImplementation(source,IMPLEMENTATION.implementation);const git=(...args)=>execFileSync('git',args,{cwd:source,env:Object.fromEntries(Object.entries(process.env).filter(([key])=>!key.startsWith('GIT_'))),encoding:'utf8'}).trim();assert.equal(git('rev-parse','HEAD'),value.tested);assert.equal(git('status','--porcelain'),'');assert.equal(git('show','-s','--format=%P','HEAD'),`${value.base} ${value.head}`);return source;}
 function privatePlan(source){return ordinary(join(source,'.artifacts/verification-selected/plan.json'));}
-function fresh({value,id,run,attempt},outcomes={controls:'success',plan:'success'}){const source=identitySource(value),bytes=privatePlan(source),record=planFromBytes(bytes,value,run,attempt,outcomes);checkExamplePlan(record,id);return {source,bytes,record};}
+function fresh({value,id,run,attempt},outcomes={controls:'success',plan:'success'}){const source=identitySource(value),bytes=privatePlan(source),record=planFromBytes(bytes,value,run,attempt,outcomes);checkExamplePlan(record,id);if(record.selection.lanes[2].tasks.length)verifyImplementation(source,DESKTOP.implementation);return {source,bytes,record};}
 function master(info){const record=json('selected-inputs/plan/plan.json',65536);validatePlan(record,info.value,info.run,info.attempt);checkExamplePlan(record,info.id);const local=fresh(info);assert.deepEqual(local.record.selection,record.selection);return {...local,record};}
 function seal(file,name){if(!existsSync(file))return;const bytes=ordinary(file,32*1024*1024),out=join('selected-output',name+'.enc.json');if(!existsSync(out))writeFileSync(out,JSON.stringify(encryptLog(bytes,readFileSync(new URL('./build-logs-public.pem',import.meta.url)))),{flag:'wx',mode:0o600});}
 function oneSummary(source){const folder=join(source,'.artifacts/verify'),rows=readdirSync(folder);assert.equal(rows.length,1);assert(/^[a-f0-9-]{36}$/.test(rows[0]));return ordinary(join(folder,rows[0],'summary.json'));}

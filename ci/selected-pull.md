@@ -23,6 +23,13 @@ catalog. All14 mandatory gates remain unconditional. Reader-only executes44
 tasks, Hear-only30, shared-core/unknown49. Reader quick cannot produce a legacy
 33-task success; unselected tasks and release gates stay `NOT_RUN`.
 
+When Hear is selected, the plan job additionally checks all13 reviewed desktop
+executor source hashes before the Reader/CPU/Hear lanes start. The native lane
+repeats that check with the adapter fixed in `selected-desktop.json`; its exact
+executor digest is required by the selected receipt validator. Historical
+change-example validation keeps its original digest. Unsupported executor
+changes fail before expensive lane preparation and require a new reviewed pin.
+
 The same resolver is used at dispatch and twice in the privileged final reporter.
 The reporter has no private checkout; it authenticates run/attempt/workflow,
 actual job outcomes, receipt ZIP digests and original component bytes, rebuilds

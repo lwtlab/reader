@@ -4,14 +4,15 @@ import {spawnSync,execFileSync} from 'node:child_process';
 import {mkdtempSync,writeFileSync,readFileSync,mkdirSync,rmSync,realpathSync,chmodSync} from 'node:fs';
 import {join} from 'node:path';
 import {tmpdir} from 'node:os';
-import {aggregate,validatePlan,readerFromBytes,coreFromBytes,validateReader,selectedDescriptor,planFromBytes} from './selected-contract.mjs';
+import {aggregate,validatePlan,readerFromBytes,coreFromBytes,validateReader,selectedDescriptor,planFromBytes,DESKTOP} from './selected-contract.mjs';
+import {HEAR_EXECUTOR}from'./change-examples.mjs';
 import {fixture,run,attempt,ids} from './selected-fixtures.mjs';
 import {resolveSelected,checkExamplePlan,MANIFEST,selectedInput,selectedBranch} from './selected-input.mjs';
 import {PULL_CASE,PULL_POLICY,pullRequest,resolveSelectedPull} from './selected-pull.mjs';
 import {artifactMembers,readSelectedArtifact} from './selected-artifacts.mjs';
 import {collectSelected,reportSelected,SELECTED_JOBS,selectedJobOutcomes} from './selected-report.mjs';
 import {TASKS,digest,fingerprint} from './reader-verification.mjs';
-import {planIdentity} from './shadow-plan.mjs';
+import {planIdentity,verifyImplementation} from './shadow-plan.mjs';
 
 function result(f){return aggregate(f.records,f.plan,f.value,run,attempt,f.outcomes,f.bytes);}
 function refresh(f){for(const [key,data]of Object.entries(f.records))f.bytes[key]=key==='legacy'?data:data?Buffer.from(key==='cpu'?JSON.stringify(data,null,2)+'\n':JSON.stringify(data)):null;}
@@ -24,6 +25,21 @@ test('missing, duplicate, reused, foreign or forged component results cannot sat
  for(const status of ['failure','skipped','cancelled',undefined])for(const key of ['plan','reader','cpu','hear']){const f=fixture();f.outcomes[key]=status;assert.throws(()=>result(f));}
  for(const key of ['plan','reader','cpu','catalog','hear','legacy']){const f=fixture();f.bytes[key]=null;assert.throws(()=>result(f));}
  const f=fixture('reader-only');f.records.core=null;refresh(f);assert.throws(()=>result(f));
+});
+test('selected Hear receipts require the reviewed native lifecycle executor while legacy validation stays distinct',()=>{
+ const f=fixture('hear-only');assert.notEqual(DESKTOP.executorGraphSha256,HEAR_EXECUTOR);assert.equal(f.records.hear.executorGraphSha256,DESKTOP.executorGraphSha256);result(f);
+ f.records.hear.executorGraphSha256=HEAR_EXECUTOR;refresh(f);assert.throws(()=>result(f));
+ f.records.hear.executorGraphSha256='a'.repeat(64);refresh(f);assert.throws(()=>result(f));
+ const yaml=readFileSync(new URL('../.github/workflows/reader-private-verify.yml',import.meta.url),'utf8'),selected=yaml.split('\n  selected-hear:')[1].split('\n  aggregate-selected:')[0];
+ assert(selected.includes('ref: '+DESKTOP.adapter));assert.equal(DESKTOP.repository,'lwtlab/hear');
+});
+test('selected Hear executor is checked before fan-out with all thirteen reviewed source pins',t=>{
+ assert.equal(Object.keys(DESKTOP.implementation).length,13);assert.equal(digest(JSON.stringify(DESKTOP.implementation)),DESKTOP.executorGraphSha256);
+ const root=mkdtempSync(join(tmpdir(),'selected-desktop-pin-'));t.after(()=>rmSync(root,{recursive:true,force:true}));mkdirSync(join(root,'scripts'));const bytes=Buffer.from('generated reviewed executor');
+ const file=join(root,'scripts','control.sh');writeFileSync(file,bytes);verifyImplementation(root,{'scripts/control.sh':digest(bytes)});
+ writeFileSync(file,'generated changed executor');assert.throws(()=>verifyImplementation(root,{'scripts/control.sh':digest(bytes)}));
+ assert.throws(()=>verifyImplementation(root,{'scripts/missing.sh':digest(bytes)}));
+ const source=readFileSync(new URL('./selected-source.mjs',import.meta.url),'utf8');assert(source.includes('if(record.selection.lanes[2].tasks.length)verifyImplementation(source,DESKTOP.implementation)'));
 });
 test('CPU catalog binds the original legacy receipt bytes without reserialization',()=>{
  const f=fixture();f.bytes.cpu=Buffer.concat([f.bytes.cpu,Buffer.from(' ')]);assert.throws(()=>result(f));
