@@ -3,17 +3,24 @@ run-name: Reader full verification
 on:
   workflow_dispatch:
     inputs:
+      operation:
+        description: Run verification or default-branch discovery only
+        type: choice
+        default: verify
+        options:
+          - verify
+          - poll
       source_ref:
         description: Exact private PR head or main commit SHA
-        required: true
+        required: false
         type: string
       pr_number:
         description: Private PR number, or 0 for current main
-        required: true
+        required: false
         type: string
       workflow_sha:
         description: Exact executing public workflow commit SHA
-        required: true
+        required: false
         type: string
       scope:
         description: Complete Reader graph plus CPU, or focused CPU only
@@ -31,7 +38,7 @@ concurrency:
   cancel-in-progress: false
 jobs:
   poll:
-    if: github.event_name == 'schedule'
+    if: github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && inputs.operation == 'poll')
     name: Discover trusted private changes
     runs-on: ubuntu-24.04
     environment: reader-verification
@@ -53,7 +60,7 @@ jobs:
           VERIFICATION_WORKFLOW_SHA: ${{ vars.READER_VERIFICATION_WORKFLOW_SHA }}
         run: node ci/reader-verification-control.mjs poll
   resolve:
-    if: github.event_name == 'workflow_dispatch' && (inputs.scope == 'full' || inputs.scope == 'llama-cpu' || inputs.scope == '')
+    if: github.event_name == 'workflow_dispatch' && inputs.operation != 'poll' && (inputs.scope == 'full' || inputs.scope == 'llama-cpu' || inputs.scope == '')
     name: Resolve and mark exact private input
     runs-on: ubuntu-24.04
     environment: reader-verification
@@ -285,7 +292,7 @@ jobs:
         run: node ci/llama-cpu-control.mjs
 
   resolve-reliability:
-    if: github.event_name == 'workflow_dispatch' && contains(fromJSON('["sync-journey","large-library","playback-soak"]'), inputs.scope)
+    if: github.event_name == 'workflow_dispatch' && inputs.operation != 'poll' && contains(fromJSON('["sync-journey","large-library","playback-soak"]'), inputs.scope)
     name: Resolve immutable reliability input
     runs-on: ubuntu-24.04
     environment: reader-verification
@@ -406,7 +413,7 @@ jobs:
         run: node ci/reader-reliability-control.mjs report
 
   discover-reliability:
-    if: github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && inputs.scope == 'reliability-discovery')
+    if: github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && (inputs.scope == 'reliability-discovery' || inputs.operation == 'poll'))
     name: Discover trusted reliability inputs
     runs-on: ubuntu-24.04
     environment: reader-verification
