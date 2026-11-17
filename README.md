@@ -10,6 +10,25 @@ Android updates, website setup and independently gated deployment. Website sourc
 reviewed public download metadata in [`manifests/`](manifests/). Installers are Release assets, not Git files.
 This repository can be maintained independently or through the private source's `public/reader` submodule.
 
+## Release privacy gate
+
+Public CI tests the privacy publisher with synthetic payloads and no private checkout. Desktop and
+signed macOS candidate workflows scan final files before artifact upload, retaining private diagnostics
+only in the existing encrypted log. The release publisher scans its staged assets, notes and metadata
+before any draft upload and checks that audited asset hashes match the manifest.
+
+The local scanner is `node scripts/release-privacy.mjs <candidate> --project-dir <ASAR-tools-directory>`.
+Desktop callers also pass `--profile desktop`; web-server deliveries use the default generic profile.
+It needs Gitleaks 8.30.1, Python 3 and `@electron/asar`; container formats also need 7-Zip, squashfs tools,
+or macOS `hdiutil`. CI installs these through `.github/actions/privacy-tools`.
+For local publishing, set `READER_PRIVACY_TOOLS` to the directory containing the ASAR dependency.
+Failures and incomplete scans block publishing. Pattern scanning does not establish consent for images,
+audio or document content: review those separately. Reviewed public-data matches are restricted by exact
+digests and rule/location. The Hermes v98 boundary reader also requires an exact reviewed match;
+string boundaries alone never exempt arbitrary credentials. Inactive desktop Next metadata is classified
+only when action/page manifests meet the restricted schema. The scanner, policy and synthetic boundary tests are exported from the parent through
+`scripts/sync-release-privacy.mjs`; its `--check` prevents rule drift without exporting application code.
+
 ## Desktop candidate builds
 
 [Desktop candidate packages](https://github.com/lwtlab/reader/actions/workflows/desktop-candidates.yml) is a maintainer-only manual workflow for macOS arm64/x64, Windows x64 and Linux x64. Supply a full commit SHA from the private source repository and select `all` or a single native target. The workflow uses a repository-scoped, read-only SSH deploy key in the `PRIVATE_SOURCE_SSH_KEY` Actions secret; it does not require a personal access token.

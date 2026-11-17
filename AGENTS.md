@@ -11,7 +11,7 @@ Application source remains in the private `lwtlab/lwt-core` repository.
 - Public release tags target public commits. Record private source SHAs in release metadata, never
   push private Git objects into this repository.
 - Site deployment is independently gated; a code push is not permission to enable Pages or change DNS.
-- Run `node --test ci/*.test.mjs scripts/*.test.mjs`. For site changes use Node 24, then
+- Run `node --test ci/*.test.mjs scripts/*.test.mjs`. For site changes use Node 24.22.0 (`.nvmrc`), then
   `npm --prefix site ci` and `npm --prefix site run verify`.
 
 When used as a submodule, push this repository's commit before updating the parent's gitlink.
