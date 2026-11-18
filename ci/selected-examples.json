@@ -1,0 +1,69 @@
+{
+  "schemaVersion": 1,
+  "publicBranch": "ci/selected-execution-20261113",
+  "examples": [
+    {
+      "id": "implementation",
+      "head": "335e3d154404586fdc4b22fbced74298f31ac4cb",
+      "base": "bc70b6098d45e47359f6b26359d668d2c4323ba4",
+      "baseBranch": "fix/asr-reader-error-frame-20261112",
+      "branch": "feat/verification-selection-20261113",
+      "pr": 297,
+      "changesSha256": "0e0d973200ef0b7da5f187bb20cabd09dbeb0529858302810c54f9a7b67f7c0e",
+      "products": [
+        "reader",
+        "hear"
+      ]
+    },
+    {
+      "id": "reader-only",
+      "head": "d448f12baacd993175121b5b11dde9b0e44d6b8a",
+      "base": "335e3d154404586fdc4b22fbced74298f31ac4cb",
+      "branch": "qa/selected-reader-only-20261113",
+      "pr": 298,
+      "changesSha256": "e99882da217cefd8aa1028e885d90a747ce7767799a31769ea09cad854a5622c",
+      "baseBranch": "feat/verification-selection-20261113",
+      "products": [
+        "reader"
+      ]
+    },
+    {
+      "id": "hear-only",
+      "head": "5710ee6dd2974a2522cf702c2acb9cd012fcc584",
+      "base": "335e3d154404586fdc4b22fbced74298f31ac4cb",
+      "branch": "qa/selected-hear-only-20261113",
+      "pr": 299,
+      "changesSha256": "d6a4d090fddb2f894bb8d0c61ab7ccd659086a4a4ece8d3850c136d58ace42a9",
+      "baseBranch": "feat/verification-selection-20261113",
+      "products": [
+        "hear"
+      ]
+    },
+    {
+      "id": "shared-core",
+      "head": "81cae6871db4c5da54e4bde4fef3e0258af2d5ba",
+      "base": "335e3d154404586fdc4b22fbced74298f31ac4cb",
+      "branch": "qa/selected-shared-core-20261113",
+      "pr": 300,
+      "changesSha256": "f8237cfc15351e60ed1ce657945216bfe6203472ac436cb772f91572336d944a",
+      "baseBranch": "feat/verification-selection-20261113",
+      "products": [
+        "reader",
+        "hear"
+      ]
+    },
+    {
+      "id": "unknown",
+      "head": "b53b47cd644f2c41e18d5b314a645014b75e8650",
+      "base": "335e3d154404586fdc4b22fbced74298f31ac4cb",
+      "branch": "qa/selected-unknown-20261113",
+      "pr": 301,
+      "changesSha256": "a965b2c89dc6911d1382335df6fe3c8787bd91afafd2eecadab62198b7b59c46",
+      "baseBranch": "feat/verification-selection-20261113",
+      "products": [
+        "reader",
+        "hear"
+      ]
+    }
+  ]
+}
