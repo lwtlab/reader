@@ -13,6 +13,7 @@ export async function executeTasks(summary,source,append,save){
   for(const task of profiles[summary.profile].tasks){
     const state=summary.tasks.find(t=>t.id===task.id),started=Date.now();
     assert.equal(state.status,'NOT_RUN');
+    assert(task.cwd===undefined||task.cwd==='.');
     const env={...process.env,CI:'1',LWT_VERIFY_ARTIFACTS_DIR:path.join(source,'.artifacts/public-reliability')};
     delete env.GH_TOKEN;delete env.GITHUB_TOKEN;
     for(const key of Object.keys(env))if(key.startsWith('READER_RELIABILITY_SOAK'))delete env[key];
@@ -21,7 +22,7 @@ export async function executeTasks(summary,source,append,save){
     console.log(`Reliability ${task.id}: RUNNING`);
     try{
       await new Promise((resolve,reject)=>{
-        const child=spawn(task.command[0],task.command.slice(1),{cwd:path.join(source,'apps/reader'),env,stdio:['ignore','pipe','pipe']});
+        const child=spawn(task.command[0],task.command.slice(1),{cwd:task.cwd==='.'?source:path.join(source,'apps/reader'),env,stdio:['ignore','pipe','pipe']});
         for(const stream of [child.stdout,child.stderr])stream.on('data',chunk=>{try{append(chunk);}catch{child.kill('SIGTERM');reject(new Error('Private log write failed'));}});
         child.once('error',reject);child.once('close',(code,signal)=>code===0&&!signal?resolve():reject(new Error('Verification command failed')));
       });

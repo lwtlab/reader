@@ -2,10 +2,19 @@ import assert from 'node:assert/strict';
 import {binding,digest,positive} from './reader-verification.mjs';
 export const RELIABILITY_ARTIFACT='reader-reliability-result';
 export const RELIABILITY_JOB='Private Reader reliability verification';
+export const CHECKS_JOB='Private Reader independent checks';
 export const profiles=Object.freeze({
   'sync-journey':{context:'reader-public/sync-journey',timeout:25,tasks:[{id:'sync-journey',command:['pnpm','test:sync-journey']}]},
   'large-library':{context:'reader-public/large-library',timeout:60,tasks:[{id:'large-library',command:['pnpm','test:reader-reliability','--profile=large']}]},
   'playback-soak':{context:'reader-public/playback-soak',timeout:180,tasks:[{id:'playback-soak',command:['pnpm','test:reader-reliability:soak']}]},
+  'public-integration':{context:'reader-public/public-integration',job:CHECKS_JOB,timeout:25,tasks:[
+    {id:'privacy-source-parity',cwd:'.',command:['node','scripts/sync-release-privacy.mjs','--check']},
+    {id:'public-delivery-checks',cwd:'.',command:['bash','scripts/reader-public.sh','check']},
+  ]},
+  'release-privacy':{context:'reader-public/release-privacy',job:CHECKS_JOB,timeout:25,tasks:[
+    {id:'privacy-negative-controls',cwd:'.',command:['node','--test','scripts/release/privacy.test.mjs']},
+    {id:'extension-privacy',cwd:'.',command:['node','scripts/release-privacy.mjs','apps/reader/extension']},
+  ]},
 });
 export function profile(value){assert(Object.hasOwn(profiles,value),'Unknown reliability profile');return value;}
 export const contract=p=>digest(JSON.stringify({policy:'reader-reliability-v1',profile:profile(p),...profiles[p]}));
