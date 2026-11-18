@@ -98,6 +98,6 @@ test('workflow isolates optional shadow scope and never uploads private plan byt
   for(const upload of block.split('uses: actions/upload-artifact@').slice(1))assert.match(upload,/path: shadow-plan-output\/(verification.json|\*.enc.json)/);
   const control=readFileSync(new URL('./reader-verification-control.mjs',import.meta.url),'utf8');
   assert(control.indexOf("if(mode==='shadow-plan'||mode==='catalog-cpu')")<control.indexOf("if(mode==='full')await postStatus"));
-  assert.match(yaml,/report-llama-cpu:[\s\S]+inputs.scope != 'shadow-plan'/);
-  assert.match(yaml,/full:[\s\S]+inputs.scope != 'llama-cpu' && inputs.scope != 'shadow-plan'/);
+  assert.match(yaml,/report-llama-cpu:\n    needs: \[resolve, llama-cpu\]\n    if: always\(\) && needs.resolve.result == 'success' && \(inputs.scope == 'full' \|\| inputs.scope == 'llama-cpu' \|\| inputs.scope == ''\)/);
+  assert.match(yaml,/full:\n    if: inputs.scope == 'full' \|\| inputs.scope == ''/);
 });

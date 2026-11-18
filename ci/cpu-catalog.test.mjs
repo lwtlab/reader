@@ -70,7 +70,7 @@ test('optional CPU catalog scope keeps credentials, uploads and status contexts 
   assert.match(job,/reader-catalog-cpu-result-/);assert.match(job,/reader-catalog-cpu-encrypted-/);assert.match(job,/llama-cpu-output\/catalog.json/);assert.doesNotMatch(job,/path:.*private-summary|path:.*source\//);
   assert.match(job,/node ci\/llama-cpu-run.mjs require-catalog/);
   const controller=readFileSync(new URL('./reader-verification-control.mjs',import.meta.url),'utf8');assert(controller.indexOf("if(mode==='shadow-plan'||mode==='catalog-cpu')")<controller.indexOf("if(mode==='full')await postStatus"));
-  assert.match(yaml,/llama-cpu:\n    if: inputs.scope != 'shadow-plan' && inputs.scope != 'catalog-cpu'/);
+  assert.match(yaml,/llama-cpu:\n    if: inputs.scope == 'full' \|\| inputs.scope == 'llama-cpu' \|\| inputs.scope == ''/);
 });
 test('actual catalog final gate rejects missing mode even with an otherwise valid legacy receipt',t=>{
   const root=mkdtempSync(path.join(tmpdir(),'cpu-catalog-required-mode-'));t.after(()=>rmSync(root,{recursive:true,force:true}));mkdirSync(path.join(root,'llama-cpu-output'));

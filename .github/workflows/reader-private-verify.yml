@@ -209,7 +209,7 @@ jobs:
         run: node ci/reader-verification-run.mjs require
   report:
     needs: [resolve, full]
-    if: always() && needs.resolve.result == 'success' && inputs.scope != 'llama-cpu'
+    if: always() && needs.resolve.result == 'success' && (inputs.scope == 'full' || inputs.scope == '')
     name: Report verified private commit status
     runs-on: ubuntu-24.04
     environment: reader-verification
@@ -290,7 +290,7 @@ jobs:
         run: node ci/llama-cpu-run.mjs require
   report-llama-cpu:
     needs: [resolve, llama-cpu]
-    if: always() && needs.resolve.result == 'success'
+    if: always() && needs.resolve.result == 'success' && (inputs.scope == 'full' || inputs.scope == 'llama-cpu' || inputs.scope == '')
     name: Report independently verified private CPU status
     runs-on: ubuntu-24.04
     environment: reader-verification

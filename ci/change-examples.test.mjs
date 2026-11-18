@@ -82,7 +82,7 @@ test('actual aggregate CLI validates complete receipts and rejects a tampered in
 });
 test('optional workflow isolates every execution and preserves old statuses and authoritative gates',()=>{
  const yaml=readFileSync(new URL('../.github/workflows/reader-private-verify.yml',import.meta.url),'utf8');
- for(const name of ['resolve','full','report','llama-cpu','report-llama-cpu']){const block=yaml.slice(yaml.indexOf(`\n  ${name}:`)+1).split(/\n  [a-z][a-z-]+:/)[0];assert.match(block,/inputs.scope != 'change-example'/);}
+ for(const name of ['resolve','full','report','llama-cpu','report-llama-cpu']){const block=yaml.slice(yaml.indexOf(`\n  ${name}:`)+1).split(/\n  [a-z][a-z-]+:/)[0];const condition=block.split('\n').find(line=>line.trim().startsWith('if:'));assert(condition);assert.match(condition,/inputs.scope == 'full'/);assert.doesNotMatch(condition,/inputs.scope == '(change-example|selected-source|selected-pr)'/);}
  const optional=yaml.slice(yaml.indexOf('\n  resolve-example:'));
  assert.doesNotMatch(optional,/reader-verification-control.mjs report|llama-cpu-control|postStatus|pull_request_target|continue-on-error|submodules: recursive|SIGNING/);
  assert.match(optional,/Run the unchanged complete task graph/);assert.match(optional,/change-examples.mjs full-collect/);assert.match(optional,/change-examples.mjs full-require/);assert.match(optional,/full-execution.json/);assert.match(optional,/require-catalog/);assert.match(optional,/desktop-catalog.mjs --require-pass/);assert.match(optional,/3cf181b04a953e647ae28e54d0e5d5279f2f250a/);
