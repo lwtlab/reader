@@ -313,7 +313,7 @@ export async function scanReleasePrivacy(input, { projectDir = path.join(reposit
       for (const row of results) {
         const rel = lstatSync(dir).isFile() ? path.basename(dir) : path.isAbsolute(row.File) ? path.relative(dir, row.File) : row.File;
         const label = prefix ? `${prefix}/${rel}` : rel;
-        if (row.RuleID === "generic-api-key") {
+        if (row.RuleID === "generic-api-key" || row.RuleID === "next-manifest-key") {
           const secretHash = createHash("sha256").update(row.Secret).digest("hex");
           const reviewed = publicData.matches.find(p => p.rule === row.RuleID && p.sha256 === secretHash && (!p.label || row.Match.includes(p.label)) && (!p.suffix || label.endsWith("/" + p.suffix) || label === p.suffix));
           // Boundaries alone cannot exclude a credential followed by another

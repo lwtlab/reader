@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
-import { generateKeyPairSync, randomBytes } from 'node:crypto';
+import { generateKeyPairSync } from 'node:crypto';
 import { execFileSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
@@ -51,19 +51,31 @@ test('compiler route names and PEM parsing literals pass; actual private key mat
   } finally { rmSync(directory, { recursive: true, force: true }); }
 });
 
-test('desktop-only inactive Next action metadata never exempts account keys or active actions', async () => {
+test('desktop-only inactive Next metadata retains key-shape, account-key and active-route boundaries', async () => {
   const directory = mkdtempSync(path.join(tmpdir(), 'public-privacy-next-'));
   try {
     const file = path.join(directory, '.next/server/server-reference-manifest.json');
     mkdirSync(path.dirname(file), { recursive: true });
-    const metadata = { node: {}, edge: {}, encryptionKey: randomBytes(32).toString('base64') };
-    writeFileSync(file, JSON.stringify(metadata));
-    assert.equal((await scanReleasePrivacy(directory)).status, 'FAIL');
-    assert.equal((await scanReleasePrivacy(directory, { profile: 'desktop' })).status, 'PASS');
-    writeFileSync(file, JSON.stringify({ ...metadata, node: { action: {} } }));
-    assert.equal((await scanReleasePrivacy(directory, { profile: 'desktop' })).status, 'FAIL');
-    writeFileSync(file, JSON.stringify({ ...metadata, accountApiKey: ['ghp_', 'abcdefghijklmnopqrstuvwxyz0123456789'].join('') }));
-    assert.equal((await scanReleasePrivacy(directory, { profile: 'desktop' })).status, 'FAIL');
+    const keys=[11,251,255].map(first=>Buffer.from([first,...Array.from({length:31},(_,n)=>(n*37+48)%256)]).toString('base64'));
+    keys.push(Buffer.alloc(32).toString('base64'));
+    for(const encryptionKey of keys){
+      const metadata = { node: {}, edge: {}, encryptionKey };
+      writeFileSync(file, JSON.stringify(metadata));
+      assert.equal((await scanReleasePrivacy(directory)).status, 'FAIL');
+      assert.equal((await scanReleasePrivacy(directory, { profile: 'desktop' })).status, 'PASS');
+      writeFileSync(file, JSON.stringify({ ...metadata, node: { action: {} } }));
+      assert.equal((await scanReleasePrivacy(directory, { profile: 'desktop' })).status, 'FAIL');
+      writeFileSync(file, JSON.stringify({ ...metadata, accountApiKey: ['ghp_', 'abcdefghijklmnopqrstuvwxyz0123456789'].join('') }));
+      assert.equal((await scanReleasePrivacy(directory, { profile: 'desktop' })).status, 'FAIL');
+    }
+    rmSync(file);
+    const preview={version:4,routes:{},dynamicRoutes:{},preview:{previewModeSigningKey:'0'.repeat(64),previewModeEncryptionKey:'f'.repeat(64)}};
+    const prerender=path.join(directory,'.next/prerender-manifest.json');
+    writeFileSync(prerender,JSON.stringify(preview));
+    assert.equal((await scanReleasePrivacy(directory)).status,'FAIL');
+    assert.equal((await scanReleasePrivacy(directory,{profile:'desktop'})).status,'PASS');
+    writeFileSync(prerender,JSON.stringify({...preview,routes:{'/':{}}}));
+    assert.equal((await scanReleasePrivacy(directory,{profile:'desktop'})).status,'FAIL');
   } finally { rmSync(directory, { recursive: true, force: true }); }
 });
 

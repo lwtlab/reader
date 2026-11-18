@@ -3,4 +3,12 @@ title = "Release artifact secret detection"
 [extend]
 useDefault = true
 
+[[rules]]
+id = "next-manifest-key"
+description = "Framework runtime keys require classification independent of generic-key heuristics"
+path = '''(?i)(?:^|[\\/])(?:server-reference-manifest|prerender-manifest)\.json$'''
+regex = '''(?i)"(?:encryptionKey|previewModeSigningKey|previewModeEncryptionKey)"\s*:\s*"([A-Za-z0-9+/]{43}=|[a-f0-9]{64})"'''
+secretGroup = 1
+keywords = ["encryptionkey", "previewmodesigningkey", "previewmodeencryptionkey"]
+
 # No repository-controlled ignores or release baselines: each payload is checked in full.
