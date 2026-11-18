@@ -1,0 +1,21 @@
+{
+  "source": "335e3d154404586fdc4b22fbced74298f31ac4cb",
+  "implementation": {
+    "scripts/verification-selection.mjs": "45c974bdaa13eb37fd8179767bec6cb1e38025c13eccbe1d3c4125e05d77dcfd",
+    "scripts/verify-selected.mjs": "60d439eb763240afb3b14674350873b6a2daa659bd55e8ea55cb5e2bf02e139b",
+    "scripts/verification-catalog.mjs": "d76f0617729d80ed40c4707c7d4d41f26ef27370d8c813ddd00db967b0e9e49a",
+    "scripts/verification-execution.mjs": "c9ff6cf3fb37bffd87eb68d9cff054a916d676b959d017248b0899a95610e78c",
+    "scripts/verification-cpu-tasks.mjs": "a5ed5d7c5601b9af72d17d1b45a16a5f4f8ca21016622743687c15362517b958",
+    "scripts/verify-tasks.mjs": "ed75ec8b8c609597c16f6dcbcc7ee622211e5e3f7d31869fc70e6663295b39b3",
+    "scripts/verify-runtime.mjs": "d9bab01d1d42c6bef7e6305a7beb40c62cc4e011174eb3354204fe8dc9367417",
+    "scripts/verification-selection.test.mjs": "84c573f0e8e8628a4184cbc9dee5f42cc7a588b18aa7de5f9d35e9f0b4b036e5",
+    "scripts/verification-execution.test.mjs": "41a1ab9cdc96461115a97bc93ccacc1b7df13cc3beb8f6f236c096a35f4f4059",
+    "scripts/verification-catalog.test.mjs": "f872e695a10bde70bf554fc856b151ea8b23c8637591f47cc3b4888d39726f59"
+  },
+  "coreDependencies": {
+    "aspeak": "ef3bc2b0707fb0408820ad1f21b325f5c3f770ec",
+    "srtparse": "455cb9d884417e2575ce1db2ae4b69c5b629ed13"
+  },
+  "readerFullContract": "1ccb65dd713e5e4a3c79b3a6143b00c00fcc1d4b679ae7e0d34e28aace8d104a",
+  "readerQuickContract": "de477fb94c00a7fb8417e4a0e296ff5f326df79730abe94d1c17f857ac61d0ee"
+}

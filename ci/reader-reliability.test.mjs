@@ -1,3 +1,4 @@
+import {realpathSync} from 'node:fs';
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import {binding} from './reader-verification.mjs';
@@ -61,7 +62,7 @@ const {generateKeyPairSync}=await import('node:crypto');
 const {decryptLog}=await import('./log-crypto.mjs');
 
 test('real runner captures private output, checks source stability and seals diagnostics before issuing a result',()=>{
-  const directory=mkdtempSync(path.join(tmpdir(),'reader-reliability-cli-'));
+  const directory=realpathSync(mkdtempSync(path.join(tmpdir(),'reader-reliability-cli-')));
   try{
     const source=path.join(directory,'source'),app=path.join(source,'apps/reader'),ci=path.join(directory,'ci'),temp=path.join(directory,'temp');
     for(const folder of [app,ci,temp])mkdirSync(folder,{recursive:true});
