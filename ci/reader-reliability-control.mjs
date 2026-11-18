@@ -8,7 +8,7 @@ import {profiles,profile,fingerprint,validateResult,RELIABILITY_ARTIFACT,RELIABI
 const source=p=>`repos/${SOURCE_REPOSITORY}/${p}`,pub=p=>`repos/${BUILD_REPOSITORY}/${p}`;
 const url=(run,attempt)=>`https://github.com/${BUILD_REPOSITORY}/actions/runs/${positive(run)}/attempts/${positive(attempt)}`;
 const trustedAssociations=['OWNER','MEMBER','COLLABORATOR'];
-function discoveryInput(api,candidate){
+export function discoveryInput(api,candidate){
   return async(route,...args)=>{
     const response=await api(route,...args);
     let unavailable=false;
@@ -48,7 +48,7 @@ export async function reportReliability(api,value,{profile:p,run,attempt,job,tok
   let state='error';
   try{
     assert.equal(actual.id,run);assert.equal(actual.run_attempt,attempt);assert.equal(actual.repository.full_name,BUILD_REPOSITORY);assert.equal(actual.head_sha,value.workflow);assert.equal(actual.workflow_id,workflow.id);assert.equal(actual.event,'workflow_dispatch');
-    const jobs=await api(pub(`actions/runs/${run}/attempts/${attempt}/jobs?per_page=100`));assert(jobs.jobs.length<100);const matches=jobs.jobs.filter(j=>j.name===RELIABILITY_JOB);assert.equal(matches.length,1);assert.equal(matches[0].conclusion,job);
+    const jobs=await api(pub(`actions/runs/${run}/attempts/${attempt}/jobs?per_page=100`));assert(jobs.jobs.length<100);const matches=jobs.jobs.filter(j=>j.name===(profiles[p].job??RELIABILITY_JOB));assert.equal(matches.length,1);assert.equal(matches[0].conclusion,job);
     const record=await receipt(api,value,run,attempt,token,fetch,{prefix:RELIABILITY_ARTIFACT});validateResult(record,value,{profile:p,run,attempt});
     if(live.head===value.head&&live.base===value.base)state=job==='success'&&record.status==='PASS'?'success':'failure';
   }catch{/* Cancelled, missing, corrupt, wrong-attempt evidence can never produce success. */}
