@@ -522,9 +522,17 @@ jobs:
       - name: Initialize only the fixed public upstream
         run: node ci/private-step.mjs native-submodule source git -c submodule.third_party/llama.cpp-upstream.url=https://github.com/ggml-org/llama.cpp.git submodule update --init -- third_party/llama.cpp-upstream
       - name: Compile original portable ARM64 runtime with ClangCL
-        env:
-          CMAKE_GENERATOR_TOOLSET: ClangCL
-        run: node ci/private-step.mjs native-toolchain source node scripts/build-reader-local-tts.mjs --backend cpu --jobs 3 --output "$env:RUNNER_TEMP/native-build"
+        shell: pwsh
+        run: |
+          $readerCmakeGenerator = @(& cmake --help | ForEach-Object {
+            $readerMatch = [regex]::Match($_, '^\* (Visual Studio [0-9]+ [0-9]+)\s*=')
+            if ($readerMatch.Success) { $readerMatch.Groups[1].Value }
+          })
+          if ($LASTEXITCODE -ne 0 -or $readerCmakeGenerator.Count -ne 1) { throw 'One default Visual Studio generator is required' }
+          $env:CMAKE_GENERATOR = $readerCmakeGenerator[0]
+          $env:CMAKE_GENERATOR_TOOLSET = 'ClangCL'
+          node ci/private-step.mjs native-toolchain source node scripts/build-reader-local-tts.mjs --backend cpu --jobs 3 --output "$env:RUNNER_TEMP/native-build"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Exercise actual ARM64 CLI
         run: node ci/private-step.mjs native-cli source "$env:RUNNER_TEMP/native-build/bin/reader-qwen3-tts.exe" --help
       - name: Verify portable cache and actual PE machine
