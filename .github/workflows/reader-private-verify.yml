@@ -20,7 +20,7 @@ on:
         required: false
         default: full
         type: choice
-        options: [full, llama-cpu, native-tts, native-auth-probe]
+        options: [full, llama-cpu, native-tts, native-auth-probe, native-toolchain-probe]
   schedule:
     - cron: '17,47 * * * *'
 permissions:
@@ -427,7 +427,7 @@ jobs:
         run: node ci/reader-native-tts-control.mjs report
 
   resolve-auth-probe:
-    if: github.event_name == 'workflow_dispatch' && inputs.scope == 'native-auth-probe'
+    if: github.event_name == 'workflow_dispatch' && (inputs.scope == 'native-auth-probe' || inputs.scope == 'native-toolchain-probe')
     name: Resolve trusted checkout diagnostic input
     runs-on: ubuntu-24.04
     environment: reader-verification
@@ -451,6 +451,7 @@ jobs:
           WORKFLOW_SHA: ${{ inputs.workflow_sha }}
         run: node ci/reader-native-tts-control.mjs resolve-auth-probe
   native-auth-probe:
+    if: inputs.scope == 'native-auth-probe'
     needs: resolve-auth-probe
     name: Diagnostic native checkout ACL (${{ matrix.id }})
     strategy:
@@ -492,3 +493,50 @@ jobs:
           retention-days: 7
       - name: Validate native source and host without executing private code
         run: node ci/reader-native-tts-run.mjs identity
+
+  native-toolchain-probe:
+    if: inputs.scope == 'native-toolchain-probe'
+    needs: resolve-auth-probe
+    name: Diagnostic native TTS toolchain (windows-arm64-cpu)
+    runs-on: windows-11-arm
+    timeout-minutes: 45
+    env:
+      VERIFICATION_BINDING: ${{ needs.resolve-auth-probe.outputs.binding }}
+      NATIVE_PLATFORM: windows-arm64-cpu
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24.22.0
+      - name: Fetch exact private source using only the approved identity
+        env:
+          READER_NATIVE_SOURCE_SSH_KEY: ${{ secrets.PRIVATE_SOURCE_SSH_KEY }}
+        run: node ci/reader-native-source.mjs checkout
+      - name: Require owned credential cleanup
+        if: always()
+        run: node ci/reader-native-source.mjs cleanup
+      - name: Validate source and ARM64 host before compiler diagnosis
+        run: node ci/reader-native-tts-run.mjs identity
+      - name: Initialize only the fixed public upstream
+        run: node ci/private-step.mjs native-submodule source git -c submodule.third_party/llama.cpp-upstream.url=https://github.com/ggml-org/llama.cpp.git submodule update --init -- third_party/llama.cpp-upstream
+      - name: Compile original portable ARM64 runtime with ClangCL
+        env:
+          CMAKE_GENERATOR_TOOLSET: ClangCL
+        run: node ci/private-step.mjs native-toolchain source node scripts/build-reader-local-tts.mjs --backend cpu --jobs 3 --output "$env:RUNNER_TEMP/native-build"
+      - name: Exercise actual ARM64 CLI
+        run: node ci/private-step.mjs native-cli source "$env:RUNNER_TEMP/native-build/bin/reader-qwen3-tts.exe" --help
+      - name: Verify portable cache and actual PE machine
+        run: node ci/reader-native-toolchain-probe.mjs
+      - name: Encrypt bounded compiler diagnostics
+        if: always()
+        run: node ci/reader-native-source.mjs seal
+      - name: Retain encrypted diagnostic without qualification receipt
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: reader-native-toolchain-probe-encrypted-windows-arm64-cpu-${{ github.run_id }}-${{ github.run_attempt }}
+          path: native-tts-output/source-diagnostics.enc.json
+          if-no-files-found: error
+          retention-days: 7
