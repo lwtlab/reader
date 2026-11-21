@@ -41,10 +41,11 @@ async function reportNative(api,value,{run,attempt,token}){
 }
 async function main(){
   assert.equal(process.env.GITHUB_REPOSITORY,BUILD_REPOSITORY);assert.equal(process.env.GITHUB_REF,'refs/heads/reader-public-full-verification');const api=github(process.env.GH_TOKEN),run=positive(process.env.GITHUB_RUN_ID),attempt=positive(process.env.GITHUB_RUN_ATTEMPT),operation=process.argv[2];
-  if(operation==='resolve'){
+  if(['resolve','resolve-auth-probe'].includes(operation)){
     assert.equal(process.env.WORKFLOW_SHA,process.env.GITHUB_SHA);
-    const value=await resolveInput(api,{source:process.env.SOURCE_REF,pr:Number(process.env.PR_NUMBER||0),workflow:process.env.GITHUB_SHA});await config(api,value);
-    appendFileSync(process.env.GITHUB_OUTPUT,`binding=${JSON.stringify(value)}\ntested=${value.tested}\nmatrix=${JSON.stringify({include:MATRIX})}\n`);
+    const value=await resolveInput(api,{source:process.env.SOURCE_REF,pr:Number(process.env.PR_NUMBER||0),workflow:process.env.GITHUB_SHA});const probe=operation==='resolve-auth-probe';if(!probe)await config(api,value);
+    appendFileSync(process.env.GITHUB_OUTPUT,`binding=${JSON.stringify(value)}\ntested=${value.tested}\nmatrix=${JSON.stringify({include:probe?MATRIX.filter(m=>m.platform==='win32'):MATRIX})}\n`);
+    if(probe){console.log('Trusted checkout-only diagnostic accepted; no verification status issued');return;}
     await api(ep(`statuses/${value.head}`),'POST',{context:NATIVE_CONTEXT,state:'pending',description:`native pending ${nativeFingerprint(value)}`,target_url:url(run,attempt)});console.log('Trusted native-only immutable input accepted');return;
   }
   const value=binding(JSON.parse(process.env.VERIFICATION_BINDING));assert.equal(value.workflow,process.env.GITHUB_SHA);

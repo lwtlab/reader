@@ -21,7 +21,7 @@ test('actual collector and every unique completed native job must succeed',()=>{
 });
 test('commands preserve original PR contract without real models or extra submodules',()=>{
   for(const m of MATRIX){const sequence=commands(m,'/tmp/native-build');assert.equal(sequence.length,STEPS.length);assert.equal(sequence[5][4],m.backend);assert.equal(sequence[6].at(-1),'--help');assert(!JSON.stringify(sequence).includes('reader-models.py'));assert(!JSON.stringify(sequence).includes('--recursive'));}
-  const workflow=readFileSync(new URL('../.github/workflows/reader-private-verify.yml',import.meta.url),'utf8');assert.match(workflow,/timeout-minutes: 45/);assert.match(workflow,/options: \[full, llama-cpu, native-tts\]/);assert.match(workflow,/if: inputs.scope == 'full' \|\| inputs.scope == ''/);
+  const workflow=readFileSync(new URL('../.github/workflows/reader-private-verify.yml',import.meta.url),'utf8');assert.match(workflow,/timeout-minutes: 45/);assert.match(workflow,/options: \[full, llama-cpu, native-tts, native-auth-probe\]/);assert.match(workflow,/if: inputs.scope == 'full' \|\| inputs.scope == ''/);
 });
 test('failed or interrupted commands leave downstream stages unrun',async()=>{
   for(const failure of [{code:1,signal:null},{code:null,signal:'SIGTERM'}]){

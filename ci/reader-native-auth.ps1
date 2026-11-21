@@ -49,17 +49,24 @@ try {
   Set-Acl -LiteralPath $directory -AclObject $acl
   [System.IO.File]::WriteAllText($backup, (@{ directory = $original; existingProbe = $originalChild } | ConvertTo-Json -Compress))
   # Same Node creation API as checkout, before introducing any credential.
-  node -e 'require("node:fs").writeFileSync(process.env.READER_NATIVE_AUTH_PROBE,"synthetic",{mode:0o600,flag:"wx"})'
+  node -e 'const key=require("node:crypto").generateKeyPairSync("rsa",{modulusLength:2048,privateKeyEncoding:{type:"pkcs1",format:"pem"},publicKeyEncoding:{type:"spki",format:"pem"}}).privateKey;require("node:fs").writeFileSync(process.env.READER_NATIVE_AUTH_PROBE,key,{mode:0o600,flag:"wx"})'
   if ($LASTEXITCODE -ne 0) { throw 'Native checkout permission probe creation failed' }
   foreach ($candidate in @($directory, $env:READER_NATIVE_AUTH_PROBE)) {
     $actual = Get-Acl -LiteralPath $candidate
-    if ($actual.GetOwner([System.Security.Principal.SecurityIdentifier]).Value -ne $owner.Value) { throw 'Native checkout owner mismatch' }
+    # Win32 OpenSSH explicitly accepts current user, local Administrators,
+    # or SYSTEM as owner. Keep access ACEs restricted to the current user.
+    $fileOwner = $actual.GetOwner([System.Security.Principal.SecurityIdentifier]).Value
+    if (@($owner.Value, 'S-1-5-32-544', 'S-1-5-18') -notcontains $fileOwner) { throw 'Native checkout owner is not trusted by OpenSSH' }
     $rules = $actual.GetAccessRules($true, $true, [System.Security.Principal.SecurityIdentifier])
     if ($rules.Count -eq 0) { throw 'Native checkout has no access rule' }
     foreach ($access in $rules) {
       if ($access.AccessControlType -ne [System.Security.AccessControl.AccessControlType]::Allow -or $access.IdentityReference.Value -ne $owner.Value) { throw 'Native checkout access is not owner-only' }
     }
   }
+  $ssh = (Get-Command ssh.exe -CommandType Application).Source
+  $keygen = Join-Path (Split-Path $ssh) 'ssh-keygen.exe'
+  & $keygen -y -f $env:READER_NATIVE_AUTH_PROBE > $null
+  if ($LASTEXITCODE -ne 0) { throw 'Actual OpenSSH rejected the synthetic Node-created private key' }
 } catch {
   # If backup persistence or the probe fails, roll back using the in-memory SD.
   Restore-DirectoryAcl $original
@@ -70,4 +77,4 @@ try {
   Remove-Item -LiteralPath $env:READER_NATIVE_AUTH_PROBE -Force -ErrorAction SilentlyContinue
   Remove-Item Env:READER_NATIVE_AUTH_PROBE -ErrorAction SilentlyContinue
 }
-Write-Output 'Native checkout actual temp directory and Node child are owner-only'
+Write-Output 'Native checkout current-user-only access and actual OpenSSH private-key loading verified'

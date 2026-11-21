@@ -20,7 +20,7 @@ on:
         required: false
         default: full
         type: choice
-        options: [full, llama-cpu, native-tts]
+        options: [full, llama-cpu, native-tts, native-auth-probe]
   schedule:
     - cron: '17,47 * * * *'
 permissions:
@@ -53,7 +53,7 @@ jobs:
           VERIFICATION_WORKFLOW_SHA: ${{ vars.READER_VERIFICATION_WORKFLOW_SHA }}
         run: node ci/reader-verification-control.mjs poll
   resolve:
-    if: github.event_name == 'workflow_dispatch' && inputs.scope != 'native-tts'
+    if: github.event_name == 'workflow_dispatch' && (inputs.scope == 'full' || inputs.scope == 'llama-cpu' || inputs.scope == '')
     name: Resolve and mark exact private input
     runs-on: ubuntu-24.04
     environment: reader-verification
@@ -424,3 +424,64 @@ jobs:
           GH_TOKEN: ${{ secrets.READER_VERIFICATION_TOKEN }}
           VERIFICATION_BINDING: ${{ needs.resolve-native.outputs.binding }}
         run: node ci/reader-native-tts-control.mjs report
+
+  resolve-auth-probe:
+    if: github.event_name == 'workflow_dispatch' && inputs.scope == 'native-auth-probe'
+    name: Resolve trusted checkout diagnostic input
+    runs-on: ubuntu-24.04
+    environment: reader-verification
+    timeout-minutes: 10
+    outputs:
+      binding: ${{ steps.resolve.outputs.binding }}
+      tested: ${{ steps.resolve.outputs.tested }}
+      matrix: ${{ steps.resolve.outputs.matrix }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24.22.0
+      - id: resolve
+        env:
+          GH_TOKEN: ${{ secrets.READER_VERIFICATION_TOKEN }}
+          SOURCE_REF: ${{ inputs.source_ref }}
+          PR_NUMBER: ${{ inputs.pr_number }}
+          WORKFLOW_SHA: ${{ inputs.workflow_sha }}
+        run: node ci/reader-native-tts-control.mjs resolve-auth-probe
+  native-auth-probe:
+    needs: resolve-auth-probe
+    name: Diagnostic native checkout ACL (${{ matrix.id }})
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJson(needs.resolve-auth-probe.outputs.matrix) }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 10
+    env:
+      VERIFICATION_BINDING: ${{ needs.resolve-auth-probe.outputs.binding }}
+      NATIVE_PLATFORM: ${{ matrix.id }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24.22.0
+      - name: Protect Windows checkout credential directory
+        shell: pwsh
+        run: ./ci/reader-native-auth.ps1
+      - name: Read exact private source without persisted credentials
+        uses: actions/checkout@v4
+        with:
+          repository: lwtlab/lwt-core
+          ref: ${{ needs.resolve-auth-probe.outputs.tested }}
+          path: source
+          ssh-key: ${{ secrets.PRIVATE_SOURCE_SSH_KEY }}
+          persist-credentials: false
+          submodules: false
+      - name: Restore Windows temp directory ACL after checkout
+        if: always()
+        shell: pwsh
+        run: ./ci/reader-native-auth.ps1 restore
+      - name: Validate native source and host without executing private code
+        run: node ci/reader-native-tts-run.mjs identity
