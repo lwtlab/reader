@@ -333,11 +333,13 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
-      - name: Protect Windows checkout credential directory
+      - name: Read exact Windows source through the isolated credential boundary
         if: runner.os == 'Windows'
-        shell: pwsh
-        run: ./ci/reader-native-auth.ps1
+        env:
+          READER_NATIVE_SOURCE_SSH_KEY: ${{ secrets.PRIVATE_SOURCE_SSH_KEY }}
+        run: node ci/reader-native-source.mjs checkout
       - name: Read exact private source without persisted credentials
+        if: runner.os != 'Windows'
         uses: actions/checkout@v4
         with:
           repository: lwtlab/lwt-core
@@ -346,10 +348,9 @@ jobs:
           ssh-key: ${{ secrets.PRIVATE_SOURCE_SSH_KEY }}
           persist-credentials: false
           submodules: false
-      - name: Restore Windows temp directory ACL after checkout
+      - name: Require owned Windows credential cleanup before private execution
         if: always() && runner.os == 'Windows'
-        shell: pwsh
-        run: ./ci/reader-native-auth.ps1 restore
+        run: node ci/reader-native-source.mjs cleanup
       - name: Validate native source, host and reviewed contract
         run: node ci/reader-native-tts-run.mjs identity
       - id: native
@@ -467,21 +468,27 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 24.22.0
-      - name: Protect Windows checkout credential directory
-        shell: pwsh
-        run: ./ci/reader-native-auth.ps1
-      - name: Read exact private source without persisted credentials
-        uses: actions/checkout@v4
-        with:
-          repository: lwtlab/lwt-core
-          ref: ${{ needs.resolve-auth-probe.outputs.tested }}
-          path: source
-          ssh-key: ${{ secrets.PRIVATE_SOURCE_SSH_KEY }}
-          persist-credentials: false
-          submodules: false
-      - name: Restore Windows temp directory ACL after checkout
+      - name: Exercise the production credential boundary and injected failures
+        env:
+          READER_NATIVE_SOURCE_SSH_KEY: ${{ secrets.PRIVATE_SOURCE_SSH_KEY }}
+        run: node ci/reader-native-source.mjs controls
+      - name: Fetch exact private source using only the approved identity
+        env:
+          READER_NATIVE_SOURCE_SSH_KEY: ${{ secrets.PRIVATE_SOURCE_SSH_KEY }}
+        run: node ci/reader-native-source.mjs checkout
+      - name: Require owned credential cleanup
         if: always()
-        shell: pwsh
-        run: ./ci/reader-native-auth.ps1 restore
+        run: node ci/reader-native-source.mjs cleanup
+      - name: Encrypt bounded source diagnostic log and control summary
+        if: always()
+        run: node ci/reader-native-source.mjs seal
+      - name: Retain encrypted diagnostics without a qualification receipt
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: reader-native-source-probe-encrypted-${{ matrix.id }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: native-tts-output/source-diagnostics.enc.json
+          if-no-files-found: error
+          retention-days: 7
       - name: Validate native source and host without executing private code
         run: node ci/reader-native-tts-run.mjs identity
