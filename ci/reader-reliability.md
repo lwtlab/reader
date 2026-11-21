@@ -64,3 +64,16 @@ Activation requires real scope qualification, a reviewed public-main workflow
 rollout and independently verified private status targets. Merely setting a flag
 cannot install a scheduled workflow on a branch. Keep the private fallback until
 all those conditions are met; enable only the corresponding migration flag then.
+
+## Minimal system preparation
+
+The reliability job installs its explicit `ffmpeg`, `build-essential`, `pkg-config`
+and `libssl-dev` requirements with `--no-install-recommends`. Optional speech
+models brought in through recommended dependencies are not required by Reader's
+fixed profiles. Source identity, test contracts, receipts and the original job
+budgets remain unchanged.
+
+A clean Ubuntu 24.04 package-plan comparison on 2026-11-21 selected 383 packages /
+299,894,100 download bytes by default, versus 259 packages / 219,214,046 bytes
+without recommendations. This measures selected download bytes, not a guaranteed
+runner speedup; package indexes and network conditions can change.
