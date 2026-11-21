@@ -1,8 +1,9 @@
 param([ValidateSet('prepare', 'restore')][string]$Operation = 'prepare')
 # RUNNER_TEMP is reserved. Protect the actual disposable job temp directory.
-# Inheritable ACEs can also narrow existing unprotected children; restore the
-# original directory ACL afterwards and verify an existing synthetic child's ACL.
+# A MAXIMUM_ALLOWED handle suppresses propagation to existing children. New
+# files inherit the private ACL; existing files must remain unchanged throughout.
 $ErrorActionPreference = 'Stop'
+Add-Type -Path (Join-Path $PSScriptRoot 'reader-native-acl.cs')
 $directory = [System.IO.Path]::GetFullPath($env:RUNNER_TEMP)
 if ($directory -eq [System.IO.Path]::GetPathRoot($directory)) { throw 'Refusing a drive root' }
 if ((Get-Item -LiteralPath $directory).Attributes -band [System.IO.FileAttributes]::ReparsePoint) { throw 'Refusing a redirected temp directory' }
@@ -12,7 +13,7 @@ $sections = [System.Security.AccessControl.AccessControlSections]'Access, Owner,
 function Restore-DirectoryAcl([string]$Descriptor) {
   $restored = [System.Security.AccessControl.DirectorySecurity]::new()
   $restored.SetSecurityDescriptorSddlForm($Descriptor, $sections)
-  Set-Acl -LiteralPath $directory -AclObject $restored
+  [ReaderNativeDirectoryAcl]::Apply($directory, $restored.GetSecurityDescriptorBinaryForm(), $restored.AreAccessRulesProtected)
 }
 function Get-CanonicalPermissions([string]$File) {
   $security = Get-Acl -LiteralPath $File
@@ -72,8 +73,9 @@ $rule = [System.Security.AccessControl.FileSystemAccessRule]::new(
 $acl.AddAccessRule($rule)
 $env:READER_NATIVE_AUTH_PROBE = Join-Path $directory 'reader-native-permissions-probe'
 try {
-  Set-Acl -LiteralPath $directory -AclObject $acl
+  [ReaderNativeDirectoryAcl]::Apply($directory, $acl.GetSecurityDescriptorBinaryForm(), $acl.AreAccessRulesProtected)
   [System.IO.File]::WriteAllText($backup, (@{ directory = $original; existingProbe = $originalChild; existingProbePermissions = $originalChildPermissions } | ConvertTo-Json -Compress))
+  if ((Get-CanonicalPermissions $existingProbe) -ne $originalChildPermissions) { throw 'Preparing native auth changed an existing child permission' }
   # Same Node creation API as checkout, before introducing any credential.
   node -e 'const key=require("node:crypto").generateKeyPairSync("rsa",{modulusLength:2048,privateKeyEncoding:{type:"pkcs1",format:"pem"},publicKeyEncoding:{type:"spki",format:"pem"}}).privateKey;require("node:fs").writeFileSync(process.env.READER_NATIVE_AUTH_PROBE,key,{mode:0o600,flag:"wx"})'
   if ($LASTEXITCODE -ne 0) { throw 'Native checkout permission probe creation failed' }
