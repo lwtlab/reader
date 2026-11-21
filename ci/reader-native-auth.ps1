@@ -63,7 +63,7 @@ try {
       if ($access.AccessControlType -ne [System.Security.AccessControl.AccessControlType]::Allow -or $access.IdentityReference.Value -ne $owner.Value) { throw 'Native checkout access is not owner-only' }
     }
   }
-  $ssh = (Get-Command ssh.exe -CommandType Application).Source
+  $ssh = (Get-Command ssh.exe -CommandType Application | Select-Object -First 1).Source
   $keygen = Join-Path (Split-Path $ssh) 'ssh-keygen.exe'
   & $keygen -y -f $env:READER_NATIVE_AUTH_PROBE > $null
   if ($LASTEXITCODE -ne 0) { throw 'Actual OpenSSH rejected the synthetic Node-created private key' }
