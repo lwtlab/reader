@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import {execFileSync,spawnSync} from 'node:child_process';
-import {generateKeyPairSync} from 'node:crypto';
+import {generateKeyPairSync,createPublicKey,createHash} from 'node:crypto';
 import {mkdtempSync,mkdirSync,readFileSync,writeFileSync,rmSync,symlinkSync,copyFileSync,existsSync} from 'node:fs';
 import {tmpdir} from 'node:os';
 import path from 'node:path';
@@ -195,7 +195,9 @@ test('real receipt and encrypted diagnostic pipeline retains only approved synth
     for(const dir of ['ci','source/.artifacts/verify/11111111-1111-1111-1111-111111111111','source/apps/reader/test-results','runtime'])mkdirSync(path.join(temp,dir),{recursive:true});
     for(const name of ['reader-verification-run.mjs','reader-verification.mjs','log-crypto.mjs'])copyFileSync(new URL(name,import.meta.url),path.join(temp,'ci',name));
     const keys=generateKeyPairSync('rsa',{modulusLength:2048});
-    writeFileSync(path.join(temp,'ci/build-logs-public.pem'),keys.publicKey.export({type:'spki',format:'pem'}));
+    writeFileSync(path.join(temp,'ci/reader-full-logs-public.pem'),keys.publicKey.export({type:'spki',format:'pem'}));
+    const legacy=generateKeyPairSync('rsa',{modulusLength:2048});
+    writeFileSync(path.join(temp,'ci/build-logs-public.pem'),legacy.publicKey.export({type:'spki',format:'pem'}));
     const report=path.join(temp,'source/.artifacts/verify/11111111-1111-1111-1111-111111111111/summary.json');
     writeFileSync(report,JSON.stringify(summary()));
     writeFileSync(path.join(temp,'runtime/reader-private-build.log'),'SYNTHETIC_PRIVATE_LOG');
@@ -205,11 +207,22 @@ test('real receipt and encrypted diagnostic pipeline retains only approved synth
     assert.equal(invoke('receipt').status,0);assert.equal(invoke('require').status,0);
     const sealed=invoke('seal');assert.equal(sealed.status,0,sealed.stderr);assert.doesNotMatch(sealed.stdout+sealed.stderr,/SYNTHETIC_PRIVATE_LOG|SYNTHETIC_TRACE|MUST_NOT_RETAIN/);
     assert.equal(existsSync(path.join(temp,'runtime/reader-private-build.log')),false);
-    const archive=decryptLog(JSON.parse(readFileSync(path.join(temp,'verification-output/diagnostics.enc.json'))),keys.privateKey);
+    const envelope=JSON.parse(readFileSync(path.join(temp,'verification-output/diagnostics.enc.json')));
+    assert.throws(()=>decryptLog(envelope,legacy.privateKey));
+    const archive=decryptLog(envelope,keys.privateKey);
     writeFileSync(path.join(temp,'diagnostics.tar.gz'),archive);
     const list=execFileSync('tar',['-tzf','diagnostics.tar.gz'],{cwd:temp,encoding:'utf8'});
     assert.match(list,/summary.json/);assert.match(list,/trace.zip/);assert.match(list,/reader-private-build.log/);assert.doesNotMatch(list,/credentials.json/);
     symlinkSync(path.join(temp,'source/credentials.json'),path.join(temp,'source/apps/reader/test-results/escape'));
     assert.equal(invoke('seal').status,1);
   } finally {rmSync(temp,{recursive:true,force:true});}
+});
+
+test('Reader full uses an independent retained RSA recipient',()=>{
+  const key=createPublicKey(readFileSync(new URL('./reader-full-logs-public.pem',import.meta.url)));
+  assert.equal(key.asymmetricKeyType,'rsa');assert(key.asymmetricKeyDetails.modulusLength>=3072);
+  const der=key.export({type:'spki',format:'der'});
+  assert.equal(createHash('sha256').update(der).digest('hex'),'60638e94630f09a4877cf18801870c75894d1da5d409b37983064fd8e0740655');
+  const legacy=createPublicKey(readFileSync(new URL('./build-logs-public.pem',import.meta.url))).export({type:'spki',format:'der'});
+  assert.notDeepEqual(der,legacy);
 });

@@ -40,7 +40,7 @@ function seal() {
   try {
     if(!files.length)return;
     execFileSync('tar',['-czf',archive,'--null','-T','-'],{input:Buffer.from(files.join('\0')+'\0'),stdio:['pipe','pipe','pipe'],timeout:60000});
-    const key=readFileSync(new URL('./build-logs-public.pem',import.meta.url));
+    const key=readFileSync(new URL('./reader-full-logs-public.pem',import.meta.url));
     writeFileSync(path.join(output,'diagnostics.enc.json'),JSON.stringify(encryptLog(readFileSync(archive),key)),{mode:0o600});
     console.log('Synthetic diagnostics encrypted; no plaintext diagnostic artifact is uploaded');
   } finally {rmSync(archive,{force:true});if(existsSync(log))rmSync(log);}
