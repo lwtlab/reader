@@ -14,6 +14,27 @@ function Restore-DirectoryAcl([string]$Descriptor) {
   $restored.SetSecurityDescriptorSddlForm($Descriptor, $sections)
   Set-Acl -LiteralPath $directory -AclObject $restored
 }
+function Get-CanonicalPermissions([string]$File) {
+  $security = Get-Acl -LiteralPath $File
+  if (!$security.AreAccessRulesCanonical) { throw 'Noncanonical ACL cannot be compared safely' }
+  $rules = @($security.GetAccessRules($true, $true, [System.Security.Principal.SecurityIdentifier]) | ForEach-Object {
+    "$($_.IdentityReference.Value)|$([int]$_.AccessControlType)|$([int]$_.FileSystemRights)|$([int]$_.InheritanceFlags)|$([int]$_.PropagationFlags)|$($_.IsInherited)"
+  } | Sort-Object)
+  return ([ordered]@{ owner = $security.GetOwner([System.Security.Principal.SecurityIdentifier]).Value; group = $security.GetGroup([System.Security.Principal.SecurityIdentifier]).Value; protected = $security.AreAccessRulesProtected; canonical = $security.AreAccessRulesCanonical; rules = $rules } | ConvertTo-Json -Compress)
+}
+function Show-SyntheticPermissionDifference([string]$Before, [string]$After) {
+  # Closed roles/rights for the synthetic probe only; no account names or SIDs.
+  $currentSid = [System.Security.Principal.WindowsIdentity]::GetCurrent().User.Value
+  foreach ($text in @($Before, $After)) {
+    $snapshot = $text | ConvertFrom-Json
+    $roles = @($snapshot.rules | ForEach-Object {
+      $parts = $_.Split('|')
+      $role = switch ($parts[0]) { $currentSid { 'current-user'; break } 'S-1-5-18' { 'system'; break } 'S-1-5-32-544' { 'administrators'; break } 'S-1-5-11' { 'authenticated-users'; break } 'S-1-1-0' { 'everyone'; break } 'S-1-3-0' { 'creator-owner'; break } default { 'other' } }
+      "$role|$($parts[1..5] -join '|')"
+    })
+    Write-Output ([ordered]@{ protected = $snapshot.protected; canonical = $snapshot.canonical; rules = $roles } | ConvertTo-Json -Compress)
+  }
+}
 if ($Operation -eq 'restore') {
   if (!(Test-Path -LiteralPath $backup)) {
     Write-Output 'Native checkout ACL was not prepared; no saved ACL to restore'
@@ -22,7 +43,11 @@ if ($Operation -eq 'restore') {
   $saved = [System.IO.File]::ReadAllText($backup) | ConvertFrom-Json
   Restore-DirectoryAcl $saved.directory
   try {
-    if ((Get-Acl -LiteralPath $existingProbe).GetSecurityDescriptorSddlForm($sections) -ne $saved.existingProbe) { throw 'Existing synthetic child ACL did not restore' }
+    $after = Get-CanonicalPermissions $existingProbe
+    if ($after -ne $saved.existingProbePermissions) {
+      Show-SyntheticPermissionDifference $saved.existingProbePermissions $after
+      throw 'Existing synthetic child permissions did not restore'
+    }
   } finally {
     Remove-Item -LiteralPath $existingProbe -Force -ErrorAction SilentlyContinue
     Remove-Item -LiteralPath $backup -Force
@@ -34,6 +59,7 @@ if ((Test-Path -LiteralPath $backup) -or (Test-Path -LiteralPath $existingProbe)
 $original = (Get-Acl -LiteralPath $directory).GetSecurityDescriptorSddlForm($sections)
 [System.IO.File]::WriteAllText($existingProbe, 'synthetic')
 $originalChild = (Get-Acl -LiteralPath $existingProbe).GetSecurityDescriptorSddlForm($sections)
+$originalChildPermissions = Get-CanonicalPermissions $existingProbe
 $owner = [System.Security.Principal.WindowsIdentity]::GetCurrent().User
 $acl = [System.Security.AccessControl.DirectorySecurity]::new()
 $acl.SetOwner($owner)
@@ -47,7 +73,7 @@ $acl.AddAccessRule($rule)
 $env:READER_NATIVE_AUTH_PROBE = Join-Path $directory 'reader-native-permissions-probe'
 try {
   Set-Acl -LiteralPath $directory -AclObject $acl
-  [System.IO.File]::WriteAllText($backup, (@{ directory = $original; existingProbe = $originalChild } | ConvertTo-Json -Compress))
+  [System.IO.File]::WriteAllText($backup, (@{ directory = $original; existingProbe = $originalChild; existingProbePermissions = $originalChildPermissions } | ConvertTo-Json -Compress))
   # Same Node creation API as checkout, before introducing any credential.
   node -e 'const key=require("node:crypto").generateKeyPairSync("rsa",{modulusLength:2048,privateKeyEncoding:{type:"pkcs1",format:"pem"},publicKeyEncoding:{type:"spki",format:"pem"}}).privateKey;require("node:fs").writeFileSync(process.env.READER_NATIVE_AUTH_PROBE,key,{mode:0o600,flag:"wx"})'
   if ($LASTEXITCODE -ne 0) { throw 'Native checkout permission probe creation failed' }
