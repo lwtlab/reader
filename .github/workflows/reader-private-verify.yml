@@ -333,6 +333,10 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
+      - name: Protect Windows checkout credential directory
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: ./ci/reader-native-auth.ps1
       - name: Read exact private source without persisted credentials
         uses: actions/checkout@v4
         with:
@@ -342,6 +346,10 @@ jobs:
           ssh-key: ${{ secrets.PRIVATE_SOURCE_SSH_KEY }}
           persist-credentials: false
           submodules: false
+      - name: Restore Windows temp directory ACL after checkout
+        if: always() && runner.os == 'Windows'
+        shell: pwsh
+        run: ./ci/reader-native-auth.ps1 restore
       - name: Validate native source, host and reviewed contract
         run: node ci/reader-native-tts-run.mjs identity
       - id: native
