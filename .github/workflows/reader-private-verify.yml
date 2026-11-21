@@ -1,5 +1,5 @@
 name: Private Reader verification on public runners
-run-name: Reader full verification
+run-name: Reader ${{ inputs.scope || 'full' }} verification
 on:
   workflow_dispatch:
     inputs:
@@ -20,7 +20,7 @@ on:
         required: false
         default: full
         type: choice
-        options: [full, llama-cpu]
+        options: [full, llama-cpu, native-tts]
   schedule:
     - cron: '17,47 * * * *'
 permissions:
@@ -53,7 +53,7 @@ jobs:
           VERIFICATION_WORKFLOW_SHA: ${{ vars.READER_VERIFICATION_WORKFLOW_SHA }}
         run: node ci/reader-verification-control.mjs poll
   resolve:
-    if: github.event_name == 'workflow_dispatch'
+    if: github.event_name == 'workflow_dispatch' && inputs.scope != 'native-tts'
     name: Resolve and mark exact private input
     runs-on: ubuntu-24.04
     environment: reader-verification
@@ -78,7 +78,7 @@ jobs:
           VERIFICATION_SCOPE: ${{ inputs.scope || 'full' }}
         run: node ci/reader-verification-control.mjs resolve
   full:
-    if: inputs.scope != 'llama-cpu'
+    if: inputs.scope == 'full' || inputs.scope == ''
     needs: resolve
     name: Full private Reader verification
     runs-on: ubuntu-24.04
@@ -183,7 +183,7 @@ jobs:
         run: node ci/reader-verification-run.mjs require
   report:
     needs: [resolve, full]
-    if: always() && needs.resolve.result == 'success' && inputs.scope != 'llama-cpu'
+    if: always() && needs.resolve.result == 'success' && (inputs.scope == 'full' || inputs.scope == '')
     name: Report verified private commit status
     runs-on: ubuntu-24.04
     environment: reader-verification
@@ -282,3 +282,137 @@ jobs:
           VERIFICATION_SCOPE: ${{ inputs.scope || 'full' }}
           VERIFICATION_JOB_RESULT: ${{ needs.llama-cpu.result }}
         run: node ci/llama-cpu-control.mjs
+
+  resolve-native:
+    if: github.event_name == 'workflow_dispatch' && inputs.scope == 'native-tts'
+    name: Resolve native TTS input
+    runs-on: ubuntu-24.04
+    environment: reader-verification
+    timeout-minutes: 10
+    outputs:
+      binding: ${{ steps.resolve.outputs.binding }}
+      tested: ${{ steps.resolve.outputs.tested }}
+      matrix: ${{ steps.resolve.outputs.matrix }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24.22.0
+      - id: resolve
+        env:
+          GH_TOKEN: ${{ secrets.READER_VERIFICATION_TOKEN }}
+          SOURCE_REF: ${{ inputs.source_ref }}
+          PR_NUMBER: ${{ inputs.pr_number }}
+          WORKFLOW_SHA: ${{ inputs.workflow_sha }}
+        run: node ci/reader-native-tts-control.mjs resolve
+  native-tts:
+    needs: resolve-native
+    name: Private Reader native TTS (${{ matrix.id }})
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJson(needs.resolve-native.outputs.matrix) }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
+    env:
+      VERIFICATION_BINDING: ${{ needs.resolve-native.outputs.binding }}
+      NATIVE_PLATFORM: ${{ matrix.id }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24.22.0
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11.5.2
+          package_json_file: site/package.json
+          run_install: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Read exact private source without persisted credentials
+        uses: actions/checkout@v4
+        with:
+          repository: lwtlab/lwt-core
+          ref: ${{ needs.resolve-native.outputs.tested }}
+          path: source
+          ssh-key: ${{ secrets.PRIVATE_SOURCE_SSH_KEY }}
+          persist-credentials: false
+          submodules: false
+      - name: Validate native source, host and reviewed contract
+        run: node ci/reader-native-tts-run.mjs identity
+      - id: native
+        name: Run original PR contracts, real build and CLI smoke
+        run: node ci/reader-native-tts-run.mjs verify
+      - name: Encrypt diagnostics and produce bounded platform receipt
+        if: always()
+        env:
+          VERIFICATION_OUTCOME: ${{ steps.native.outcome }}
+        run: node ci/reader-native-tts-run.mjs receipt
+      - name: Upload bounded platform result
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: reader-native-tts-platform-${{ matrix.id }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: native-tts-output/verification.json
+          if-no-files-found: error
+          retention-days: 7
+      - name: Upload encrypted native diagnostics only
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: reader-native-tts-encrypted-${{ matrix.id }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: native-tts-output/diagnostics.enc.json
+          if-no-files-found: error
+          retention-days: 7
+      - name: Require native platform success
+        if: always()
+        run: node ci/reader-native-tts-run.mjs require
+  collect-native:
+    needs: [resolve-native, native-tts]
+    if: always() && needs.resolve-native.result == 'success'
+    name: Collect seven native TTS results
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24.22.0
+      - name: Verify seven receipts against actual matrix jobs
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERIFICATION_BINDING: ${{ needs.resolve-native.outputs.binding }}
+        run: node ci/reader-native-tts-control.mjs collect
+      - name: Upload bounded aggregate
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: reader-native-tts-result-${{ github.run_id }}-${{ github.run_attempt }}
+          path: native-tts-result/verification.json
+          if-no-files-found: error
+          retention-days: 7
+  report-native:
+    needs: [resolve-native, collect-native]
+    if: always() && needs.resolve-native.result == 'success'
+    name: Report independently verified native TTS status
+    runs-on: ubuntu-24.04
+    environment: reader-verification
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24.22.0
+      - name: Verify platform jobs, receipt, pin and current source
+        env:
+          GH_TOKEN: ${{ secrets.READER_VERIFICATION_TOKEN }}
+          VERIFICATION_BINDING: ${{ needs.resolve-native.outputs.binding }}
+        run: node ci/reader-native-tts-control.mjs report
