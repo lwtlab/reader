@@ -6,6 +6,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parseArgs } from 'node:util';
+import { auditPublication } from './privacy-publication.mjs';
 
 export const releaseRepository = 'lwtlab/reader';
 const root = fileURLToPath(new URL('..', import.meta.url));
@@ -108,6 +109,8 @@ async function main() {
     writeFileSync(stagedNotes, notesText);
     const manifestFile = path.join(directory, 'reader-release.json');
     writeFileSync(manifestFile, `${JSON.stringify(manifest, null, 2)}\n`);
+    // Check the private staged copies, not mutable original paths. No upload precedes this gate.
+    await auditPublication(manifest, staged, [stagedNotes, manifestFile]);
     for (const args of releaseCommands(manifest, stagedNotes, staged, manifestFile)) {
       execFileSync('gh', args, { stdio: 'inherit' });
     }

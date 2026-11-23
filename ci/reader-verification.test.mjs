@@ -141,10 +141,33 @@ test('artifact digest, run binding, exact ZIP name and redirect authentication a
       assert.equal(options.headers,undefined);return {ok:true,body:(async function*(){yield bytes;})()};
     };
     assert.deepEqual(await readReceipt(async()=>({artifacts:[row]}),value,123,1,'TOKEN',transport),receipt());
+    // One bounded reader serves the independent legacy and native profiles.
+    // Its caller still validates each returned payload against that profile.
+    const prefixes=['reader-llama-cpu-result','reader-reliability-result','reader-native-tts-result',
+      ...['linux-x64-cpu','linux-arm64-cpu','macos-x64-cpu','macos-arm64-cpu','macos-arm64-metal','windows-x64-cpu','windows-arm64-cpu'].map(id=>`reader-native-tts-platform-${id}`)];
+    for(const prefix of prefixes)assert.deepEqual(await readReceipt(async()=>({artifacts:[{...row,name:`${prefix}-123-1`}]}),value,123,1,'TOKEN',transport,{prefix}),receipt());
+    for(const prefix of ['reader-native-tts-platform-windows-arm64-cuda','reader-native-tts-platform-linux-x64-cpu-extra','reader-reliability-result-extra'])await assert.rejects(readReceipt(async()=>assert.fail('Unknown prefixes must be rejected before network access'),value,123,1,'TOKEN',transport,{prefix}));
     for(const changed of [{...row,digest:`sha256:${'0'.repeat(64)}`},{...row,expired:true},{...row,workflow_run:{id:456,head_sha:value.workflow}}])await assert.rejects(readReceipt(async()=>({artifacts:[changed]}),value,123,1,'TOKEN',transport));
     writeFileSync(path.join(temp,'private.txt'),'PRIVATE');execFileSync('zip',['-q','result.zip','private.txt'],{cwd:temp});
     const extra=readFileSync(path.join(temp,'result.zip'));await assert.rejects(readReceipt(async()=>({artifacts:[{...row,digest:`sha256:${digest(extra)}`,size_in_bytes:extra.length}]}),value,123,1,'TOKEN',async(address,options)=>String(address).startsWith('https://api.github.com/')?transport(address,options):{ok:true,body:(async function*(){yield extra;})()}));
   } finally {rmSync(temp,{recursive:true,force:true});}
+});
+test('discovery-only operation excludes every execution resolver across all scopes',()=>{
+  const yaml=readFileSync(new URL('../.github/workflows/reader-private-verify.yml',import.meta.url),'utf8');
+  const jobs=['resolve','resolve-reliability','resolve-checks','resolve-native','resolve-auth-probe'];
+  // These stored GitHub conditions use JavaScript-compatible comparisons plus
+  // contains/fromJSON. Exercise the actual expressions, rather than a copy.
+  const conditions=jobs.map(id=>{
+    const match=yaml.match(new RegExp(`^  ${id}:\\n    if: ([^\\n]+)`,'m'));assert(match,`${id} condition missing`);
+    return [id,new Function('github','inputs','contains','fromJSON',`return (${match[1]});`)];
+  });
+  const select=(event,operation,scope)=>conditions.filter(([,run])=>run({event_name:event},{operation,scope},(list,value)=>list.includes(value),JSON.parse)).map(([id])=>id);
+  const expected={full:'resolve','llama-cpu':'resolve','sync-journey':'resolve-reliability','large-library':'resolve-reliability','playback-soak':'resolve-reliability','reliability-discovery':null,'public-integration':'resolve-checks','release-privacy':'resolve-checks','checks-discovery':null,'native-tts':'resolve-native','native-auth-probe':'resolve-auth-probe','native-toolchain-probe':'resolve-auth-probe','':'resolve'};
+  for(const [scope,id] of Object.entries(expected)){
+    assert.deepEqual(select('workflow_dispatch','poll',scope),[],`poll must only discover: ${scope}`);
+    assert.deepEqual(select('schedule',undefined,scope),[],`schedule must only discover: ${scope}`);
+    assert.deepEqual(select('workflow_dispatch','verify',scope),id?[id]:[],`verify must select one matching resolver: ${scope}`);
+  }
 });
 test('missing evidence reports error and a newer pending run cannot be overwritten',async()=>{
   const posts=[];let statusReads=0;
@@ -179,6 +202,15 @@ test('hosted verification keeps personal credentials out of test jobs and upload
   assert(full.indexOf('node ci/reader-download-cache.mjs') < start);
   assert.match(full, /npm_config_cache: \$\{\{ runner.temp \}\}\/reader-mobile-public-cache/);
   assert.doesNotMatch(yaml,/pull_request_target|workflow_run:/);
+});
+test('manual discovery uses the default-branch controller and cannot enter source execution',()=>{
+  const yaml=readFileSync(new URL('../.github/workflows/reader-private-verify.yml',import.meta.url),'utf8');
+  assert.match(yaml,/operation:[\s\S]*?options:\s*\n\s*- verify\s*\n\s*- poll/);
+  assert.match(yaml,/if: github.event_name == 'schedule' \|\| \(github.event_name == 'workflow_dispatch' && inputs.operation == 'poll'\)/);
+  assert.match(yaml,/if: github.event_name == 'workflow_dispatch' && inputs.operation != 'poll'/);
+  const control=readFileSync(new URL('./reader-verification-control.mjs',import.meta.url),'utf8');
+  assert.match(control,/assert.equal\(process.env.GITHUB_REF,'refs\/heads\/main'\)/);
+  assert.match(control,/ref:policy.workflowRef/);
 });
 test('real receipt and encrypted diagnostic pipeline retains only approved synthetic locations',()=>{
   const temp=mkdtempSync(path.join(tmpdir(),'reader-encrypted-test-'));

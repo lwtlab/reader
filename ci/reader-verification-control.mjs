@@ -72,7 +72,7 @@ export async function liveBinding(api,value) {
   return {head:ref.object.sha,base:ref.object.sha};
 }
 export async function readReceipt(api,value,run,attempt,token,transport=fetch,{prefix='reader-full-result'}={}) {
-  assert(['reader-full-result','reader-llama-cpu-result','reader-native-tts-result'].includes(prefix)||/^reader-native-tts-platform-(linux-(x64|arm64)-cpu|macos-(x64-cpu|arm64-(cpu|metal))|windows-(x64|arm64)-cpu)$/.test(prefix));
+  assert(['reader-full-result','reader-llama-cpu-result','reader-reliability-result','reader-native-tts-result'].includes(prefix)||/^reader-native-tts-platform-(linux-(x64|arm64)-cpu|macos-(x64-cpu|arm64-(cpu|metal))|windows-(x64|arm64)-cpu)$/.test(prefix));
   const pages=await api(publicEndpoint(`actions/runs/${positive(run)}/artifacts?per_page=100`));
   const rows=pages.artifacts.filter(a=>a.name===`${prefix}-${run}-${attempt}`&&!a.expired);
   assert.equal(rows.length,1,'One exact current-attempt result is required');

@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import { chmodSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
-import { spawnSync } from 'node:child_process';
+import { execFileSync, spawnSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { test } from 'node:test';
@@ -29,7 +29,8 @@ test('failed draft upload never publishes; plan-only never calls GitHub', () => 
     chmodSync(git, 0o755); chmodSync(gh, 0o755);
     const asset = path.join(directory, 'reader-clipper-v1.2.3.zip');
     const notes = path.join(directory, 'notes.md');
-    writeFileSync(asset, 'original synthetic artifact'); writeFileSync(notes, 'Original release notes');
+    execFileSync('python3', ['-c', "import sys,zipfile\nwith zipfile.ZipFile(sys.argv[1],'w') as z:z.writestr('app.js','const value = 42;')", asset]);
+    writeFileSync(notes, 'Original release notes');
     const args = [new URL('./publish-release.mjs', import.meta.url).pathname, '--product', 'extension', '--version', '1.2.3', '--source-sha', 'a'.repeat(40), '--notes', notes, '--asset', asset];
     const env = { ...process.env, PATH: `${directory}${path.delimiter}${process.env.PATH}`, READER_TEST_GH_LOG: log };
     const plan = spawnSync(process.execPath, args, { env, encoding: 'utf8' });
@@ -42,6 +43,14 @@ test('failed draft upload never publishes; plan-only never calls GitHub', () => 
     assert.deepEqual(calls[1].slice(0, 2), ['release', 'create']);
     assert.ok(calls[1].includes('--draft'));
     assert.ok(!calls.some(call => call[1] === 'edit'));
+    writeFileSync(log, '');
+    const token = ['ghp_', 'abcdefghijklmnopqrstuvwxyz0123456789'].join('');
+    execFileSync('python3', ['-c', "import sys,zipfile\nwith zipfile.ZipFile(sys.argv[1],'w') as z:z.writestr('app.js',sys.argv[2])", asset, token]);
+    const blocked = spawnSync(process.execPath, [...args, '--publish'], { env, encoding: 'utf8' });
+    assert.notEqual(blocked.status, 0);
+    assert(!blocked.stderr.includes(token));
+    const blockedCalls = readFileSync(log, 'utf8').trim().split('\n').filter(Boolean).map(line => JSON.parse(line));
+    assert.ok(!blockedCalls.some(call => call[0] === 'release'), 'No secret-bearing bytes reach even a draft upload');
   } finally { rmSync(directory, { recursive: true, force: true }); }
 });
 
