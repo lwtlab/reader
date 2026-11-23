@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 import { createHash } from "node:crypto";
 import { spawnSync } from "node:child_process";
-import { chmodSync, createReadStream, existsSync, lstatSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, readlinkSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, closeSync, createReadStream, existsSync, lstatSync, mkdirSync, mkdtempSync, openSync, readdirSync, readFileSync, readlinkSync, readSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -44,8 +44,8 @@ export function pathRule(name) {
   return null;
 }
 
-function command(binary, args) {
-  const r = spawnSync(binary, args, { encoding: "utf8", maxBuffer: 1024 * 1024, timeout: 300000 });
+function command(binary, args, maxBuffer = 1024 * 1024) {
+  const r = spawnSync(binary, args, { encoding: "utf8", maxBuffer, timeout: 300000 });
   // Never print subprocess stderr: it may contain a sensitive source line or absolute path.
   if (r.error || r.signal) throw new Error("Privacy scanner tool unavailable, timed out or failed");
   return r;
@@ -71,15 +71,25 @@ async function inspectBytes(file) {
   const digest = createHash("sha256");
   const rules = new Set();
   let tail = "", bytes = 0;
-  let standardMarker = false, unknownMarker = false, keyMaterial = false;
+  const tar = /\.tar$/i.test(file), md5 = path.basename(file) === "md5sums", homeRouteOffsets = new Set();
+  let standardMarker = false, unknownMarker = false, keyMaterial = false, nextRouteMetadataPath = false;
   for await (const chunk of createReadStream(file)) {
     digest.update(chunk); bytes += chunk.length;
     const text = tail + chunk.toString("latin1");
+    if (tar || md5) for (const match of text.matchAll(/\/home\/route\//g)) {
+      if (!/https?:\/\/[^\s"'`\x00?#]*$/i.test(text.slice(Math.max(0, match.index - 2048), match.index)))
+        homeRouteOffsets.add(bytes - chunk.length - tail.length + match.index);
+      if (homeRouteOffsets.size > 100000) throw new Error("Path classification bound exceeded");
+    }
     for (const [name, pattern] of contentRules) {
       if (name !== "developer-home") { if (pattern.test(text)) rules.add(name); continue; }
       const pathText = text.replaceAll("\\\\", "\\");
       for (const match of pathText.matchAll(new RegExp(pattern.source, "g"))) {
         const prefix = pathText.slice(Math.max(0, match.index - 2048), match.index);
+        // TAR path fields can be split across ustar name/prefix fields. Defer
+        // this one ambiguous account name until the validated TAR reader proves
+        // exact byte ranges belonging to known compiler metadata paths.
+        if ((tar || md5) && match[0] === "/home/route/") continue;
         if (!/https?:\/\/[^\s"'`\x00?#]*$/i.test(prefix)) rules.add(name);
       }
     }
@@ -94,8 +104,20 @@ async function inspectBytes(file) {
     }
     tail = text.slice(-1024);
   }
+  if (md5 && homeRouteOffsets.size) {
+    const ranges = [];
+    if (bytes <= 16 * 1024 ** 2) {
+      const data = readFileSync(file).toString("latin1");
+      for (const match of data.matchAll(/^[a-fA-F0-9]{32} [ *]((?:\.\/)?opt\/Reader\/resources\/standalone\/apps\/reader\/\.next\/server\/app\/api\/home\/route\/(?:build-manifest|server-reference-manifest|app-paths-manifest)\.json)\r?$/gm)) {
+        const start = match.index + match[0].indexOf(match[1]);
+        ranges.push([start, start + match[1].length]);
+      }
+    }
+    if ([...homeRouteOffsets].some(offset => !ranges.some(([start, end]) => offset >= start && offset + 12 <= end))) rules.add("developer-home");
+    nextRouteMetadataPath = [...homeRouteOffsets].some(offset => ranges.some(([start, end]) => offset >= start && offset + 12 <= end));
+  }
   if (keyMaterial) rules.add("private-key");
-  return { sha256: digest.digest("hex"), bytes, rules: [...rules], markerOnly: standardMarker && !unknownMarker && !keyMaterial };
+  return { sha256: digest.digest("hex"), bytes, rules: [...rules], tarHomeRoutes: tar ? [...homeRouteOffsets] : [], nextRouteMetadataPath, markerOnly: standardMarker && !unknownMarker && !keyMaterial };
 }
 
 // ZIPs are extracted by Python only after validating every entry. No execution of payload code.
@@ -133,10 +155,81 @@ function safeArchiveName(name) {
   return typeof name === "string" && name.length > 0 && !/^[\\/]|[\\:\x00-\x1f]/.test(name) && !name.split("/").some(part => part === ".." || (part !== "." && /[. ]$/.test(part)) || /^(?:CON|NUL|PRN|AUX|COM[1-9]|LPT[1-9])(?:\.|$)/i.test(part));
 }
 
+function unpackTar(file, dest) {
+  // A single bounded pass avoids starting a new archive reader for every file
+  // in an uncompressed DEB data.tar. Never use extract()/extractall(): links and
+  // modes stay inert, and every member is validated before any bytes are written.
+  const r = command("python3", ["-c", `
+import json,os,pathlib,re,shutil,sys,tarfile
+root=pathlib.Path(sys.argv[2]);members=[];seen=set();total=0;ranges=[]
+def known(name):
+ return bool(re.fullmatch(r'opt/Reader/resources/standalone/apps/reader/\\.next/server/app/api/home/route(?:/(?:build-manifest|server-reference-manifest|app-paths-manifest)\\.json)?',str(pathlib.PurePosixPath(name))))
+if pathlib.Path(sys.argv[1]).stat().st_size>8*1024**3:raise ValueError('raw archive bound')
+with tarfile.open(sys.argv[1],mode='r:') as archive:
+ for member in archive:
+  name=member.name;p=pathlib.PurePosixPath(name);key=str(p).lower()
+  if not name or p.is_absolute() or '..' in p.parts or '\\\\' in name or ':' in name or re.search(r'[\\x00-\\x1f]',name) or key in seen:raise ValueError('unsafe member')
+  if any((s!='.' and s.endswith((' ','.'))) or re.match(r'^(CON|NUL|PRN|AUX|COM[1-9]|LPT[1-9])(?:\\.|$)',s,re.I) for s in p.parts):raise ValueError('platform alias')
+  if not (member.isdir() or member.isfile() or member.issym() or member.islnk()):raise ValueError('special member')
+  if not member.isdir() and not p.parts:raise ValueError('root file')
+  if (member.isdir() or member.issym() or member.islnk()) and member.size!=0:raise ValueError('non-file data')
+  if member.size<0 or member.size>1024**3:raise ValueError('member size bound')
+  linkbytes=member.linkname.encode('utf8') if member.issym() or member.islnk() else b''
+  if len(linkbytes)>1024**3:raise ValueError('link size bound')
+  seen.add(key);members.append((member,linkbytes));total+=member.size+len(linkbytes)
+  if len(members)>100000 or total>8*1024**3:raise ValueError('archive bound')
+ if not members:raise ValueError('empty archive')
+ # tarfile otherwise treats malformed/truncated headers after a valid member
+ # as an ordinary end. Require both end blocks and only complete zero padding.
+ archive.fileobj.seek(archive.offset);padding=0
+ while chunk:=archive.fileobj.read(1024*1024):
+  padding+=len(chunk)
+  if any(chunk):raise ValueError('nonzero archive tail')
+ if padding<1024 or padding%512:raise ValueError('missing archive terminator')
+ for member,_ in members:
+  if not known(member.name) or member.sparse is not None or member.type==tarfile.GNUTYPE_SPARSE:continue
+  header=member.offset_data-512
+  archive.fileobj.seek(header);block=archive.fileobj.read(512)
+  if len(block)!=512:raise ValueError('missing header')
+  name=block[:100].split(b'\\0',1)[0];prefix=block[345:500].split(b'\\0',1)[0]
+  logical=member.name.encode('utf8')
+  if name and not name.startswith(b'/') and (logical.rstrip(b'/').endswith(name.rstrip(b'/')) or logical.rstrip(b'/').startswith(name.rstrip(b'/'))):ranges.append([header,header+len(name)])
+  if prefix and logical.startswith(prefix.rstrip(b'/')+b'/'):ranges.append([header+345,header+345+len(prefix)])
+  if header-member.offset>32*1024**2:raise ValueError('header metadata bound')
+  archive.fileobj.seek(member.offset);metadata=archive.fileobj.read(header-member.offset)
+  start=0
+  while (index:=metadata.find(logical,start))>=0:
+   end=index+len(logical)
+   if member.isdir() and metadata[end:end+1]==b'/':end+=1
+   ranges.append([member.offset+index,member.offset+end]);start=index+1
+ for member,linkbytes in members:
+  if member.isdir():continue
+  target=root/pathlib.PurePosixPath(member.name)
+  target.parent.mkdir(parents=True,exist_ok=True,mode=0o700)
+  with os.fdopen(os.open(target,os.O_WRONLY|os.O_CREAT|os.O_EXCL,0o600),'wb') as output:
+   if member.issym() or member.islnk():output.write(linkbytes)
+   else:
+    source=archive.extractfile(member)
+    if source is None:raise ValueError('missing member bytes')
+    with source:shutil.copyfileobj(source,output)
+  if member.isfile() and target.stat().st_size!=member.size:raise ValueError('truncated member')
+  if member.isfile() and pathlib.PurePosixPath(member.name).name=='md5sums' and member.size<=16*1024**2 and member.sparse is None and member.type!=tarfile.GNUTYPE_SPARSE:
+   offset=0
+   for line in target.read_bytes().splitlines(keepends=True):
+    match=re.fullmatch(rb'[a-fA-F0-9]{32} [ *]([^\\r\\n]+)(?:\\r?\\n)?',line)
+    if match and known(match[1].decode('utf8')):
+     ranges.append([member.offset_data+offset+match.start(1),member.offset_data+offset+match.end(1)])
+    offset+=len(line)
+print(json.dumps(ranges))
+`, file, dest]);
+  if (r.status !== 0) throw new Error("Unsafe, corrupt or oversized TAR archive");
+  return JSON.parse(r.stdout);
+}
+
 // Extract individual members to plain files. Archive symlinks, hardlinks and mode bits
 // never reach the filesystem. Do not execute self-extracting installers/AppImages.
 function unpackSevenZip(file, dest, sevenZip) {
-  const listing = command(sevenZip, ["l", "-slt", "-ba", "-sccUTF-8", "--", file]);
+  const listing = command(sevenZip, ["l", "-slt", "-ba", "-sccUTF-8", "--", file], 32 * 1024 ** 2);
   if (listing.status !== 0) throw new Error("Installer/archive listing failed");
   const rows = listing.stdout.split(/\r?\n\r?\n/).filter(block => block.trim()).map((block) => {
     const row = {};
@@ -149,6 +242,19 @@ function unpackSevenZip(file, dest, sevenZip) {
     return row;
   });
   if (!rows.length || rows.length > 100000) throw new Error("Archive entry bound");
+  // XZ is a data stream with no filename field. 7-Zip represents a nameless
+  // .tar.xz stream as one empty Path, not a filesystem entry. Materialize only
+  // that exact format as a fixed virtual tar name; ordinary empty archive paths
+  // and every directory/link/encrypted member remain invalid.
+  let namelessTarStream = false;
+  if (/\.tar\.xz$/i.test(file) && rows.length === 1 && (rows[0].Path === undefined || rows[0].Path === "") && rows[0].Folder !== "+" && !rows[0].Attributes?.startsWith("D") && !rows[0]["Symbolic Link"] && !rows[0]["Hard Link"] && rows[0].Encrypted !== "+") {
+    const header = Buffer.alloc(6), fd = openSync(file, "r");
+    try { readSync(fd, header, 0, header.length, 0); } finally { closeSync(fd); }
+    if (header.equals(Buffer.from([0xfd, 0x37, 0x7a, 0x58, 0x5a, 0]))) {
+      namelessTarStream = true;
+      rows[0].Path = "content.tar";
+    }
+  }
   const names = new Set();
   let total = 0;
   for (const row of rows) {
@@ -164,7 +270,7 @@ function unpackSevenZip(file, dest, sevenZip) {
       continue;
     }
     if (!Number.isSafeInteger(size) || size < 0 || size > 1024 ** 3 || (total += size) > 8 * 1024 ** 3) throw new Error("Archive size bound");
-    const result = spawnSync(sevenZip, ["x", "-so", "-spd", "-y", "--", file, name], { maxBuffer: Math.max(size + 65536, 1024 * 1024), timeout: 300000, input: "" });
+    const result = spawnSync(sevenZip, ["x", "-so", "-spd", "-y", "--", file, ...(namelessTarStream ? [] : [name])], { maxBuffer: Math.max(size + 65536, 1024 * 1024), timeout: 300000, input: "" });
     if (result.error || result.status !== 0 || result.stdout.length !== size) throw new Error("Archive member could not be completely read");
     const target = path.join(dest, name);
     mkdirSync(path.dirname(target), { recursive: true, mode: 0o700 });
@@ -250,6 +356,7 @@ export async function scanReleasePrivacy(input, { projectDir = path.join(reposit
       files.push({ file, label, sha256: bytes.sha256, bytes: bytes.bytes, markerOnly: bytes.markerOnly });
       const why = pathRule(label);
       if (why) add(why, label);
+      if (bytes.nextRouteMetadataPath) notices.push({ rule: "next-api-route-metadata-path", file: label });
       for (const rule of bytes.rules) {
         const reviewed = rule === "developer-home" && publicData.files.find(p => p.rule === rule && bytes.sha256 === p.sha256 && (label === p.suffix || label.endsWith("/" + p.suffix)));
         if (reviewed) notices.push({ rule: "reviewed-public-data", reviewId: reviewed.id, file: label });
@@ -288,6 +395,10 @@ export async function scanReleasePrivacy(input, { projectDir = path.join(reposit
         unpackAppImage(file, dest);
       } else if (/\.(zip|apk|aab|ipa)$/i.test(file)) {
         unzip(file, dest); // Python materializes ZIP symlinks as inert text, never follows them.
+      } else if (/\.tar$/i.test(file)) {
+        const ranges = unpackTar(file, dest);
+        if (bytes.tarHomeRoutes.some(offset => !ranges.some(([start, end]) => offset >= start && offset + 12 <= end))) add("developer-home", label);
+        if (bytes.tarHomeRoutes.some(offset => ranges.some(([start, end]) => offset >= start && offset + 12 <= end))) notices.push({ rule: "next-api-route-metadata-path", file: label });
       } else unpackSevenZip(file, dest, sevenZip);
       await visit(dest, `${label}!`, realpathSync(dest), depth + 1);
     }

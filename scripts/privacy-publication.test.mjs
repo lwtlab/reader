@@ -108,6 +108,41 @@ test('Next preview sidecar requires matching manifests and keeps generic/active 
   } finally { rmSync(directory, { recursive: true, force: true }); }
 });
 
+test('nameless XZ tar streams are inspected and unsafe tar members still block', async () => {
+  const directory = mkdtempSync(path.join(tmpdir(), 'public-privacy-xz-'));
+  try {
+    const archive=path.join(directory,'data.tar.xz');
+    const create=(name,content)=>execFileSync('python3',['-c',
+      "import io,lzma,pathlib,sys,tarfile\nb=io.BytesIO();d=sys.argv[3].encode()\nwith tarfile.open(fileobj=b,mode='w') as t:\n i=tarfile.TarInfo(sys.argv[2]);i.size=len(d);t.addfile(i,io.BytesIO(d))\npathlib.Path(sys.argv[1]).write_bytes(lzma.compress(b.getvalue()))",archive,name,content]);
+    create('app.js','const count = 42;');
+    assert.equal((await scanReleasePrivacy(archive)).status,'PASS');
+    create('app.js',['ghp_','abcdefghijklmnopqrstuvwxyz0123456789'].join(''));
+    assert.equal((await scanReleasePrivacy(archive)).status,'FAIL');
+    create('../outside','const count = 42;');
+    await assert.rejects(scanReleasePrivacy(archive),/Unsafe/);
+    create('clean.js','x');
+    execFileSync('python3',['-c',"import lzma,pathlib,sys;p=pathlib.Path(sys.argv[1]);b=lzma.decompress(p.read_bytes());p.write_bytes(lzma.compress(b[:1024]+b'x'*512+b'\\0'*1024))",archive]);
+    await assert.rejects(scanReleasePrivacy(archive),/TAR/,'bad header after a valid member cannot pass');
+  } finally { rmSync(directory, { recursive: true, force: true }); }
+});
+
+test('Next home route filenames in checksum metadata do not exempt real homes or credentials', async () => {
+  const directory=mkdtempSync(path.join(tmpdir(),'public-privacy-route-'));
+  try {
+    const file=path.join(directory,'md5sums'),prefix='opt/Reader/resources/standalone/apps/reader/.next/server/app/api';
+    writeFileSync(file,`${"1".repeat(32)}  ${prefix}/home/route/build-manifest.json\n`);
+    assert.equal((await scanReleasePrivacy(directory)).status,'PASS');
+    for(const extra of ['/home/route/private.txt',`${prefix}/home/route/private.txt`,['ghp_','abcdefghijklmnopqrstuvwxyz0123456789'].join('')]){
+      writeFileSync(file,`${"1".repeat(32)}  ${prefix}/home/route/build-manifest.json\n${extra}`);
+      assert.equal((await scanReleasePrivacy(directory)).status,'FAIL');
+    }
+    for(const line of [`1234  ${prefix}/home/route/build-manifest.json`,`${"1".repeat(32)}  /${prefix}/home/route/build-manifest.json`,`${"1".repeat(32)}  extra/${prefix}/home/route/build-manifest.json`]){
+      writeFileSync(file,`${line}\n`);
+      assert.equal((await scanReleasePrivacy(directory)).status,'FAIL');
+    }
+  } finally { rmSync(directory, { recursive: true, force: true }); }
+});
+
 test('standalone public scanner detects synthetic secrets in ZIP members, without private checkout', async () => {
   const directory = mkdtempSync(path.join(tmpdir(), 'public-privacy-'));
   try {
