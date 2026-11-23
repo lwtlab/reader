@@ -79,6 +79,35 @@ test('desktop-only inactive Next metadata retains key-shape, account-key and act
   } finally { rmSync(directory, { recursive: true, force: true }); }
 });
 
+test('Next preview sidecar requires matching manifests and keeps generic/active cases blocked', async () => {
+  const directory = mkdtempSync(path.join(tmpdir(), 'public-privacy-preview-'));
+  try {
+    const preview = { previewModeId:'1'.repeat(32), previewModeSigningKey:'0'.repeat(64), previewModeEncryptionKey:'f'.repeat(64) };
+    const copy = path.join(directory,'.next/server/preview-props.json');
+    const prerender = path.join(directory,'.next/prerender-manifest.json');
+    const actions = path.join(directory,'.next/server/server-reference-manifest.json');
+    mkdirSync(path.dirname(copy),{recursive:true});
+    writeFileSync(copy,JSON.stringify(preview));
+    assert.equal((await scanReleasePrivacy(directory,{profile:'desktop'})).status,'FAIL');
+    const manifest={version:4,routes:{},dynamicRoutes:{},preview};
+    const reference={node:{},edge:{},encryptionKey:Buffer.alloc(32).toString('base64')};
+    writeFileSync(prerender,JSON.stringify(manifest));
+    writeFileSync(actions,JSON.stringify(reference));
+    assert.equal((await scanReleasePrivacy(directory)).status,'FAIL');
+    assert.equal((await scanReleasePrivacy(directory,{profile:'desktop'})).status,'PASS');
+    for(const value of [{...preview,previewModeSigningKey:'2'.repeat(64)},{...preview,unknown:true},{...preview,accountApiKey:['ghp_','abcdefghijklmnopqrstuvwxyz0123456789'].join('')}]){
+      writeFileSync(copy,JSON.stringify(value));
+      assert.equal((await scanReleasePrivacy(directory,{profile:'desktop'})).status,'FAIL');
+    }
+    writeFileSync(copy,JSON.stringify(preview));
+    writeFileSync(actions,JSON.stringify({...reference,node:{action:{}}}));
+    assert.equal((await scanReleasePrivacy(directory,{profile:'desktop'})).status,'FAIL');
+    writeFileSync(actions,JSON.stringify(reference));
+    writeFileSync(prerender,JSON.stringify({...manifest,dynamicRoutes:{'/[slug]':{}}}));
+    assert.equal((await scanReleasePrivacy(directory,{profile:'desktop'})).status,'FAIL');
+  } finally { rmSync(directory, { recursive: true, force: true }); }
+});
+
 test('standalone public scanner detects synthetic secrets in ZIP members, without private checkout', async () => {
   const directory = mkdtempSync(path.join(tmpdir(), 'public-privacy-'));
   try {

@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 import { createHash } from "node:crypto";
 import { spawnSync } from "node:child_process";
-import { createReadStream, lstatSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, readlinkSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, createReadStream, existsSync, lstatSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, readlinkSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -15,6 +15,8 @@ const publicDataFile = path.join(repository, "scripts/release/privacy-public-dat
 const hermesPolicyFile = path.join(repository, "scripts/release/hermes-strings.mjs");
 const publicData = JSON.parse(readFileSync(publicDataFile, "utf8"));
 const isRecord = value => value !== null && typeof value === "object" && !Array.isArray(value);
+const defaultOnlyPrerender = data => data?.version === 4 && isRecord(data.routes) && isRecord(data.dynamicRoutes) && !Object.keys(data.dynamicRoutes).length && Object.keys(data.routes).every(r => ["/_not-found", "/_global-error", "/apple-icon.png", "/favicon.ico", "/icon.png", "/manifest.webmanifest"].includes(r));
+const previewFields = ["previewModeId", "previewModeSigningKey", "previewModeEncryptionKey"];
 export const scannerVersion = "8.30.1";
 const archiveExtensions = /\.(zip|apk|aab|ipa|asar|dmg|deb|appimage|7z|tgz|gz|bz2|xz|tar)$/i;
 const installerExtension = /\.exe$/i;
@@ -307,6 +309,9 @@ export async function scanReleasePrivacy(input, { projectDir = path.join(reposit
       const r = command(gitleaks, ["dir", dir, "--config", config, "--gitleaks-ignore-path", ignore,
         "--ignore-gitleaks-allow", "--redact=0", "--no-banner", "--max-target-megabytes", "0",
         "--report-format", "json", "--report-path", report]);
+      // Gitleaks may replace the precreated report; its private parent protects
+      // it during execution, and the report itself stays private before reading.
+      chmodSync(report, 0o600);
       if (![0, 1].includes(r.status)) throw new Error("Secret scan did not complete");
       const results = JSON.parse(readFileSync(report, "utf8"));
       if (!Array.isArray(results) || (r.status === 1 && !results.length)) throw new Error("Invalid secret scan result");
@@ -342,8 +347,23 @@ export async function scanReleasePrivacy(input, { projectDir = path.join(reposit
             }
             if (label.endsWith(".next/prerender-manifest.json")) {
               const data = JSON.parse(readFileSync(file, "utf8"));
-              if (isRecord(data.routes) && isRecord(data.dynamicRoutes) && !Object.keys(data.dynamicRoutes).length && Object.keys(data.routes).every(r => ["/_not-found", "/_global-error", "/apple-icon.png", "/favicon.ico", "/icon.png", "/manifest.webmanifest"].includes(r)) && /^[a-f0-9]{64}$/.test(row.Secret) && [data.preview?.previewModeSigningKey, data.preview?.previewModeEncryptionKey].includes(row.Secret)) {
+              if (defaultOnlyPrerender(data) && /^[a-f0-9]{64}$/.test(row.Secret) && [data.preview?.previewModeSigningKey, data.preview?.previewModeEncryptionKey].includes(row.Secret)) {
                 notices.push({ rule: "unused-next-desktop-preview-key", file: label }); continue;
+              }
+            }
+            if (/(?:^|\/)\.next\/server\/preview-props\.json$/.test(label)) {
+              // Next 16.4 emits a second copy of the preview metadata. Prove
+              // identity with the already constrained prerender manifest and
+              // absence of actions; never exempt an arbitrary token in this file.
+              const prerenderFile = path.join(path.dirname(file), "..", "prerender-manifest.json");
+              const referenceFile = path.join(path.dirname(file), "server-reference-manifest.json");
+              if (existsSync(prerenderFile) && existsSync(referenceFile)) {
+                const data = JSON.parse(readFileSync(file, "utf8"));
+                const prerender = JSON.parse(readFileSync(prerenderFile, "utf8"));
+                const reference = JSON.parse(readFileSync(referenceFile, "utf8"));
+                if (isRecord(data) && Object.keys(data).length === previewFields.length && previewFields.every(key => typeof data[key] === "string" && data[key] === prerender.preview?.[key]) && /^[a-f0-9]{32}$/.test(data.previewModeId) && /^[a-f0-9]{64}$/.test(data.previewModeSigningKey) && /^[a-f0-9]{64}$/.test(data.previewModeEncryptionKey) && defaultOnlyPrerender(prerender) && isRecord(reference.node) && isRecord(reference.edge) && !Object.keys(reference.node).length && !Object.keys(reference.edge).length && [data.previewModeSigningKey, data.previewModeEncryptionKey].includes(row.Secret)) {
+                  notices.push({ rule: "unused-next-desktop-preview-key-copy", file: label }); continue;
+                }
               }
             }
           }
