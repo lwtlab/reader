@@ -338,7 +338,7 @@ jobs:
       - name: Prepare public system tools
         run: |
           sudo apt-get update -qq
-          sudo apt-get install -y ffmpeg build-essential pkg-config libssl-dev
+          sudo apt-get install -y --no-install-recommends ffmpeg build-essential pkg-config libssl-dev
       - name: Prepare isolated PostgreSQL image
         if: inputs.scope != 'playback-soak'
         run: docker pull postgres:17.7-bookworm
