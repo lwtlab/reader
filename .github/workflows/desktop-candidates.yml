@@ -119,6 +119,10 @@ jobs:
 
       - uses: dtolnay/rust-toolchain@stable
 
+      - name: Install fixed Rust dependency scanner
+        timeout-minutes: 10
+        run: node ci/private-step.mjs rust-audit-tools source cargo install cargo-audit --version 0.23.0 --locked
+
       - uses: pnpm/action-setup@v4
         with:
           version: 11.5.2
