@@ -314,6 +314,9 @@ for line in listing.splitlines():
   if not resolved.startswith('squashfs-root/'):raise ValueError('external squashfs symlink')
  if name!='squashfs-root' and not name.startswith('squashfs-root/'):raise ValueError('unsafe squashfs path')
 if count==0:raise ValueError('empty squashfs listing')
+# unsquashfs 4.5 requires a nonexistent destination. Remove only this empty,
+# dedicated directory; rmdir refuses a nonempty target and the 0700 parent stays.
+pathlib.Path(sys.argv[2]).rmdir()
 subprocess.run(['unsquashfs','-no-progress','-no-xattrs','-d',sys.argv[2],'-o',str(valid[0]),str(p)],check=True,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
 `, file, dest]);
   if (r.status !== 0) throw new Error("AppImage could not be inspected without execution");
