@@ -72,7 +72,7 @@ export async function liveBinding(api,value) {
   return {head:ref.object.sha,base:ref.object.sha};
 }
 export async function readReceipt(api,value,run,attempt,token,transport=fetch,{prefix='reader-full-result'}={}) {
-  assert(['reader-full-result','reader-llama-cpu-result','reader-reliability-result'].includes(prefix));
+  assert(['reader-full-result','reader-llama-cpu-result','reader-reliability-result','reader-native-tts-result'].includes(prefix)||/^reader-native-tts-platform-(linux-(x64|arm64)-cpu|macos-(x64-cpu|arm64-(cpu|metal))|windows-(x64|arm64)-cpu)$/.test(prefix));
   const pages=await api(publicEndpoint(`actions/runs/${positive(run)}/artifacts?per_page=100`));
   const rows=pages.artifacts.filter(a=>a.name===`${prefix}-${run}-${attempt}`&&!a.expired);
   assert.equal(rows.length,1,'One exact current-attempt result is required');
@@ -163,6 +163,7 @@ async function main() {
     if(mode==='full')await postStatus(api,value,'pending',`full pending ${fingerprint(value)}`,runUrl(process.env.GITHUB_RUN_ID,process.env.GITHUB_RUN_ATTEMPT));
     const {pendingCpu}=await import('./llama-cpu-control.mjs');
     await pendingCpu(api,value,{run:process.env.GITHUB_RUN_ID,attempt:process.env.GITHUB_RUN_ATTEMPT,mode});
+    if(mode==='full'){const {dispatchNativeIfNeeded}=await import('./reader-native-tts-control.mjs');console.log(`Native discovery: ${await dispatchNativeIfNeeded(api,value)}`);}
     console.log('Trusted immutable verification input accepted');return;
   }
   assert.equal(command,'report');

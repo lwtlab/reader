@@ -27,7 +27,7 @@ on:
         required: false
         default: full
         type: choice
-        options: [full, llama-cpu, sync-journey, large-library, playback-soak, reliability-discovery, public-integration, release-privacy, checks-discovery]
+        options: [full, llama-cpu, sync-journey, large-library, playback-soak, reliability-discovery, public-integration, release-privacy, checks-discovery, native-tts, native-auth-probe, native-toolchain-probe]
   schedule:
     - cron: '17,47 * * * *'
 permissions:
@@ -573,3 +573,269 @@ jobs:
           CHECKS_AUTOMATIC: ${{ vars.READER_CHECKS_AUTOMATIC }}
           CHECKS_WORKFLOW_SHA: ${{ vars.READER_CHECKS_WORKFLOW_SHA }}
         run: node ci/reader-checks-control.mjs poll
+
+  resolve-native:
+    if: github.event_name == 'workflow_dispatch' && inputs.operation != 'poll' && inputs.scope == 'native-tts'
+    name: Resolve native TTS input
+    runs-on: ubuntu-24.04
+    environment: reader-verification
+    timeout-minutes: 10
+    outputs:
+      binding: ${{ steps.resolve.outputs.binding }}
+      tested: ${{ steps.resolve.outputs.tested }}
+      matrix: ${{ steps.resolve.outputs.matrix }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24.22.0
+      - id: resolve
+        env:
+          GH_TOKEN: ${{ secrets.READER_VERIFICATION_TOKEN }}
+          SOURCE_REF: ${{ inputs.source_ref }}
+          PR_NUMBER: ${{ inputs.pr_number }}
+          WORKFLOW_SHA: ${{ inputs.workflow_sha }}
+        run: node ci/reader-native-tts-control.mjs resolve
+  native-tts:
+    needs: resolve-native
+    name: Private Reader native TTS (${{ matrix.id }})
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJson(needs.resolve-native.outputs.matrix) }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
+    env:
+      VERIFICATION_BINDING: ${{ needs.resolve-native.outputs.binding }}
+      NATIVE_PLATFORM: ${{ matrix.id }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24.22.0
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11.5.2
+          package_json_file: site/package.json
+          run_install: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Read exact Windows source through the isolated credential boundary
+        if: runner.os == 'Windows'
+        env:
+          READER_NATIVE_SOURCE_SSH_KEY: ${{ secrets.PRIVATE_SOURCE_SSH_KEY }}
+        run: node ci/reader-native-source.mjs checkout
+      - name: Read exact private source without persisted credentials
+        if: runner.os != 'Windows'
+        uses: actions/checkout@v4
+        with:
+          repository: lwtlab/lwt-core
+          ref: ${{ needs.resolve-native.outputs.tested }}
+          path: source
+          ssh-key: ${{ secrets.PRIVATE_SOURCE_SSH_KEY }}
+          persist-credentials: false
+          submodules: false
+      - name: Require owned Windows credential cleanup before private execution
+        if: always() && runner.os == 'Windows'
+        run: node ci/reader-native-source.mjs cleanup
+      - name: Validate native source, host and reviewed contract
+        run: node ci/reader-native-tts-run.mjs identity
+      - id: native
+        name: Run original PR contracts, real build and CLI smoke
+        run: node ci/reader-native-tts-run.mjs verify
+      - name: Encrypt diagnostics and produce bounded platform receipt
+        if: always()
+        env:
+          VERIFICATION_OUTCOME: ${{ steps.native.outcome }}
+        run: node ci/reader-native-tts-run.mjs receipt
+      - name: Upload bounded platform result
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: reader-native-tts-platform-${{ matrix.id }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: native-tts-output/verification.json
+          if-no-files-found: error
+          retention-days: 7
+      - name: Upload encrypted native diagnostics only
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: reader-native-tts-encrypted-${{ matrix.id }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: native-tts-output/diagnostics.enc.json
+          if-no-files-found: error
+          retention-days: 7
+      - name: Require native platform success
+        if: always()
+        run: node ci/reader-native-tts-run.mjs require
+  collect-native:
+    needs: [resolve-native, native-tts]
+    if: always() && needs.resolve-native.result == 'success'
+    name: Collect seven native TTS results
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24.22.0
+      - name: Verify seven receipts against actual matrix jobs
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERIFICATION_BINDING: ${{ needs.resolve-native.outputs.binding }}
+        run: node ci/reader-native-tts-control.mjs collect
+      - name: Upload bounded aggregate
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: reader-native-tts-result-${{ github.run_id }}-${{ github.run_attempt }}
+          path: native-tts-result/verification.json
+          if-no-files-found: error
+          retention-days: 7
+  report-native:
+    needs: [resolve-native, collect-native]
+    if: always() && needs.resolve-native.result == 'success'
+    name: Report independently verified native TTS status
+    runs-on: ubuntu-24.04
+    environment: reader-verification
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24.22.0
+      - name: Verify platform jobs, receipt, pin and current source
+        env:
+          GH_TOKEN: ${{ secrets.READER_VERIFICATION_TOKEN }}
+          VERIFICATION_BINDING: ${{ needs.resolve-native.outputs.binding }}
+        run: node ci/reader-native-tts-control.mjs report
+
+  resolve-auth-probe:
+    if: github.event_name == 'workflow_dispatch' && inputs.operation != 'poll' && (inputs.scope == 'native-auth-probe' || inputs.scope == 'native-toolchain-probe')
+    name: Resolve trusted checkout diagnostic input
+    runs-on: ubuntu-24.04
+    environment: reader-verification
+    timeout-minutes: 10
+    outputs:
+      binding: ${{ steps.resolve.outputs.binding }}
+      tested: ${{ steps.resolve.outputs.tested }}
+      matrix: ${{ steps.resolve.outputs.matrix }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24.22.0
+      - id: resolve
+        env:
+          GH_TOKEN: ${{ secrets.READER_VERIFICATION_TOKEN }}
+          SOURCE_REF: ${{ inputs.source_ref }}
+          PR_NUMBER: ${{ inputs.pr_number }}
+          WORKFLOW_SHA: ${{ inputs.workflow_sha }}
+        run: node ci/reader-native-tts-control.mjs resolve-auth-probe
+  native-auth-probe:
+    if: inputs.scope == 'native-auth-probe'
+    needs: resolve-auth-probe
+    name: Diagnostic native checkout ACL (${{ matrix.id }})
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJson(needs.resolve-auth-probe.outputs.matrix) }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 10
+    env:
+      VERIFICATION_BINDING: ${{ needs.resolve-auth-probe.outputs.binding }}
+      NATIVE_PLATFORM: ${{ matrix.id }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24.22.0
+      - name: Exercise the production credential boundary and injected failures
+        env:
+          READER_NATIVE_SOURCE_SSH_KEY: ${{ secrets.PRIVATE_SOURCE_SSH_KEY }}
+        run: node ci/reader-native-source.mjs controls
+      - name: Fetch exact private source using only the approved identity
+        env:
+          READER_NATIVE_SOURCE_SSH_KEY: ${{ secrets.PRIVATE_SOURCE_SSH_KEY }}
+        run: node ci/reader-native-source.mjs checkout
+      - name: Require owned credential cleanup
+        if: always()
+        run: node ci/reader-native-source.mjs cleanup
+      - name: Encrypt bounded source diagnostic log and control summary
+        if: always()
+        run: node ci/reader-native-source.mjs seal
+      - name: Retain encrypted diagnostics without a qualification receipt
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: reader-native-source-probe-encrypted-${{ matrix.id }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: native-tts-output/source-diagnostics.enc.json
+          if-no-files-found: error
+          retention-days: 7
+      - name: Validate native source and host without executing private code
+        run: node ci/reader-native-tts-run.mjs identity
+
+  native-toolchain-probe:
+    if: inputs.scope == 'native-toolchain-probe'
+    needs: resolve-auth-probe
+    name: Diagnostic native TTS toolchain (windows-arm64-cpu)
+    runs-on: windows-11-arm
+    timeout-minutes: 45
+    env:
+      VERIFICATION_BINDING: ${{ needs.resolve-auth-probe.outputs.binding }}
+      NATIVE_PLATFORM: windows-arm64-cpu
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24.22.0
+      - name: Fetch exact private source using only the approved identity
+        env:
+          READER_NATIVE_SOURCE_SSH_KEY: ${{ secrets.PRIVATE_SOURCE_SSH_KEY }}
+        run: node ci/reader-native-source.mjs checkout
+      - name: Require owned credential cleanup
+        if: always()
+        run: node ci/reader-native-source.mjs cleanup
+      - name: Validate source and ARM64 host before compiler diagnosis
+        run: node ci/reader-native-tts-run.mjs identity
+      - name: Initialize only the fixed public upstream
+        run: node ci/private-step.mjs native-submodule source git -c submodule.third_party/llama.cpp-upstream.url=https://github.com/ggml-org/llama.cpp.git submodule update --init -- third_party/llama.cpp-upstream
+      - name: Compile original portable ARM64 runtime with ClangCL
+        shell: pwsh
+        run: |
+          $readerCmakeGenerator = @(& cmake --help | ForEach-Object {
+            $readerMatch = [regex]::Match($_, '^\* (Visual Studio [0-9]+ [0-9]+)\s*=')
+            if ($readerMatch.Success) { $readerMatch.Groups[1].Value }
+          })
+          if ($LASTEXITCODE -ne 0 -or $readerCmakeGenerator.Count -ne 1) { throw 'One default Visual Studio generator is required' }
+          $env:CMAKE_GENERATOR = $readerCmakeGenerator[0]
+          $env:CMAKE_GENERATOR_TOOLSET = 'ClangCL'
+          node ci/private-step.mjs native-toolchain source node scripts/build-reader-local-tts.mjs --backend cpu --jobs 3 --output "$env:RUNNER_TEMP/native-build"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Exercise actual ARM64 CLI
+        run: node ci/private-step.mjs native-cli source "$env:RUNNER_TEMP/native-build/bin/reader-qwen3-tts.exe" --help
+      - name: Verify portable cache and actual PE machine
+        run: node ci/reader-native-toolchain-probe.mjs
+      - name: Encrypt bounded compiler diagnostics
+        if: always()
+        run: node ci/reader-native-source.mjs seal
+      - name: Retain encrypted diagnostic without qualification receipt
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: reader-native-toolchain-probe-encrypted-windows-arm64-cpu-${{ github.run_id }}-${{ github.run_attempt }}
+          path: native-tts-output/source-diagnostics.enc.json
+          if-no-files-found: error
+          retention-days: 7
