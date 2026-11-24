@@ -4,39 +4,7 @@ title: 开始第一次学习
 description: 导入一段想读的文字，保存一个词，再让它出现在你的复习中。
 ---
 
-## Linux 桌面版安装与兼容启动
-
-桌面版正式安装包尚未公开发布。以下说明用于拿到候选包后的测试；正式版本与文件名以下载页为准。
-
-Ubuntu / Debian 用户可选择 DEB，按系统软件安装器的提示安装后，从应用菜单启动 Reader。
-DEB 的正常启动保留 Chromium 沙箱；AppImage 不需要先安装 DEB。
-
-使用 AppImage 时，在下载目录打开终端，先赋予运行权限，再正常启动：
-
-```bash
-chmod u+x Reader-0.26.0-linux-x64-core.AppImage
-./Reader-0.26.0-linux-x64-core.AppImage
-```
-
-如果 Ubuntu 24.04 等系统提示 sandbox helper 或用户命名空间权限错误，可选择 DEB；
-也可在了解以下风险后，主动使用兼容启动：
-
-**安全提示：`--no-sandbox` 会关闭 Chromium 的进程沙箱，包括渲染和工具进程的操作系统隔离。
-一旦恶意内容利用渲染器漏洞，攻击者更容易以当前用户权限访问本机文件和其他资源。
-处理网页、电子书或 PDF 时也存在这一风险；只打开信任的内容不能消除它。**
-Reader 不会自动添加此参数。希望保留这层保护的用户应选择 DEB 的正常启动方式。
-
-```bash
-./Reader-0.26.0-linux-x64-core.AppImage --no-sandbox
-```
-
-兼容启动不需要 `sudo`、FUSE2 或修改系统 AppArmor/sysctl 设置。每次以此方式启动都需主动传入参数；
-不要以 root 身份运行 Reader。退出后，下次不带参数启动会重新尝试正常沙箱启动。
-文件名随版本变化时，请使用实际下载的文件名。
-
-此方式参考 [Obsidian 的 AppImage 安装说明](https://obsidian.md/help/install)。
-[Electron 官方沙箱文档](https://www.electronjs.org/docs/latest/tutorial/sandbox)建议仅在测试中使用该参数，
-不建议用于生产环境；提供兼容命令不表示它与正常沙箱启动具有相同的安全性。
+桌面版的安装、版本核验与手动更新，请查看教程导航中的“桌面安装与更新”。本机桌面书库无需 Reader 账号；网页版按登录状态访问自己的书库。
 
 ## 1 选择学习语言
 

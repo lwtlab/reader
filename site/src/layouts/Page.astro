@@ -12,13 +12,14 @@ const links = [{ label: '下载', path: 'downloads/' }, { label: '使用教程',
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta name="description" content={description} />
     <meta name="color-scheme" content="light dark" />
+    <link rel="icon" href={urlFor("icon.svg")} type="image/svg+xml" />
     <title>{title === 'Reader' ? 'Reader · 从阅读开始，让语言留下来' : `${title} · Reader`}</title>
     <link rel="canonical" href={new URL(Astro.url.pathname, Astro.site)} />
   </head>
   <body>
     <a class="skip-link" href="#main">跳到正文</a>
     <header class="site-header shell">
-      <a class="wordmark" href={urlFor()} aria-label="Reader 首页"><span class="brand-mark" aria-hidden="true">r</span>Reader</a>
+      <a class="wordmark" href={urlFor()} aria-label="Reader 首页"><span class="brand-mark" aria-hidden="true"><img src={urlFor("icon.svg")} width="32" height="32" alt="" /></span>Reader</a>
       <nav aria-label="主导航">
         {links.map(link => <a href={urlFor(link.path)} aria-current={Astro.url.pathname === urlFor(link.path) ? 'page' : undefined}>{link.label}</a>)}
         <a class="app-link" href="https://reader.cubbber.com/">打开网页版 <span aria-hidden="true">↗</span></a>

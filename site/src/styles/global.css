@@ -81,17 +81,14 @@ h3 {
 	text-decoration: none;
 	min-height: 44px;
 }
-.brand-mark {
-	display: grid;
-	place-items: center;
-	width: 30px;
-	height: 34px;
-	border: 1px solid var(--line);
+.brand-mark,
+.brand-mark img {
+	display: block;
+	width: 32px;
+	height: 32px;
 	border-radius: 7px;
-	font-family: Georgia, serif;
-	font-size: 1.65rem;
-	color: var(--brand);
 }
+
 nav {
 	display: flex;
 	align-items: center;
@@ -325,6 +322,24 @@ nav a[aria-current="page"] {
 .availability {
 	font-size: 0.82rem;
 	color: var(--subtle);
+}
+.platform-downloads {
+	list-style-position: outside;
+	margin: 0;
+	padding: 0 0 0 20px;
+	width: 100%;
+}
+.platform-downloads li + li {
+	margin-top: 24px;
+}
+.platform-downloads a {
+	display: flex;
+	align-items: center;
+	min-height: 44px;
+	gap: 8px;
+}
+.platform-downloads .availability {
+	display: inline-block;
 }
 .availability {
 	padding: 7px 12px;
