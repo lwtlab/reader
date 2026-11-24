@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import {execFileSync,spawn} from 'node:child_process';
-import {appendFileSync,existsSync,lstatSync,mkdirSync,readFileSync,readdirSync,rmSync,statSync,writeFileSync} from 'node:fs';
+import {appendFileSync,existsSync,lstatSync,mkdirSync,readFileSync,readdirSync,realpathSync,rmSync,statSync,writeFileSync} from 'node:fs';
 import path from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {randomUUID} from 'node:crypto';
@@ -69,4 +69,4 @@ async function main(){
   }
   assert.equal(command,'require');const receipt=JSON.parse(readFileSync(path.join(output,'verification.json')));validateResult(receipt,value,options);assert.equal(receipt.status,'PASS');
 }
-if(process.argv[1]&&path.resolve(process.argv[1])===fileURLToPath(import.meta.url))main().catch(()=>{console.error('Reliability operation failed; private output remains in encrypted diagnostics');process.exitCode=1;});
+if(process.argv[1]&&realpathSync(process.argv[1])===fileURLToPath(import.meta.url))main().catch(()=>{console.error('Reliability operation failed; private output remains in encrypted diagnostics');process.exitCode=1;});

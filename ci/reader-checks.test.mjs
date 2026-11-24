@@ -5,7 +5,7 @@ import {profiles,contract,fingerprint,result,validateResult} from './reader-reli
 import {pollChecks,CHECKS_REF,checkProfile} from './reader-checks-control.mjs';
 import {executeTasks} from './reader-reliability-run.mjs';
 import {reportReliability} from './reader-reliability-control.mjs';
-import {mkdtempSync,mkdirSync,writeFileSync,rmSync,readFileSync} from 'node:fs';
+import {mkdtempSync,mkdirSync,writeFileSync,rmSync,readFileSync,realpathSync} from 'node:fs';
 import {tmpdir} from 'node:os';
 import path from 'node:path';
 
@@ -42,7 +42,7 @@ test('additional checks require their own complete contract, source, run and sea
 });
 
 test('root executor captures output, strips credentials and stops before unexecuted tasks',async()=>{
-  const root=mkdtempSync(path.join(tmpdir(),'reader-independent-executor-'));
+  const root=realpathSync(mkdtempSync(path.join(tmpdir(),'reader-independent-executor-')));
   const before={GH_TOKEN:process.env.GH_TOKEN,GITHUB_TOKEN:process.env.GITHUB_TOKEN};
   try{
     const source=path.join(root,'source');mkdirSync(path.join(source,'scripts'),{recursive:true});
