@@ -23,7 +23,9 @@ runs:
       shell: bash
       run: |
         sudo apt-get update -qq
-        sudo apt-get install -y 7zip 7zip-standalone squashfs-tools
+        sudo apt-get install -y 7zip squashfs-tools
+        command -v 7zz
+        command -v unsquashfs
     - if: runner.os == 'Windows'
       shell: bash
       run: echo 'C:\Program Files\7-Zip' >> "$GITHUB_PATH"

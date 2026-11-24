@@ -79,6 +79,16 @@ test('desktop-only inactive Next metadata retains key-shape, account-key and act
   } finally { rmSync(directory, { recursive: true, force: true }); }
 });
 
+test('literal POSIX backslashes do not classify a filename as inactive compiler metadata', { skip: process.platform === 'win32' }, async () => {
+  const directory = mkdtempSync(path.join(tmpdir(), 'public-privacy-separators-'));
+  try {
+    writeFileSync(path.join(directory, '.next\\server\\server-reference-manifest.json'), JSON.stringify({ node: {}, edge: {}, encryptionKey: Buffer.alloc(32).toString('base64') }));
+    const report = await scanReleasePrivacy(directory, { profile: 'desktop' });
+    assert.equal(report.status, 'FAIL');
+    assert(!report.notices.some(n => n.rule === 'unused-next-desktop-action-key'));
+  } finally { rmSync(directory, { recursive: true, force: true }); }
+});
+
 test('Next preview sidecar requires matching manifests and keeps generic/active cases blocked', async () => {
   const directory = mkdtempSync(path.join(tmpdir(), 'public-privacy-preview-'));
   try {
