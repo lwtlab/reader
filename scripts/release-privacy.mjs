@@ -67,16 +67,42 @@ function inventory(root, name = "") {
   return [[name, "file", stat.size]];
 }
 
+// CodeResources is Apple's signed resource index, not arbitrary application prose.
+// Classify only the two matching, typed plist keys for each fixed compiler filename.
+function macResourcePathRanges(file) {
+  const r = command("python3", [
+    "-c",
+    `
+import json,pathlib,plistlib,re,sys
+b=pathlib.Path(sys.argv[1]).read_bytes();ranges=[]
+try:
+ d=plistlib.loads(b)
+ if not b.lstrip().startswith(b'<?xml') or not isinstance(d,dict) or set(d)!={'files','files2','rules','rules2'} or any(not isinstance(d[k],dict) for k in d):raise ValueError('schema')
+ for name in ('app-paths-manifest.json','build-manifest.json','server-reference-manifest.json'):
+  key='Resources/standalone/apps/reader/.next/server/app/api/home/route/'+name
+  old=d['files'].get(key);new=d['files2'].get(key)
+  if not isinstance(old,bytes) or len(old)!=20 or not isinstance(new,dict) or set(new)!={'hash2'} or not isinstance(new['hash2'],bytes) or len(new['hash2'])!=32:continue
+  matches=list(re.finditer(re.escape(b'<key>'+key.encode()+b'</key>'),b))
+  if len(matches)==2:ranges.extend([[m.start()+5,m.end()-6] for m in matches])
+except Exception:pass
+print(json.dumps(ranges))
+`,
+    file,
+  ]);
+  if (r.status !== 0) throw new Error("Resource index path inspection incomplete");
+  return JSON.parse(r.stdout);
+}
+
 async function inspectBytes(file) {
   const digest = createHash("sha256");
   const rules = new Set();
   let tail = "", bytes = 0;
-  const tar = /\.tar$/i.test(file), md5 = path.basename(file) === "md5sums", homeRouteOffsets = new Set();
+  const tar = /\.tar$/i.test(file), zip = /\.(zip|apk|aab|ipa)$/i.test(file), md5 = path.basename(file) === "md5sums", macResources = file.split(path.sep).join("/").endsWith("/Contents/_CodeSignature/CodeResources"), homeRouteOffsets = new Set();
   let standardMarker = false, unknownMarker = false, keyMaterial = false, nextRouteMetadataPath = false;
   for await (const chunk of createReadStream(file)) {
     digest.update(chunk); bytes += chunk.length;
     const text = tail + chunk.toString("latin1");
-    if (tar || md5) for (const match of text.matchAll(/\/home\/route\//g)) {
+    if (tar || zip || md5 || macResources) for (const match of text.matchAll(/\/home\/route\//g)) {
       if (!/https?:\/\/[^\s"'`\x00?#]*$/i.test(text.slice(Math.max(0, match.index - 2048), match.index)))
         homeRouteOffsets.add(bytes - chunk.length - tail.length + match.index);
       if (homeRouteOffsets.size > 100000) throw new Error("Path classification bound exceeded");
@@ -89,7 +115,7 @@ async function inspectBytes(file) {
         // TAR path fields can be split across ustar name/prefix fields. Defer
         // this one ambiguous account name until the validated TAR reader proves
         // exact byte ranges belonging to known compiler metadata paths.
-        if ((tar || md5) && match[0] === "/home/route/") continue;
+        if ((tar || zip || md5 || macResources) && match[0] === "/home/route/") continue;
         if (!/https?:\/\/[^\s"'`\x00?#]*$/i.test(prefix)) rules.add(name);
       }
     }
@@ -104,9 +130,9 @@ async function inspectBytes(file) {
     }
     tail = text.slice(-1024);
   }
-  if (md5 && homeRouteOffsets.size) {
-    const ranges = [];
-    if (bytes <= 16 * 1024 ** 2) {
+  if ((md5 || macResources) && homeRouteOffsets.size) {
+    const ranges = macResources && bytes <= 16 * 1024 ** 2 ? macResourcePathRanges(file) : [];
+    if (md5 && bytes <= 16 * 1024 ** 2) {
       const data = readFileSync(file).toString("latin1");
       for (const match of data.matchAll(/^[a-fA-F0-9]{32} [ *]((?:\.\/)?opt\/Reader\/resources\/standalone\/apps\/reader\/\.next\/server\/app\/api\/home\/route\/(?:build-manifest|server-reference-manifest|app-paths-manifest)\.json)\r?$/gm)) {
         const start = match.index + match[0].indexOf(match[1]);
@@ -117,20 +143,22 @@ async function inspectBytes(file) {
     nextRouteMetadataPath = [...homeRouteOffsets].some(offset => ranges.some(([start, end]) => offset >= start && offset + 12 <= end));
   }
   if (keyMaterial) rules.add("private-key");
-  return { sha256: digest.digest("hex"), bytes, rules: [...rules], tarHomeRoutes: tar ? [...homeRouteOffsets] : [], nextRouteMetadataPath, markerOnly: standardMarker && !unknownMarker && !keyMaterial };
+  return { sha256: digest.digest("hex"), bytes, rules: [...rules], tarHomeRoutes: tar ? [...homeRouteOffsets] : [], zipHomeRoutes: zip ? [...homeRouteOffsets] : [], nextRouteMetadataPath, markerOnly: standardMarker && !unknownMarker && !keyMaterial };
 }
 
 // ZIPs are extracted by Python only after validating every entry. No execution of payload code.
 function unzip(file, dest) {
-  const r = command("python3", ["-c", `
-import pathlib,shutil,sys,zipfile
-root=pathlib.Path(sys.argv[2]); total=0; seen=set()
+  const r = command("python3", [
+    "-c",
+    `
+import json,pathlib,re,shutil,struct,sys,zipfile
+root=pathlib.Path(sys.argv[2]); total=0; seen=set();ranges=[]
 with zipfile.ZipFile(sys.argv[1]) as z:
  if len(z.infolist())>100000: raise ValueError('entry bound')
  for e in z.infolist():
   p=pathlib.PurePosixPath(e.filename)
   key=str(p)
-  if not e.filename or p.is_absolute() or '..' in p.parts or '\\\\' in e.filename or ':' in e.filename or key in seen or e.flag_bits & 1: raise ValueError('unsafe entry')
+  if not e.filename or e.orig_filename!=e.filename or any(ord(c)<32 for c in e.filename) or p.is_absolute() or '..' in p.parts or chr(92) in e.filename or ':' in e.filename or key in seen or e.flag_bits & 1: raise ValueError('unsafe entry')
   if any(s.endswith((' ','.')) or s.split('.')[0].upper() in ('CON','NUL','PRN','AUX',*[f'COM{i}' for i in range(1,10)],*[f'LPT{i}' for i in range(1,10)]) for s in p.parts):raise ValueError('platform alias')
   seen.add(key); total+=e.file_size
   if total>8*1024**3: raise ValueError('size bound')
@@ -138,8 +166,22 @@ with zipfile.ZipFile(sys.argv[1]) as z:
  # without overwriting aliases; ordinary paths retain ASAR/unpacked sibling layout.
  prefix='.privacy-case-alias'
  while any(n.casefold()==prefix or n.casefold().startswith(prefix+'/') for n in seen):prefix+='-'
- folded=set()
+ folded=set();central=z.start_dir
  for i,e in enumerate(z.infolist()):
+  encoded=e.orig_filename.encode('utf8' if e.flag_bits & 0x800 else 'cp437')
+  with open(sys.argv[1],'rb') as raw:
+   raw.seek(e.header_offset);local=raw.read(30)
+   if len(local)!=30 or local[:4]!=bytes([80,75,3,4]):raise ValueError('local header')
+   local_length=struct.unpack_from('<H',local,26)[0]
+   if raw.read(local_length)!=encoded:raise ValueError('local name')
+   raw.seek(central);header=raw.read(46)
+   if len(header)!=46 or header[:4]!=bytes([80,75,1,2]):raise ValueError('central header')
+   name_length,extra_length,comment_length=struct.unpack_from('<HHH',header,28)
+   if raw.read(name_length)!=encoded:raise ValueError('central name')
+  known_directory=e.filename=='Reader.app/Contents/Resources/standalone/apps/reader/.next/server/app/api/home/route/' and e.is_dir() and e.file_size==0
+  if known_directory or re.fullmatch(r'Reader[.]app/Contents/Resources/standalone/apps/reader/[.]next/server/app/api/home/route/(?:app-paths-manifest|build-manifest|server-reference-manifest)[.]json',e.filename):
+   ranges.extend([[e.header_offset+30,e.header_offset+30+local_length],[central+46,central+46+name_length]])
+  central+=46+name_length+extra_length+comment_length
   p=pathlib.PurePosixPath(e.filename);key=str(p).casefold()
   target=root/p if key not in folded else root/prefix/str(i)/p
   folded.add(key)
@@ -147,8 +189,14 @@ with zipfile.ZipFile(sys.argv[1]) as z:
   target.parent.mkdir(parents=True,exist_ok=True)
   with z.open(e) as src,target.open('wb') as dst:shutil.copyfileobj(src,dst)
   target.chmod(0o600)
-`, file, dest]);
-  if (r.status !== 0) throw new Error("ZIP cannot be completely inspected (unsafe, encrypted or corrupt)");
+print(json.dumps(ranges))
+`,
+    file,
+    dest,
+  ]);
+  if (r.status !== 0)
+    throw new Error("ZIP cannot be completely inspected (unsafe, encrypted or corrupt)");
+  return JSON.parse(r.stdout);
 }
 
 function safeArchiveName(name) {
@@ -229,7 +277,9 @@ print(json.dumps(ranges))
 // Extract individual members to plain files. Archive symlinks, hardlinks and mode bits
 // never reach the filesystem. Do not execute self-extracting installers/AppImages.
 function unpackSevenZip(file, dest, sevenZip) {
-  const listing = command(sevenZip, ["l", "-slt", "-ba", "-sccUTF-8", "--", file], 32 * 1024 ** 2);
+  // Pin the DEB outer container; newer 7-Zip otherwise auto-opens its nameless XZ stream.
+  const container = /\.deb$/i.test(file) ? ["-tAr"] : [];
+  const listing = command(sevenZip, ["l", "-slt", "-ba", "-sccUTF-8", ...container, "--", file], 32 * 1024 ** 2);
   if (listing.status !== 0) throw new Error("Installer/archive listing failed");
   const rows = listing.stdout.split(/\r?\n\r?\n/).filter(block => block.trim()).map((block) => {
     const row = {};
@@ -270,7 +320,7 @@ function unpackSevenZip(file, dest, sevenZip) {
       continue;
     }
     if (!Number.isSafeInteger(size) || size < 0 || size > 1024 ** 3 || (total += size) > 8 * 1024 ** 3) throw new Error("Archive size bound");
-    const result = spawnSync(sevenZip, ["x", "-so", "-spd", "-y", "--", file, ...(namelessTarStream ? [] : [name])], { maxBuffer: Math.max(size + 65536, 1024 * 1024), timeout: 300000, input: "" });
+    const result = spawnSync(sevenZip, ["x", "-so", "-spd", "-y", ...container, "--", file, ...(namelessTarStream ? [] : [name])], { maxBuffer: Math.max(size + 65536, 1024 * 1024), timeout: 300000, input: "" });
     if (result.error || result.status !== 0 || result.stdout.length !== size) throw new Error("Archive member could not be completely read");
     const target = path.join(dest, name);
     mkdirSync(path.dirname(target), { recursive: true, mode: 0o700 });
@@ -397,7 +447,9 @@ export async function scanReleasePrivacy(input, { projectDir = path.join(reposit
       } else if (/\.appimage$/i.test(file)) {
         unpackAppImage(file, dest);
       } else if (/\.(zip|apk|aab|ipa)$/i.test(file)) {
-        unzip(file, dest); // Python materializes ZIP symlinks as inert text, never follows them.
+        const ranges = unzip(file, dest); // Links remain inert text.
+        if (bytes.zipHomeRoutes.some(offset => !ranges.some(([start, end]) => offset >= start && offset + 12 <= end))) add("developer-home", label);
+        if (bytes.zipHomeRoutes.some(offset => ranges.some(([start, end]) => offset >= start && offset + 12 <= end))) notices.push({ rule: "next-api-route-metadata-path", file: label });
       } else if (/\.tar$/i.test(file)) {
         const ranges = unpackTar(file, dest);
         if (bytes.tarHomeRoutes.some(offset => !ranges.some(([start, end]) => offset >= start && offset + 12 <= end))) add("developer-home", label);

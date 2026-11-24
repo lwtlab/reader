@@ -162,3 +162,92 @@ test('standalone public scanner detects synthetic secrets in ZIP members, withou
     assert.equal(aliasReport.filesScanned, 3, 'Both case-sensitive members must be inspected on macOS too');
   } finally { rmSync(directory, { recursive: true, force: true }); }
 });
+
+// Authored metadata only; these fixtures never contain product source or user evidence.
+const macMetadataSecret = ["ghp_", "abcdefghijklmnopqrstuvwxyz0123456789"].join("");
+function macMetadataFixture(t) {
+  const root = mkdtempSync(path.join(tmpdir(), "public-mac-metadata-"));
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  const payload = path.join(root, "payload");
+  mkdirSync(payload);
+  return { root, payload, write(name, value) {
+    const file = path.join(payload, name);
+    mkdirSync(path.dirname(file), { recursive: true });
+    writeFileSync(file, value);
+    return file;
+  }};
+}
+test("Mac resource indices classify only typed compiler keys, never values or unknown paths", async (t) => {
+  const f = macMetadataFixture(t);
+  const relative = "Reader.app/Contents/_CodeSignature/CodeResources";
+  const file = f.write(relative, "");
+  const generate = (mode) =>
+    execFileSync("python3", [
+      "-c",
+      `
+import pathlib,plistlib,sys
+prefix='Resources/standalone/apps/reader/.next/server/app/api/home/route/'
+key=prefix+'build-manifest.json'
+d={'files':{key:b'a'*20},'files2':{key:{'hash2':b'b'*32}},'rules':{},'rules2':{}}
+mode=sys.argv[2]
+if mode=='unknown':d['files'][prefix+'private.txt']=b'c'*20
+if mode=='value':d['rules']['note']='/home/route/build-manifest.json'
+if mode=='forged-key':d['rules'][key]={}
+if mode=='wrong-hash':d['files2'][key]['hash2']=b'x'
+if mode=='real-home':d['files']['/home/synthetic-user/private.txt']=b'a'*20
+if mode=='credential':d['rules']['note']=sys.argv[3]
+if mode=='schema':d['unknown']={}
+pathlib.Path(sys.argv[1]).write_bytes(plistlib.dumps(d))
+`,
+      file,
+      mode,
+      macMetadataSecret,
+    ]);
+  generate("clean");
+  const clean = await scanReleasePrivacy(f.payload);
+  assert.equal(clean.status, "PASS");
+  assert.ok(clean.notices.some((n) => n.rule === "next-api-route-metadata-path"));
+  for (const mode of [
+    "unknown",
+    "value",
+    "forged-key",
+    "wrong-hash",
+    "real-home",
+    "credential",
+    "schema",
+  ]) {
+    generate(mode);
+    assert.equal((await scanReleasePrivacy(f.payload)).status, "FAIL", mode);
+  }
+});
+
+test("Mac ZIP compiler names are proven in both headers without exempting stored prose", async (t) => {
+  const f = macMetadataFixture(t);
+  const archive = path.join(f.root, "candidate.zip");
+  const generate = (mode) =>
+    execFileSync("python3", [
+      "-c",
+      `
+import sys,zipfile
+name='Reader.app/Contents/Resources/standalone/apps/reader/.next/server/app/api/home/route/build-manifest.json'
+mode=sys.argv[2]
+if mode=='unknown':name=name.replace('build-manifest.json','private.txt')
+if mode=='wrong-prefix':name='unreviewed/'+name
+with zipfile.ZipFile(sys.argv[1],'w',compression=zipfile.ZIP_STORED) as z:
+ z.writestr(name.rsplit('/',1)[0]+'/',b'')
+ z.writestr(name,'{}')
+ if mode=='prose':z.writestr('notes.txt',name)
+ if mode=='credential':z.writestr('app.js',sys.argv[3])
+ if mode=='real-home':z.writestr('notes.txt','/home/synthetic-user/private.txt')
+`,
+      archive,
+      mode,
+      macMetadataSecret,
+    ]);
+  generate("clean");
+  assert.equal((await scanReleasePrivacy(archive)).status, "PASS");
+  for (const mode of ["unknown", "wrong-prefix", "prose", "credential", "real-home"]) {
+    generate(mode);
+    assert.equal((await scanReleasePrivacy(archive)).status, "FAIL", mode);
+  }
+});
