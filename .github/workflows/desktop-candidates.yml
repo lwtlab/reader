@@ -33,6 +33,12 @@ on:
         default: false
         type: boolean
 
+      native_rust:
+        description: Also compile and inspect Windows Rust inputs in contracts-only diagnostics (no candidates)
+        required: true
+        default: false
+        type: boolean
+
 permissions:
   contents: read
   actions: read
@@ -428,7 +434,7 @@ jobs:
   windows-storage:
     if: inputs.contracts_only
     runs-on: windows-latest
-    timeout-minutes: 15
+    timeout-minutes: ${{ inputs.native_rust && 30 || 15 }}
     defaults:
       run:
         shell: bash
@@ -462,6 +468,17 @@ jobs:
         with:
           version: 11.5.2
           package_json_file: source/apps/reader/package.json
+      - name: Initialize native Rust input submodules
+        if: inputs.native_rust
+        run: >-
+          node ci/private-step.mjs native-submodules source git
+          -c submodule.aspeak.url=https://github.com/XUJiahua/aspeak.git
+          -c submodule.srtparse.url=https://github.com/XUJiahua/srtparse.git
+          submodule update --init aspeak srtparse
+      - uses: dtolnay/rust-toolchain@stable
+        if: inputs.native_rust
+        with:
+          toolchain: 1.100.0
       - name: Install private application dependencies
         env:
           READER_INSTALL_NETWORK: direct
@@ -482,6 +499,9 @@ jobs:
         run: >-
           node ci/private-step.mjs storage-contracts source/apps/reader pnpm exec vitest run --maxWorkers=1 --reporter=json
           scripts/desktop-storage-probe.test.ts lib/articles/part-store-durable.test.ts scripts/electron-sqlite.test.ts
+      - name: Build and inspect actual Rust native inputs
+        if: inputs.native_rust
+        run: node ci/private-step.mjs native-rust source/apps/reader node scripts/windows-rust-privacy.mjs
       - name: Encrypt private logs
         if: always()
         run: node ci/seal-log.mjs
