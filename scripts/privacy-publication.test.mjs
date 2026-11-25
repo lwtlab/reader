@@ -1,3 +1,4 @@
+import './release/asar.test.mjs';
 import assert from 'node:assert/strict';
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { generateKeyPairSync } from 'node:crypto';

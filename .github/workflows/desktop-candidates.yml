@@ -153,7 +153,7 @@ jobs:
       - name: Test desktop build contracts
         run: >-
           node ci/private-step.mjs contracts source/apps/reader node --test
-          scripts/desktop-packaging.test.mjs scripts/pdfium-build.test.mjs scripts/appimage-runtime.test.mjs scripts/desktop-artifacts.test.mjs
+          scripts/desktop-packaging.test.mjs scripts/native-build-privacy.test.mjs scripts/windows-native-paths.test.mjs scripts/pdfium-build.test.mjs scripts/appimage-runtime.test.mjs scripts/desktop-artifacts.test.mjs
           scripts/desktop-source.test.mjs scripts/windows-native-signing.test.mjs
           scripts/desktop-source-maps.test.mjs
           scripts/desktop-installer-target.test.mjs scripts/desktop-profile-storage-probe.test.mjs
@@ -162,7 +162,7 @@ jobs:
       - name: Test desktop lifecycle and browser assets
         run: >-
           node ci/private-step.mjs host-contracts source/apps/reader pnpm exec vitest run --maxWorkers=2
-          scripts/reader-module-preloads.test.ts electron/main lib/desktop app/api/health/route.test.ts
+          scripts/reader-module-preloads.test.ts scripts/electron-sqlite.test.ts electron/main lib/desktop app/api/health/route.test.ts
           lib/transcribe/asr-readiness.test.ts lib/transcribe/availability.test.ts lib/transcribe/paths.test.ts
           lib/transcribe/sync.test.ts lib/transcribe/qwen3/manager.test.ts app/api/transcribe/route.test.ts
           app/api/transcribe/sync/route.test.ts app/api/transcribe/retry/route.test.ts app/api/narration/route.test.ts
@@ -447,6 +447,9 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 24.22.0
+      - uses: ./.github/actions/privacy-tools
+      - name: Test public privacy guard
+        run: node --test scripts/privacy-publication.test.mjs
       - name: Checkout private source read-only
         uses: actions/checkout@v4
         with:
@@ -471,10 +474,14 @@ jobs:
         run: >-
           node ci/private-step.mjs pdfium-input source/apps/reader node --input-type=module
           -e "const {preparePdfiumBuild}=await import('./scripts/pdfium-build.mjs'); const {resolve}=await import('node:path'); await preparePdfiumBuild(resolve('../..')); console.log('PASS pinned Windows PDFium library and notices')"
+      - name: Test native compiler privacy
+        run: >-
+          node ci/private-step.mjs compiler-privacy source/apps/reader node --test
+          scripts/native-build-privacy.test.mjs scripts/windows-native-paths.test.mjs
       - name: Run storage contracts
         run: >-
           node ci/private-step.mjs storage-contracts source/apps/reader pnpm exec vitest run --maxWorkers=1 --reporter=json
-          scripts/desktop-storage-probe.test.ts lib/articles/part-store-durable.test.ts
+          scripts/desktop-storage-probe.test.ts lib/articles/part-store-durable.test.ts scripts/electron-sqlite.test.ts
       - name: Encrypt private logs
         if: always()
         run: node ci/seal-log.mjs

@@ -24,6 +24,8 @@ Independent portable/core/offline/storage workflows reuse only their explicitly 
 
 Public CI tests delivery tooling with synthetic payloads. Final candidate files, including ASAR contents and external resources, must pass `node scripts/release-privacy.mjs <candidate> --profile desktop --project-dir <ASAR-tools-directory>` before upload. Required tools are Gitleaks 8.30.1, Python 3, `@electron/asar`, and the relevant 7-Zip/squashfs or macOS hdiutil tools. CI installs them through `.github/actions/privacy-tools`. For publishing, `READER_PRIVACY_TOOLS` points to the ASAR tools directory.
 
+Local regression checks also require `PRIVACY_TEST_TOOLS` to point to a directory containing `node_modules/@electron/asar@3.4.1`; the CI privacy-tools action sets this automatically.
+
 Incomplete scans fail. The publisher checks staged asset hashes, notes and metadata before draft upload. Scanner rules, policy and synthetic regressions are exported from private source by `scripts/sync-release-privacy.mjs`; its check prevents drift. A clean pattern scan is not consent to distribute prose, screenshots, audio or user evidence; review attachments separately.
 
 Private checkout and raw build logs are not public artifacts. Detailed diagnostics are encrypted using `ci/build-logs-public.pem` and retained for three days; the matching private key stays with the maintainer. Candidate artifacts retain their original expiry. Local decryption:

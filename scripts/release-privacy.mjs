@@ -429,20 +429,45 @@ export async function scanReleasePrivacy(input, { projectDir = path.join(reposit
         return;
       } else if (/\.asar$/i.test(file)) {
         const asar = loadAsar(projectDir);
+        // ASAR listPackage uses native path separators and normalizes header
+        // components before returning them. Validate the raw tree first instead.
+        asar.uncache(file);
+        const raw = asar.getRawHeader(file);
+        const header = raw.header;
+        const dataOffset = 8 + raw.headerSize;
+        if (!Number.isSafeInteger(dataOffset) || dataOffset > stat.size) throw new Error("Invalid ASAR header range");
+        const pending = [{ tree: header.files, prefix: "" }];
         const names = new Set();
-        for (const entry of asar.listPackage(file)) {
-          const name = entry.replace(/^\//, "");
-          const key = path.posix.normalize(name).toLowerCase();
-          if (!safeArchiveName(name) || names.has(key)) throw new Error("Unsafe ASAR entry");
-          names.add(key);
-          const info = asar.statFile(file, name, false);
-          if (info.link) throw new Error("ASAR links require explicit review");
-          if (info.files) continue;
-          expandedBytes += info.size;
-          if (expandedBytes > 8 * 1024 ** 3 || info.size > 256 * 1024 ** 2) throw new Error("ASAR expansion bound exceeded");
-          const target = path.join(dest, name);
-          mkdirSync(path.dirname(target), { recursive: true, mode: 0o700 });
-          writeFileSync(target, asar.extractFile(file, name), { mode: 0o600 });
+        let members = 0;
+        while (pending.length) {
+          const { tree, prefix } = pending.pop();
+          if (!tree || typeof tree !== "object" || Array.isArray(tree)) throw new Error("Unsafe ASAR header");
+          for (const [component, info] of Object.entries(tree)) {
+            const name = prefix ? `${prefix}/${component}` : component;
+            if (++members > 200000 || name.length > 4096) throw new Error("ASAR entry/path bound exceeded");
+            const key = name.toLowerCase();
+            if (!safeArchiveName(component) || component === "." || component.includes("/") || names.has(key)) throw new Error("Unsafe ASAR entry");
+            names.add(key);
+            if (!info || typeof info !== "object" || Array.isArray(info)) throw new Error("Unsafe ASAR header");
+            if (Object.hasOwn(info, "link")) throw new Error("ASAR links require explicit review");
+            if (Object.hasOwn(info, "files")) {
+              pending.push({ tree: info.files, prefix: name });
+              continue;
+            }
+            if (!Number.isSafeInteger(info.size) || info.size < 0) throw new Error("Invalid ASAR member size");
+            if (info.unpacked !== undefined && typeof info.unpacked !== "boolean") throw new Error("Invalid ASAR header");
+            if (!info.unpacked) {
+              const offset = typeof info.offset === "string" && /^\d+$/.test(info.offset) ? Number(info.offset) : NaN;
+              if (!Number.isSafeInteger(offset) || offset + info.size > stat.size - dataOffset) throw new Error("Invalid ASAR member range");
+            }
+            expandedBytes += info.size;
+            if (expandedBytes > 8 * 1024 ** 3 || info.size > 256 * 1024 ** 2) throw new Error("ASAR expansion bound exceeded");
+            const target = path.join(dest, name);
+            const content = asar.extractFile(file, path.normalize(name));
+            if (content.length !== info.size) throw new Error("Incomplete ASAR member");
+            mkdirSync(path.dirname(target), { recursive: true, mode: 0o700 });
+            writeFileSync(target, content, { mode: 0o600 });
+          }
         }
       } else if (/\.appimage$/i.test(file)) {
         unpackAppImage(file, dest);
