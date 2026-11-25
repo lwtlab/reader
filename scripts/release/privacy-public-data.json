@@ -62,6 +62,15 @@
       "fileSha256": "3a247e9b440502951e933f2c8ec235dfe24065789c45376f2c14caf329d33ae2",
       "source": "https://github.com/lwtlab/lwt-core/commit/ef938e7e082bdca1979412c0d51fac4b0a2e67cd",
       "reason": "Exact first-party generated browser module, derived from the previously reviewed public Transformers 3.8.1 fragment. TypeScript AST confirms a PropertyAccessExpression assignment to a NewExpression, not a string credential. Both the full file digest and this exact fragment are required; changed compiler output requires a new review."
+    },
+    {
+      "id": "reader-browser-transformers-windows-assignment-fragment",
+      "rule": "generic-api-key",
+      "sha256": "4dd8f006b84f77a686412a162d8725bf27d6ad91b1f9769f99fd2231a24314db",
+      "suffix": "browser-account-sync-OUGSFXG6.js",
+      "fileSha256": "489d1f3a0c66cd58a76d41cc721aedd0cb849438554f2ebe4de7ad8dbf900ba9",
+      "source": "https://github.com/lwtlab/lwt-core/commit/e97f3a4a2e04bf14383873ae751e9a51d2427d2b",
+      "reason": "Windows x64 native browser rebuild in run 45651814039 matches the exact blocked ASAR member. The same reviewed Transformers 3.8.1 fragment is at byte 8120; TypeScript AST's smallest containing node is a PropertyAccessExpression assignment to a NewExpression, not a string literal. Full-file and fragment digests are both mandatory; modified files, other values, headers, tails and unreviewed members remain blocked."
     }
   ]
 }
