@@ -149,8 +149,34 @@ test("blocked ASAR diagnostics contain only bounded member positions and digests
     },
   ]);
   assert.ok(!JSON.stringify(diagnostics).includes(value));
+  rmSync(path.join(f.payload, member));
+  writeFileSync(path.join(f.payload, "nested/a.txt"), `const apiKey='${value.slice(0, 32)}`);
+  writeFileSync(path.join(f.payload, "nested/b.txt"), `${value.slice(32)}';`);
+  await packFixture(f.payload, archive);
+  diagnostics.length = 0;
+  assert.equal(
+    (
+      await scanReleasePrivacy(resources, {
+        projectDir,
+        onAsarUnclassifiedMatch: (record) => diagnostics.push(record),
+      })
+    ).status,
+    "FAIL",
+  );
+  const crossing = diagnostics.find(
+    (row) => row.secretSha256 === createHash("sha256").update(value).digest("hex"),
+  );
+  assert.ok(crossing);
+  assert.equal(crossing.occurrences[0].member, null);
+  assert.deepEqual(
+    crossing.occurrences[0].boundaryMembers.map((item) => item.member),
+    ["nested/a.txt", "nested/b.txt"],
+  );
+  assert.ok(!JSON.stringify(diagnostics).includes(value));
   assert.ok(!JSON.stringify(diagnostics).includes(source));
   assert.ok(!JSON.stringify(diagnostics).includes(f.root));
+  rmSync(path.join(f.payload, "nested/a.txt"));
+  rmSync(path.join(f.payload, "nested/b.txt"));
   writeFileSync(path.join(f.payload, member), Array(40).fill(source).join("\n"));
   await packFixture(f.payload, archive);
   diagnostics.length = 0;

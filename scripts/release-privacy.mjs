@@ -442,7 +442,12 @@ export async function scanReleasePrivacy(input, { projectDir = path.join(reposit
           fileSha256: fileDigests.get(member.file),
           offset: start - member.start,
           classified: classifiedMatches.get(member.file)?.has(key) ?? false,
-        } : { member: null, offset: start, classified: false });
+        } : { member: null, offset: start, classified: false,
+          boundaryMembers: [start, start + needle.length - 1].map(offset => {
+            const adjacent = members.find(item => offset >= item.start && offset < item.end);
+            return adjacent ? { member: adjacent.name.includes(row.Secret) ? "[redacted]" : adjacent.name, fileSha256: fileDigests.get(adjacent.file), offset: offset - adjacent.start } : null;
+          }),
+        });
       }
       position += chunk.length;
       tail = bytes.subarray(Math.max(0, bytes.length - needle.length + 1));
