@@ -6,7 +6,7 @@ import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
-import { parseArgs } from "node:util";
+import { isDeepStrictEqual, parseArgs } from "node:util";
 import { isHermesCrossStringMatch } from "./release/hermes-strings.mjs";
 
 const repository = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
@@ -383,8 +383,14 @@ export async function scanReleasePrivacy(input, { projectDir = path.join(reposit
   if (version.status !== 0 || version.stdout.trim().replace(/^v/, "") !== scannerVersion) throw new Error(`Gitleaks ${scannerVersion} is required`);
   const temp = mkdtempSync(path.join(tmpdir(), "release-privacy-"));
   const findings = [], notices = [], files = [], scanRoots = [];
-  const asarMembers = new Map(), classifiedMatches = new Map(), asarProofs = new Map();
-  const matchKey = row => `${["generic-api-key", "next-manifest-key"].includes(row.RuleID) ? "classified-key" : row.RuleID}:${createHash("sha256").update(row.Secret).digest("hex")}`;
+  const asarMembers = new Map(), classifiedMatches = new Map(), asarProofs = new Map(), fileDigests = new Map();
+  const classificationKey = (rule, sha256) => `${["generic-api-key", "next-manifest-key"].includes(rule) ? "classified-key" : rule}:${sha256}`;
+  const matchKey = row => classificationKey(row.RuleID, createHash("sha256").update(row.Secret).digest("hex"));
+  const remember = (file, key) => {
+    let matches = classifiedMatches.get(file);
+    if (!matches) classifiedMatches.set(file, matches = new Set());
+    matches.add(key);
+  };
   async function provenAsarMatch(file, row) {
     const members = asarMembers.get(file);
     if (!members || typeof row.Secret !== "string") return false;
@@ -434,6 +440,7 @@ export async function scanReleasePrivacy(input, { projectDir = path.join(reposit
       }
       if (!stat.isFile()) throw new Error("Non-regular artifact entry");
       const bytes = await inspectBytes(file);
+      fileDigests.set(realpathSync(file), bytes.sha256);
       files.push({ file, label, sha256: bytes.sha256, bytes: bytes.bytes, markerOnly: bytes.markerOnly });
       const why = pathRule(label);
       if (why) add(why, label);
@@ -521,6 +528,28 @@ export async function scanReleasePrivacy(input, { projectDir = path.join(reposit
       await visit(input, path.basename(input), path.dirname(input), 0);
     }
     if (!files.length) throw new Error("Empty artifact cannot pass");
+    for (const entry of files) {
+      const canonical = realpathSync(entry.file);
+      // A directory-scanner path exclusion is not a content proof. Reuse only
+      // explicit reviewed values, their required suffix and optional whole-file digest.
+      for (const reviewed of publicData.matches) {
+        if (!reviewed.suffix || reviewed.label || reviewed.format || !["generic-api-key", "next-manifest-key"].includes(reviewed.rule)) continue;
+        if (!(entry.label === reviewed.suffix || entry.label.endsWith("/" + reviewed.suffix)) || (reviewed.fileSha256 && reviewed.fileSha256 !== entry.sha256)) continue;
+        remember(canonical, classificationKey(reviewed.rule, reviewed.sha256));
+      }
+      if (profile !== "desktop" || !entry.label.endsWith(".next/server/server-reference-manifest.js") || entry.bytes > 1024 * 1024) continue;
+      // Next also emits an escaped JS copy. Accept only its exact inert wrapper,
+      // exact schema and byte-equivalent data from the empty-action JSON sibling.
+      try {
+        const match = /^self\.__RSC_SERVER_MANIFEST\s*=\s*("(?:\\.|[^"\\])*")\s*;?\s*$/.exec(readFileSync(entry.file, "utf8"));
+        if (!match) continue;
+        const data = JSON.parse(JSON.parse(match[1]));
+        const reference = JSON.parse(readFileSync(path.join(path.dirname(entry.file), "server-reference-manifest.json"), "utf8"));
+        if (!isRecord(data) || Object.keys(data).sort().join(",") !== "edge,encryptionKey,node" || !isRecord(data.node) || !isRecord(data.edge) || Object.keys(data.node).length || Object.keys(data.edge).length || typeof data.encryptionKey !== "string" || !/^[A-Za-z0-9+/]{43}=$/.test(data.encryptionKey) || !isDeepStrictEqual(data, reference)) continue;
+        remember(canonical, classificationKey("next-manifest-key", createHash("sha256").update(data.encryptionKey).digest("hex")));
+        notices.push({ rule: "unused-next-desktop-action-key-copy", file: entry.label });
+      } catch { /* Missing, malformed or changed proof remains unclassified. */ }
+    }
     // Explicit trusted config and empty ignore file prevent a payload from disabling detection.
     // Classify validated member files before their raw ASAR container. Raw
     // matches still block unless every occurrence belongs to an approved member.
@@ -546,9 +575,7 @@ export async function scanReleasePrivacy(input, { projectDir = path.join(reposit
         const scannedFile = realpathSync(lstatSync(dir).isFile() ? dir : path.isAbsolute(row.File) ? row.File : path.resolve(dir, row.File));
         const accept = notice => {
           notices.push(notice);
-          let matches = classifiedMatches.get(scannedFile);
-          if (!matches) classifiedMatches.set(scannedFile, matches = new Set());
-          matches.add(matchKey(row));
+          remember(scannedFile, matchKey(row));
         };
         if (await provenAsarMatch(scannedFile, row)) {
           accept({ rule: "asar-classified-member-match", originalRule: row.RuleID, file: label });
@@ -556,7 +583,7 @@ export async function scanReleasePrivacy(input, { projectDir = path.join(reposit
         }
         if (row.RuleID === "generic-api-key" || row.RuleID === "next-manifest-key") {
           const secretHash = createHash("sha256").update(row.Secret).digest("hex");
-          const reviewed = publicData.matches.find(p => p.rule === row.RuleID && p.sha256 === secretHash && (!p.label || row.Match.includes(p.label)) && (!p.suffix || label.endsWith("/" + p.suffix) || label === p.suffix));
+          const reviewed = publicData.matches.find(p => p.rule === row.RuleID && p.sha256 === secretHash && (!p.label || row.Match.includes(p.label)) && (!p.suffix || label.endsWith("/" + p.suffix) || label === p.suffix) && (!p.fileSha256 || p.fileSha256 === fileDigests.get(scannedFile)));
           // Boundaries alone cannot exclude a credential followed by another
           // packed string. Require an exact reviewed public-data match as well.
           if (reviewed?.format === "hermes-v98-cross-string" && /(?:^|\/)index\.android\.bundle$/.test(label)) {

@@ -13,6 +13,7 @@ import { createRequire } from "node:module";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
+import { pathToFileURL } from "node:url";
 import { scanReleasePrivacy } from "../release-privacy.mjs";
 
 const projectDir = process.env.PRIVACY_TEST_TOOLS || path.resolve("apps/reader");
@@ -70,10 +71,15 @@ test("packaged ASAR uses classified member bytes without exempting header, tail 
     previewModeEncryptionKey: key("encryption"),
   };
   const reference = path.join(next, "server/server-reference-manifest.json");
-  writeFileSync(
-    reference,
-    JSON.stringify({ node: {}, edge: {}, encryptionKey: Buffer.alloc(32, 42).toString("base64") }),
-  );
+  const referenceData = {
+    node: {},
+    edge: {},
+    encryptionKey: createHash("sha256").update("authored-action-key").digest("base64"),
+  };
+  writeFileSync(reference, JSON.stringify(referenceData));
+  const referenceCopy = path.join(next, "server/server-reference-manifest.js");
+  const wrapper = `self.__RSC_SERVER_MANIFEST=${JSON.stringify(JSON.stringify(referenceData))}`;
+  writeFileSync(referenceCopy, wrapper);
   writeFileSync(
     path.join(next, "prerender-manifest.json"),
     JSON.stringify({ version: 4, routes: { "/favicon.ico": {} }, dynamicRoutes: {}, preview }),
@@ -89,6 +95,12 @@ test("packaged ASAR uses classified member bytes without exempting header, tail 
   assert.equal((await scanReleasePrivacy(archive, options)).status, "PASS");
   assert.equal((await scanReleasePrivacy(resources, { projectDir })).status, "FAIL");
   assert.equal((await scanReleasePrivacy(resources, options)).status, "PASS");
+
+  writeFileSync(referenceCopy, `${wrapper};globalThis.unreviewed=true;`);
+  await pack();
+  assert.equal((await scanReleasePrivacy(resources, options)).status, "FAIL");
+  writeFileSync(referenceCopy, wrapper);
+  await pack();
 
   // An identical previously classified value outside a member has no proof.
   appendFileSync(archive, `\nconst apiKey = '${preview.previewModeSigningKey}';`);
@@ -113,6 +125,54 @@ test("packaged ASAR uses classified member bytes without exempting header, tail 
   writeFileSync(reference, JSON.stringify({ node: { action: {} }, edge: {} }));
   await pack();
   assert.equal((await scanReleasePrivacy(resources, options)).status, "FAIL");
+});
+
+test("reviewed fragment approval binds the complete file and cannot bless dependency copies", async (t) => {
+  const f = fixture(t);
+  const source =
+    "const apiKey='" + createHash("sha256").update("authored-provenance-only").digest("hex") + "';";
+  const value = source.split("'")[1];
+  const name = "nested/reviewed.js";
+  const file = path.join(f.payload, name);
+  writeFileSync(file, source);
+  const policyRoot = path.join(f.root, "policy");
+  for (const relative of [
+    "scripts/release-privacy.mjs",
+    "scripts/release/privacy-gitleaks.toml",
+    "scripts/release/privacy-public-data.json",
+    "scripts/release/hermes-strings.mjs",
+  ]) {
+    const target = path.join(policyRoot, relative);
+    mkdirSync(path.dirname(target), { recursive: true });
+    copyFileSync(path.resolve(import.meta.dirname, "../..", relative), target);
+  }
+  const policyFile = path.join(policyRoot, "scripts/release/privacy-public-data.json");
+  const policy = JSON.parse(readFileSync(policyFile));
+  policy.matches.push({
+    id: "authored-exact-file",
+    rule: "generic-api-key",
+    suffix: name,
+    sha256: createHash("sha256").update(value).digest("hex"),
+    fileSha256: createHash("sha256").update(source).digest("hex"),
+  });
+  writeFileSync(policyFile, JSON.stringify(policy));
+  const { scanReleasePrivacy: scan } = await import(
+    pathToFileURL(path.join(policyRoot, "scripts/release-privacy.mjs"))
+  );
+  assert.equal((await scan(f.payload, { projectDir })).status, "PASS");
+  appendFileSync(file, "\n// changed bytes invalidate the review\n");
+  assert.equal((await scan(f.payload, { projectDir })).status, "FAIL");
+  writeFileSync(file, source);
+  const resources = path.join(f.root, "resources");
+  mkdirSync(resources);
+  const archive = path.join(resources, "runtime.asar");
+  await asar.createPackage(f.payload, archive);
+  assert.equal((await scan(resources, { projectDir })).status, "PASS");
+  const dependency = path.join(f.payload, "node_modules/unreviewed/index.js");
+  mkdirSync(path.dirname(dependency), { recursive: true });
+  writeFileSync(dependency, source);
+  await asar.createPackage(f.payload, archive);
+  assert.equal((await scan(resources, { projectDir })).status, "FAIL");
 });
 
 test("raw ASAR header components cannot hide separators or traversal behind library normalization", async (t) => {
