@@ -383,6 +383,34 @@ export async function scanReleasePrivacy(input, { projectDir = path.join(reposit
   if (version.status !== 0 || version.stdout.trim().replace(/^v/, "") !== scannerVersion) throw new Error(`Gitleaks ${scannerVersion} is required`);
   const temp = mkdtempSync(path.join(tmpdir(), "release-privacy-"));
   const findings = [], notices = [], files = [], scanRoots = [];
+  const asarMembers = new Map(), classifiedMatches = new Map(), asarProofs = new Map();
+  const matchKey = row => `${["generic-api-key", "next-manifest-key"].includes(row.RuleID) ? "classified-key" : row.RuleID}:${createHash("sha256").update(row.Secret).digest("hex")}`;
+  async function provenAsarMatch(file, row) {
+    const members = asarMembers.get(file);
+    if (!members || typeof row.Secret !== "string") return false;
+    const needle = Buffer.from(row.Secret);
+    if (needle.length < 8 || needle.length > 4096) return false;
+    const key = matchKey(row), cacheKey = `${file}\0${key}`;
+    if (asarProofs.has(cacheKey)) return asarProofs.get(cacheKey);
+    const ranges = members.filter(member => classifiedMatches.get(member.file)?.has(key));
+    if (!ranges.length) return false;
+    let position = 0, tail = Buffer.alloc(0), previous = -1, count = 0, valid = true;
+    for await (const chunk of createReadStream(file)) {
+      const bytes = Buffer.concat([tail, chunk]);
+      for (let i = bytes.indexOf(needle); i >= 0; i = bytes.indexOf(needle, i + 1)) {
+        const start = position - tail.length + i;
+        if (start <= previous) continue;
+        previous = start;
+        if (++count > 100000 || !ranges.some(range => start >= range.start && start + needle.length <= range.end)) { valid = false; break; }
+      }
+      if (!valid) break;
+      position += chunk.length;
+      tail = bytes.subarray(Math.max(0, bytes.length - needle.length + 1));
+    }
+    const result = valid && count > 0;
+    asarProofs.set(cacheKey, result);
+    return result;
+  }
   const before = JSON.stringify(inventory(input));
   let expandedBytes = 0, entries = 0;
   const mounts = [];
@@ -437,6 +465,8 @@ export async function scanReleasePrivacy(input, { projectDir = path.join(reposit
         const dataOffset = 8 + raw.headerSize;
         if (!Number.isSafeInteger(dataOffset) || dataOffset > stat.size) throw new Error("Invalid ASAR header range");
         const pending = [{ tree: header.files, prefix: "" }];
+        const memberRanges = [];
+        asarMembers.set(realpathSync(file), memberRanges);
         const names = new Set();
         let members = 0;
         while (pending.length) {
@@ -467,6 +497,7 @@ export async function scanReleasePrivacy(input, { projectDir = path.join(reposit
             if (content.length !== info.size) throw new Error("Incomplete ASAR member");
             mkdirSync(path.dirname(target), { recursive: true, mode: 0o700 });
             writeFileSync(target, content, { mode: 0o600 });
+            if (!info.unpacked) memberRanges.push({ file: realpathSync(target), start: dataOffset + Number(info.offset), end: dataOffset + Number(info.offset) + info.size });
           }
         }
       } else if (/\.appimage$/i.test(file)) {
@@ -491,7 +522,9 @@ export async function scanReleasePrivacy(input, { projectDir = path.join(reposit
     }
     if (!files.length) throw new Error("Empty artifact cannot pass");
     // Explicit trusted config and empty ignore file prevent a payload from disabling detection.
-    for (const { dir, prefix } of scanRoots) {
+    // Classify validated member files before their raw ASAR container. Raw
+    // matches still block unless every occurrence belongs to an approved member.
+    for (const { dir, prefix } of [...scanRoots].reverse()) {
       const report = path.join(temp, "gitleaks.json");
       // Raw tool results remain in the same 0700 workspace as extracted payloads.
       // They are never forwarded, returned or retained after this invocation.
@@ -510,6 +543,17 @@ export async function scanReleasePrivacy(input, { projectDir = path.join(reposit
         const rel = lstatSync(dir).isFile() ? path.basename(dir) : path.isAbsolute(row.File) ? path.relative(dir, row.File) : row.File;
         // Normalize native separators only; a literal backslash on POSIX is not a route.
         const label = (prefix ? `${prefix}/${rel}` : rel).split(path.sep).join("/");
+        const scannedFile = realpathSync(lstatSync(dir).isFile() ? dir : path.isAbsolute(row.File) ? row.File : path.resolve(dir, row.File));
+        const accept = notice => {
+          notices.push(notice);
+          let matches = classifiedMatches.get(scannedFile);
+          if (!matches) classifiedMatches.set(scannedFile, matches = new Set());
+          matches.add(matchKey(row));
+        };
+        if (await provenAsarMatch(scannedFile, row)) {
+          accept({ rule: "asar-classified-member-match", originalRule: row.RuleID, file: label });
+          continue;
+        }
         if (row.RuleID === "generic-api-key" || row.RuleID === "next-manifest-key") {
           const secretHash = createHash("sha256").update(row.Secret).digest("hex");
           const reviewed = publicData.matches.find(p => p.rule === row.RuleID && p.sha256 === secretHash && (!p.label || row.Match.includes(p.label)) && (!p.suffix || label.endsWith("/" + p.suffix) || label === p.suffix));
@@ -518,29 +562,29 @@ export async function scanReleasePrivacy(input, { projectDir = path.join(reposit
           if (reviewed?.format === "hermes-v98-cross-string" && /(?:^|\/)index\.android\.bundle$/.test(label)) {
             const file = path.isAbsolute(row.File) ? row.File : path.resolve(dir, row.File);
             if (lstatSync(file).size <= 256 * 1024 ** 2 && isHermesCrossStringMatch(readFileSync(file), row.Secret)) {
-              notices.push({ rule: "hermes-cross-string-match", reviewId: reviewed.id, file: label }); continue;
+              accept({ rule: "hermes-cross-string-match", reviewId: reviewed.id, file: label }); continue;
             }
           }
           if (/(?:^|\/)files\.json$/.test(label) && /^chunk-[A-Z0-9]{8}\.js$/.test(row.Secret)) {
             const file = path.isAbsolute(row.File) ? row.File : path.resolve(dir, row.File);
             const index = JSON.parse(readFileSync(file, "utf8"));
             if (Array.isArray(index) && index.includes(row.Secret) && index.every(p => typeof p === "string" && /^[a-zA-Z0-9_.-]+$/.test(p) && /\.(?:js|css|html|json|txt|svg|png|ico|woff2?|ttf|wasm|webmanifest)$/.test(p))) {
-              notices.push({ rule: "generated-bundle-chunk-filename", file: label }); continue;
+              accept({ rule: "generated-bundle-chunk-filename", file: label }); continue;
             }
           }
-          if (reviewed && !reviewed.format) { notices.push({ rule: "reviewed-public-data", reviewId: reviewed.id, file: label }); continue; }
+          if (reviewed && !reviewed.format) { accept({ rule: "reviewed-public-data", reviewId: reviewed.id, file: label }); continue; }
           if (profile === "desktop") {
             const file = path.isAbsolute(row.File) ? row.File : path.resolve(dir, row.File);
             if (label.endsWith(".next/server/server-reference-manifest.json")) {
               const data = JSON.parse(readFileSync(file, "utf8"));
               if (isRecord(data.node) && isRecord(data.edge) && !Object.keys(data.node).length && !Object.keys(data.edge).length && data.encryptionKey === row.Secret && /^[A-Za-z0-9+/]{43}=$/.test(row.Secret)) {
-                notices.push({ rule: "unused-next-desktop-action-key", file: label }); continue;
+                accept({ rule: "unused-next-desktop-action-key", file: label }); continue;
               }
             }
             if (label.endsWith(".next/prerender-manifest.json")) {
               const data = JSON.parse(readFileSync(file, "utf8"));
               if (defaultOnlyPrerender(data) && /^[a-f0-9]{64}$/.test(row.Secret) && [data.preview?.previewModeSigningKey, data.preview?.previewModeEncryptionKey].includes(row.Secret)) {
-                notices.push({ rule: "unused-next-desktop-preview-key", file: label }); continue;
+                accept({ rule: "unused-next-desktop-preview-key", file: label }); continue;
               }
             }
             if (/(?:^|\/)\.next\/server\/preview-props\.json$/.test(label)) {
@@ -554,7 +598,7 @@ export async function scanReleasePrivacy(input, { projectDir = path.join(reposit
                 const prerender = JSON.parse(readFileSync(prerenderFile, "utf8"));
                 const reference = JSON.parse(readFileSync(referenceFile, "utf8"));
                 if (isRecord(data) && Object.keys(data).length === previewFields.length && previewFields.every(key => typeof data[key] === "string" && data[key] === prerender.preview?.[key]) && /^[a-f0-9]{32}$/.test(data.previewModeId) && /^[a-f0-9]{64}$/.test(data.previewModeSigningKey) && /^[a-f0-9]{64}$/.test(data.previewModeEncryptionKey) && defaultOnlyPrerender(prerender) && isRecord(reference.node) && isRecord(reference.edge) && !Object.keys(reference.node).length && !Object.keys(reference.edge).length && [data.previewModeSigningKey, data.previewModeEncryptionKey].includes(row.Secret)) {
-                  notices.push({ rule: "unused-next-desktop-preview-key-copy", file: label }); continue;
+                  accept({ rule: "unused-next-desktop-preview-key-copy", file: label }); continue;
                 }
               }
             }
@@ -567,7 +611,7 @@ export async function scanReleasePrivacy(input, { projectDir = path.join(reposit
             match = files.find(f => realpathSync(f.file) === absolute);
           } catch { /* Unknown location retains the blocking finding. */ }
           if (match?.markerOnly) {
-            notices.push({ rule: "pem-marker-without-key-material", file: match.label });
+            accept({ rule: "pem-marker-without-key-material", file: match.label });
             continue;
           }
         }

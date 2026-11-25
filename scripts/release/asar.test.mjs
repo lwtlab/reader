@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
-import { copyFileSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { createHash } from "node:crypto";
+import { appendFileSync, copyFileSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import os from "node:os";
 import path from "node:path";
@@ -48,6 +49,56 @@ test("ASAR inspection still sees nested credentials and never prints their value
   assert.equal(report.status, "FAIL");
   assert(report.findings.some((item) => item.file.endsWith("runtime.asar!/nested/clean.js")));
   assert(!JSON.stringify(report).includes(secret));
+});
+
+test("packaged ASAR uses classified member bytes without exempting header, tail or other members", async (t) => {
+  const f = fixture(t);
+  const next = path.join(f.payload, "apps/reader/.next");
+  mkdirSync(path.join(next, "server"), { recursive: true });
+  const key = (label) => createHash("sha256").update(`authored-preview-${label}`).digest("hex");
+  const preview = {
+    previewModeId: "1".repeat(32),
+    previewModeSigningKey: key("signing"),
+    previewModeEncryptionKey: key("encryption"),
+  };
+  const reference = path.join(next, "server/server-reference-manifest.json");
+  writeFileSync(reference, JSON.stringify({ node: {}, edge: {}, encryptionKey: Buffer.alloc(32, 42).toString("base64") }));
+  writeFileSync(path.join(next, "prerender-manifest.json"), JSON.stringify({ version: 4, routes: { "/favicon.ico": {} }, dynamicRoutes: {}, preview }));
+  writeFileSync(path.join(next, "server/preview-props.json"), JSON.stringify(preview));
+  const resources = path.join(f.root, "resources");
+  mkdirSync(resources);
+  const archive = path.join(resources, "runtime.asar");
+  const options = { projectDir, profile: "desktop" };
+  const pack = () => asar.createPackage(f.payload, archive);
+  await pack();
+  assert.equal((await scanReleasePrivacy(f.payload, options)).status, "PASS");
+  assert.equal((await scanReleasePrivacy(archive, options)).status, "PASS");
+  assert.equal((await scanReleasePrivacy(resources, { projectDir })).status, "FAIL");
+  assert.equal((await scanReleasePrivacy(resources, options)).status, "PASS");
+
+  // An identical previously classified value outside a member has no proof.
+  appendFileSync(archive, `\nconst apiKey = '${preview.previewModeSigningKey}';`);
+  assert.equal((await scanReleasePrivacy(resources, options)).status, "FAIL");
+  await pack();
+  const raw = asar.getRawHeader(archive);
+  const payload = readFileSync(archive).subarray(8 + raw.headerSize);
+  raw.header.authoredMetadata = { apiKey: preview.previewModeSigningKey };
+  const { Pickle } = createRequire(requireTools.resolve("@electron/asar"))("./pickle");
+  const header = Pickle.createEmpty();
+  header.writeString(JSON.stringify(raw.header));
+  const size = Pickle.createEmpty();
+  size.writeUInt32(header.toBuffer().length);
+  writeFileSync(archive, Buffer.concat([size.toBuffer(), header.toBuffer(), payload]));
+  assert.equal((await scanReleasePrivacy(resources, options)).status, "FAIL");
+
+  const extra = path.join(f.payload, "nested/unreviewed.js");
+  writeFileSync(extra, `const apiKey = '${preview.previewModeSigningKey}';`);
+  await pack();
+  assert.equal((await scanReleasePrivacy(resources, options)).status, "FAIL");
+  rmSync(extra);
+  writeFileSync(reference, JSON.stringify({ node: { action: {} }, edge: {} }));
+  await pack();
+  assert.equal((await scanReleasePrivacy(resources, options)).status, "FAIL");
 });
 
 test("raw ASAR header components cannot hide separators or traversal behind library normalization", async (t) => {
