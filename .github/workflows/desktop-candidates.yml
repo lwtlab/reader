@@ -478,6 +478,10 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
         with:
           toolchain: 1.100.0
+      - name: Check native path alias transport before dependency installation
+        run: >-
+          node ci/private-step.mjs path-aliases source/apps/reader node --input-type=module
+          -e "const {nativeBuildEnvironment}=await import('./scripts/native-build-privacy.mjs'); nativeBuildEnvironment(process.cwd()); console.log('PASS native path alias transport')"
       - name: Install private application dependencies
         env:
           READER_INSTALL_NETWORK: direct
