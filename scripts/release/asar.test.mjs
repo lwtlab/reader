@@ -118,6 +118,58 @@ test("ASAR inspection still sees nested credentials and never prints their value
   assert(!JSON.stringify(report).includes(secret));
 });
 
+test("blocked ASAR diagnostics contain only bounded member positions and digests", async (t) => {
+  const f = fixture(t);
+  const value = createHash("sha256").update("authored-asar-diagnostic").digest("hex");
+  const source = `const apiKey='${value}';`;
+  const member = "nested/unreviewed.js";
+  writeFileSync(path.join(f.payload, member), source);
+  const resources = path.join(f.root, "resources");
+  mkdirSync(resources);
+  const archive = path.join(resources, "runtime.asar");
+  await packFixture(f.payload, archive);
+  const diagnostics = [];
+  const report = await scanReleasePrivacy(resources, {
+    projectDir,
+    onAsarUnclassifiedMatch: (record) => diagnostics.push(record),
+  });
+  assert.equal(report.status, "FAIL");
+  const diagnostic = diagnostics.find(
+    (row) => row.secretSha256 === createHash("sha256").update(value).digest("hex"),
+  );
+  assert.ok(diagnostic);
+  assert.equal(diagnostic.count, 1);
+  assert.equal(diagnostic.truncated, false);
+  assert.deepEqual(diagnostic.occurrences, [
+    {
+      member,
+      fileSha256: createHash("sha256").update(source).digest("hex"),
+      offset: source.indexOf(value),
+      classified: false,
+    },
+  ]);
+  assert.ok(!JSON.stringify(diagnostics).includes(value));
+  assert.ok(!JSON.stringify(diagnostics).includes(source));
+  assert.ok(!JSON.stringify(diagnostics).includes(f.root));
+  writeFileSync(path.join(f.payload, member), Array(40).fill(source).join("\n"));
+  await packFixture(f.payload, archive);
+  diagnostics.length = 0;
+  assert.equal(
+    (
+      await scanReleasePrivacy(resources, {
+        projectDir,
+        onAsarUnclassifiedMatch: (record) => diagnostics.push(record),
+      })
+    ).status,
+    "FAIL",
+  );
+  assert.equal(diagnostics.length, 1);
+  assert.equal(diagnostics[0].count, 40);
+  assert.equal(diagnostics[0].occurrences.length, 32);
+  assert.equal(diagnostics[0].truncated, true);
+  assert.ok(!JSON.stringify(diagnostics).includes(value));
+});
+
 test("packaged ASAR uses classified member bytes without exempting header, tail or other members", async (t) => {
   const f = fixture(t);
   const next = path.join(f.payload, "apps/reader/.next");

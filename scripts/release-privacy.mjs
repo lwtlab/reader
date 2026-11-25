@@ -373,7 +373,7 @@ subprocess.run(['unsquashfs','-no-progress','-no-xattrs','-d',sys.argv[2],'-o',s
 }
 
 /** Local-only audit. A PASS describes this input hash, not permission to publish. */
-export async function scanReleasePrivacy(input, { projectDir = path.join(repository, "apps/reader"), gitleaks = "gitleaks", sevenZip = process.platform === "win32" ? "7z" : "7zz", plainFile = false, profile = "generic" } = {}) {
+export async function scanReleasePrivacy(input, { projectDir = path.join(repository, "apps/reader"), gitleaks = "gitleaks", sevenZip = process.platform === "win32" ? "7z" : "7zz", plainFile = false, profile = "generic", onAsarUnclassifiedMatch } = {}) {
   if (!["generic", "desktop"].includes(profile)) throw new Error("Unknown privacy audit profile");
   input = path.resolve(input);
   const initial = lstatSync(input);
@@ -384,6 +384,8 @@ export async function scanReleasePrivacy(input, { projectDir = path.join(reposit
   const temp = mkdtempSync(path.join(tmpdir(), "release-privacy-"));
   const findings = [], notices = [], files = [], scanRoots = [];
   const asarMembers = new Map(), classifiedMatches = new Map(), asarProofs = new Map(), fileDigests = new Map();
+  const asarDiagnostics = new Set();
+  const asarHeaderHashes = new Map();
   const classificationKey = (rule, sha256) => `${["generic-api-key", "next-manifest-key"].includes(rule) ? "classified-key" : rule}:${sha256}`;
   const matchKey = row => classificationKey(row.RuleID, createHash("sha256").update(row.Secret).digest("hex"));
   const remember = (file, key) => {
@@ -416,6 +418,39 @@ export async function scanReleasePrivacy(input, { projectDir = path.join(reposit
     const result = valid && count > 0;
     asarProofs.set(cacheKey, result);
     return result;
+  }
+  async function describeAsarMatch(file, row) {
+    if (typeof onAsarUnclassifiedMatch !== "function" || !asarMembers.has(file) || typeof row.Secret !== "string") return;
+    const needle = Buffer.from(row.Secret);
+    if (needle.length < 8 || needle.length > 4096) return;
+    const key = matchKey(row), occurrences = [], members = asarMembers.get(file);
+    const diagnosticKey = `${file}\0${row.RuleID}\0${key}`;
+    if (asarDiagnostics.has(diagnosticKey)) return;
+    asarDiagnostics.add(diagnosticKey);
+    let position = 0, tail = Buffer.alloc(0), previous = -1, count = 0;
+    for await (const chunk of createReadStream(file)) {
+      const bytes = Buffer.concat([tail, chunk]);
+      for (let i = bytes.indexOf(needle); i >= 0; i = bytes.indexOf(needle, i + 1)) {
+        const start = position - tail.length + i;
+        if (start <= previous) continue;
+        previous = start;
+        if (++count > 100000) throw new Error("ASAR diagnostic occurrence bound exceeded");
+        if (occurrences.length >= 32) continue;
+        const member = members.find(item => start >= item.start && start + needle.length <= item.end);
+        occurrences.push(member ? {
+          member: member.name.includes(row.Secret) ? "[redacted]" : member.name,
+          fileSha256: fileDigests.get(member.file),
+          offset: start - member.start,
+          classified: classifiedMatches.get(member.file)?.has(key) ?? false,
+        } : { member: null, offset: start, classified: false });
+      }
+      position += chunk.length;
+      tail = bytes.subarray(Math.max(0, bytes.length - needle.length + 1));
+    }
+    // Deliberately expose no tool Match/Secret, content, absolute paths or source lines.
+    const secretSha256 = createHash("sha256").update(row.Secret).digest("hex");
+    const headerHashCandidates = (asarHeaderHashes.get(file) ?? []).filter(item => item.valueSha256 === secretSha256).slice(0, 32).map(item => ({ member: item.name.includes(row.Secret) ? "[redacted]" : item.name, field: item.field, matchesWholeFile: item.valueSha256 === createHash("sha256").update(fileDigests.get(item.file) ?? "").digest("hex") }));
+    await onAsarUnclassifiedMatch({ rule: row.RuleID, secretSha256, matchSha256: createHash("sha256").update(row.Match).digest("hex"), bytes: needle.length, count, occurrences, truncated: count > occurrences.length, headerHashCandidates });
   }
   const before = JSON.stringify(inventory(input));
   let expandedBytes = 0, entries = 0;
@@ -474,6 +509,8 @@ export async function scanReleasePrivacy(input, { projectDir = path.join(reposit
         const pending = [{ tree: header.files, prefix: "" }];
         const memberRanges = [];
         asarMembers.set(realpathSync(file), memberRanges);
+        const headerHashes = [];
+        asarHeaderHashes.set(realpathSync(file), headerHashes);
         const names = new Set();
         let members = 0;
         while (pending.length) {
@@ -504,7 +541,11 @@ export async function scanReleasePrivacy(input, { projectDir = path.join(reposit
             if (content.length !== info.size) throw new Error("Incomplete ASAR member");
             mkdirSync(path.dirname(target), { recursive: true, mode: 0o700 });
             writeFileSync(target, content, { mode: 0o600 });
-            if (!info.unpacked) memberRanges.push({ file: realpathSync(target), start: dataOffset + Number(info.offset), end: dataOffset + Number(info.offset) + info.size });
+            if (typeof onAsarUnclassifiedMatch === "function" && info.integrity && typeof info.integrity === "object") {
+              const values = [["integrity.hash", info.integrity.hash], ...(Array.isArray(info.integrity.blocks) ? info.integrity.blocks.slice(0, 64).map((value, index) => [`integrity.blocks[${index}]`, value]) : [])];
+              for (const [field, value] of values) if (typeof value === "string" && /^[a-f0-9]{64}$/.test(value)) headerHashes.push({ name, file: realpathSync(target), field, valueSha256: createHash("sha256").update(value).digest("hex") });
+            }
+            if (!info.unpacked) memberRanges.push({ name, file: realpathSync(target), start: dataOffset + Number(info.offset), end: dataOffset + Number(info.offset) + info.size });
           }
         }
       } else if (/\.appimage$/i.test(file)) {
@@ -581,6 +622,7 @@ export async function scanReleasePrivacy(input, { projectDir = path.join(reposit
           accept({ rule: "asar-classified-member-match", originalRule: row.RuleID, file: label });
           continue;
         }
+        await describeAsarMatch(scannedFile, row);
         if (row.RuleID === "generic-api-key" || row.RuleID === "next-manifest-key") {
           const secretHash = createHash("sha256").update(row.Secret).digest("hex");
           const reviewed = publicData.matches.find(p => p.rule === row.RuleID && p.sha256 === secretHash && (!p.label || row.Match.includes(p.label)) && (!p.suffix || label.endsWith("/" + p.suffix) || label === p.suffix) && (!p.fileSha256 || p.fileSha256 === fileDigests.get(scannedFile)));
