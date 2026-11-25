@@ -126,6 +126,8 @@ jobs:
           submodule update --init aspeak srtparse
 
       - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: 1.100.0
 
       - name: Install fixed Rust dependency scanner
         timeout-minutes: 10
