@@ -159,7 +159,7 @@ jobs:
       - name: Test desktop build contracts
         run: >-
           node ci/private-step.mjs contracts source/apps/reader node --test
-          scripts/desktop-packaging.test.mjs scripts/native-build-privacy.test.mjs scripts/windows-native-paths.test.mjs scripts/pdfium-build.test.mjs scripts/appimage-runtime.test.mjs scripts/desktop-artifacts.test.mjs
+          scripts/desktop-packaging.test.mjs scripts/native-build-privacy.test.mjs scripts/windows-native-paths.test.mjs scripts/windows-rust-privacy.test.mjs scripts/pdfium-build.test.mjs scripts/appimage-runtime.test.mjs scripts/desktop-artifacts.test.mjs
           scripts/desktop-source.test.mjs scripts/windows-native-signing.test.mjs
           scripts/desktop-source-maps.test.mjs
           scripts/desktop-installer-target.test.mjs scripts/desktop-profile-storage-probe.test.mjs
@@ -476,7 +476,6 @@ jobs:
           -c submodule.srtparse.url=https://github.com/XUJiahua/srtparse.git
           submodule update --init aspeak srtparse
       - uses: dtolnay/rust-toolchain@stable
-        if: inputs.native_rust
         with:
           toolchain: 1.100.0
       - name: Install private application dependencies
@@ -494,7 +493,7 @@ jobs:
       - name: Test native compiler privacy
         run: >-
           node ci/private-step.mjs compiler-privacy source/apps/reader node --test
-          scripts/native-build-privacy.test.mjs scripts/windows-native-paths.test.mjs
+          scripts/native-build-privacy.test.mjs scripts/windows-native-paths.test.mjs scripts/windows-rust-privacy.test.mjs
       - name: Run storage contracts
         run: >-
           node ci/private-step.mjs storage-contracts source/apps/reader pnpm exec vitest run --maxWorkers=1 --reporter=json
