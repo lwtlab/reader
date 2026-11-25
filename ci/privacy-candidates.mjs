@@ -9,7 +9,8 @@ if (names.length > 64) throw new Error('Final candidate file count bound exceede
 for (const name of names) {
   const file = path.join(directory, name);
   if (!lstatSync(file).isFile()) throw new Error('Non-regular candidate');
-  const report = await scanReleasePrivacy(file, { projectDir: process.env.READER_PRIVACY_TOOLS, plainFile: true, profile: 'desktop' });
+  const report = await scanReleasePrivacy(file, { projectDir: process.env.READER_PRIVACY_TOOLS, plainFile: true, profile: 'desktop',
+    onAsarUnclassifiedMatch: details => console.error(JSON.stringify({ kind: 'candidate-asar-unclassified-match', artifact: name, ...details })) });
   if (report.status !== 'PASS') {
     // private-step encrypts this stream; never include matched bytes or source lines.
     console.error(JSON.stringify({ kind: 'candidate-privacy-block', artifact: name,
