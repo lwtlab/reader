@@ -58,10 +58,10 @@ test("raw ASAR header components cannot hide separators or traversal behind libr
     const header = asar.getRawHeader(f.archive).header;
     header.files[invalid] = header.files["clean.js"];
     delete header.files["clean.js"];
-    const pickle = createRequire(requireTools.resolve("@electron/asar"))("chromium-pickle-js");
-    const body = pickle.createEmpty();
+    const { Pickle } = createRequire(requireTools.resolve("@electron/asar"))("./pickle");
+    const body = Pickle.createEmpty();
     body.writeString(JSON.stringify(header));
-    const size = pickle.createEmpty();
+    const size = Pickle.createEmpty();
     size.writeUInt32(body.toBuffer().length);
     writeFileSync(
       f.archive,
