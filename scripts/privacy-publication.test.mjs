@@ -10,20 +10,13 @@ import { auditPublication } from './privacy-publication.mjs';
 import { scanReleasePrivacy } from './release-privacy.mjs';
 import { syntheticHermes } from './release/hermes-strings.test.mjs';
 
-test('real 7z separator aliases never overwrite an audited member', async () => {
+test('real 7z literal backslash paths remain unsafe on each host', async () => {
   const directory = mkdtempSync(path.join(tmpdir(), 'public-privacy-7z-alias-'));
   try {
     const archive = path.join(directory, 'aliases.7z');
     // Authored two-member fixture, not user content or a captured payload.
     writeFileSync(archive, Buffer.from('N3q8ryccAATIRd4snQAAAAAAAAAhAAAAAAAAAHiVj4NBdXRob3JlZCBzeW50aGV0aWMgZmlyc3QgbWVtYmVyLgpBdXRob3JlZCBzeW50aGV0aWMgYWxpYXMgbWVtYmVyLgoAAIEzB64xmmkDYhBp8gjD1qTaxaUgWU7rj+niGwsxfcBqTLzfDEn0TxxPyyI8P4VMF4p9Jx9MjQlaWjLXkZetZpYqCWHV+kWnHCJXFR4chPfRmiPBnZYlVisAFwZCAQlbAAcLAQABIwMBAQVdABAAAAyAjgoBSvsXMQAA', 'base64'));
-    try {
-      await assert.rejects(scanReleasePrivacy(archive), /Unsafe installer\/archive entry/);
-    } catch (error) {
-      const listing = execFileSync(process.platform === 'win32' ? '7z' : '7zz', ['l', '-slt', '-ba', '-sccUTF-8', '--', archive], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
-      const report = await scanReleasePrivacy(archive);
-      console.log('[DEBUG-sevenzip-alias]', JSON.stringify({ members: listing.split(/\r?\n\r?\n/).filter(Boolean).map(block => Object.fromEntries(block.split(/\r?\n/).filter(line => /^(?:Path|Size|CRC|Attributes) = /.test(line)).map(line => line.split(' = ')))), status: report.status, files: report.filesScanned }));
-      throw error;
-    }
+    await assert.rejects(scanReleasePrivacy(archive), /Unsafe installer\/archive entry/);
   } finally { rmSync(directory, { recursive: true, force: true }); }
 });
 

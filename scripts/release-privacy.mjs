@@ -314,7 +314,11 @@ function unpackSevenZip(file, dest, sevenZip) {
     // display/API boundary; raw ZIP/TAR/ASAR header validation stays strict.
     const name = process.platform === "win32" && typeof rawName === "string" ? rawName.replaceAll("\\", "/") : rawName;
     const key = typeof name === "string" ? path.posix.normalize(name).toLowerCase() : "";
-    if (!safeArchiveName(name) || names.has(key) || row.Encrypted === "+") throw new Error("Unsafe installer/archive entry");
+    // 7z's Windows GetPath_Prop maps a literal POSIX backslash to U+F05C
+    // (WSL escape). Its spelling is ambiguous with a real U+F05C filename;
+    // retain rejection instead of silently accepting the escaped raw name.
+    const escapedBackslash = process.platform === "win32" && typeof rawName === "string" && rawName.includes("\uf05c");
+    if (escapedBackslash || !safeArchiveName(name) || names.has(key) || row.Encrypted === "+") throw new Error("Unsafe installer/archive entry");
     names.add(key);
     if (row.Folder === "+" || row.Attributes?.startsWith("D")) continue;
     if (row["Symbolic Link"] || row["Hard Link"]) {
