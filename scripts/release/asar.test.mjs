@@ -7,18 +7,49 @@ import {
   mkdtempSync,
   readFileSync,
   rmSync,
+  statSync,
   writeFileSync,
 } from "node:fs";
 import { createRequire } from "node:module";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
+import { setTimeout as delay } from "node:timers/promises";
 import { pathToFileURL } from "node:url";
 import { scanReleasePrivacy } from "../release-privacy.mjs";
 
 const projectDir = process.env.PRIVACY_TEST_TOOLS || path.resolve("apps/reader");
 const requireTools = createRequire(path.join(projectDir, "package.json"));
 const asar = requireTools("@electron/asar");
+
+// asar 3.x can resolve before its stream has finished, particularly on Windows.
+// Remove an earlier generation first so its complete header cannot satisfy the wait.
+async function packFixture(source, destination) {
+  asar.uncache(destination);
+  rmSync(destination, { force: true });
+  await asar.createPackage(source, destination);
+  const deadline = Date.now() + 30000;
+  const packedEnd = (tree) =>
+    Object.values(tree).reduce(
+      (end, entry) =>
+        entry.files
+          ? Math.max(end, packedEnd(entry.files))
+          : entry.unpacked
+            ? end
+            : Math.max(end, Number(entry.offset) + entry.size),
+      0,
+    );
+  while (Date.now() < deadline) {
+    try {
+      const { header, headerSize } = asar.getRawHeader(destination);
+      if (statSync(destination).size === 8 + headerSize + packedEnd(header.files)) return;
+    } catch {
+      /* The writer may not have completed the header yet. */
+    }
+    await delay(10);
+  }
+  throw new Error("Authored ASAR fixture did not finish writing");
+}
 
 function fixture(t) {
   const root = mkdtempSync(path.join(os.tmpdir(), "privacy-asar-paths-"));
@@ -40,10 +71,37 @@ module.exports = { ...original, listPackage(file) {
   return { root, payload, tools, archive: path.join(root, "runtime.asar") };
 }
 
+test("ASAR fixtures await delayed tails and cannot consume a previous generation", async (t) => {
+  const f = fixture(t);
+  const source = path.join(f.payload, "nested/clean.js");
+  writeFileSync(source, "export const authored = 'previous';");
+  await packFixture(f.payload, f.archive);
+  writeFileSync(source, "export const authored = 'next complete generation';");
+  const next = path.join(f.root, "next.asar");
+  await packFixture(f.payload, next);
+  const bytes = readFileSync(next);
+  const { headerSize } = asar.getRawHeader(next);
+  const split = 8 + headerSize;
+  const original = asar.createPackage;
+  asar.createPackage = async (_source, destination) => {
+    setTimeout(() => {
+      writeFileSync(destination, bytes.subarray(0, split));
+      setTimeout(() => appendFileSync(destination, bytes.subarray(split)), 20);
+    }, 10);
+  };
+  try {
+    await packFixture(f.payload, f.archive);
+    assert.deepEqual(readFileSync(f.archive), bytes);
+    assert.equal((await scanReleasePrivacy(f.archive, { projectDir })).status, "PASS");
+  } finally {
+    asar.createPackage = original;
+  }
+});
+
 test("real ASAR inspection handles Windows listings without changing member names", async (t) => {
   const f = fixture(t);
   writeFileSync(path.join(f.payload, "nested/clean.js"), "export const authored = true;");
-  await asar.createPackage(f.payload, f.archive);
+  await packFixture(f.payload, f.archive);
   const report = await scanReleasePrivacy(f.archive, { projectDir: f.tools });
   assert.equal(report.status, "PASS");
   assert.equal(report.filesScanned, 2);
@@ -53,7 +111,7 @@ test("ASAR inspection still sees nested credentials and never prints their value
   const f = fixture(t);
   const secret = ["ghp_", "abcdefghijklmnopqrstuvwxyz0123456789"].join("");
   writeFileSync(path.join(f.payload, "nested/clean.js"), `const token = '${secret}';`);
-  await asar.createPackage(f.payload, f.archive);
+  await packFixture(f.payload, f.archive);
   const report = await scanReleasePrivacy(f.archive, { projectDir: f.tools });
   assert.equal(report.status, "FAIL");
   assert(report.findings.some((item) => item.file.endsWith("runtime.asar!/nested/clean.js")));
@@ -89,7 +147,7 @@ test("packaged ASAR uses classified member bytes without exempting header, tail 
   mkdirSync(resources);
   const archive = path.join(resources, "runtime.asar");
   const options = { projectDir, profile: "desktop" };
-  const pack = () => asar.createPackage(f.payload, archive);
+  const pack = () => packFixture(f.payload, archive);
   await pack();
   assert.equal((await scanReleasePrivacy(f.payload, options)).status, "PASS");
   assert.equal((await scanReleasePrivacy(archive, options)).status, "PASS");
@@ -166,12 +224,12 @@ test("reviewed fragment approval binds the complete file and cannot bless depend
   const resources = path.join(f.root, "resources");
   mkdirSync(resources);
   const archive = path.join(resources, "runtime.asar");
-  await asar.createPackage(f.payload, archive);
+  await packFixture(f.payload, archive);
   assert.equal((await scan(resources, { projectDir })).status, "PASS");
   const dependency = path.join(f.payload, "node_modules/unreviewed/index.js");
   mkdirSync(path.dirname(dependency), { recursive: true });
   writeFileSync(dependency, source);
-  await asar.createPackage(f.payload, archive);
+  await packFixture(f.payload, archive);
   assert.equal((await scan(resources, { projectDir })).status, "FAIL");
 });
 
@@ -179,7 +237,7 @@ test("raw ASAR header components cannot hide separators or traversal behind libr
   for (const invalid of ["dir/a.js", "../ab.js", "bad\\x.js"]) {
     const f = fixture(t);
     writeFileSync(path.join(f.payload, "clean.js"), "authored");
-    await asar.createPackage(f.payload, f.archive);
+    await packFixture(f.payload, f.archive);
     const header = asar.getRawHeader(f.archive).header;
     header.files[invalid] = header.files["clean.js"];
     delete header.files["clean.js"];
@@ -204,12 +262,12 @@ test("ASAR audits discard cached headers when exact candidate bytes change", asy
   const f = fixture(t);
   const clean = path.join(f.payload, "nested/clean.js");
   writeFileSync(clean, "authored");
-  await asar.createPackage(f.payload, f.archive);
+  await packFixture(f.payload, f.archive);
   assert.equal((await scanReleasePrivacy(f.archive, { projectDir })).status, "PASS");
   rmSync(clean);
   writeFileSync(path.join(f.payload, "nested/private.log"), "authored");
   const replacement = path.join(f.root, "replacement.asar");
-  await asar.createPackage(f.payload, replacement);
+  await packFixture(f.payload, replacement);
   copyFileSync(replacement, f.archive);
   const report = await scanReleasePrivacy(f.archive, { projectDir });
   assert.equal(report.status, "FAIL");
@@ -219,7 +277,7 @@ test("ASAR audits discard cached headers when exact candidate bytes change", asy
 test("truncated ASAR members cannot be reported as zero-padded complete scans", async (t) => {
   const f = fixture(t);
   writeFileSync(path.join(f.payload, "nested/clean.js"), "authored original bytes");
-  await asar.createPackage(f.payload, f.archive);
+  await packFixture(f.payload, f.archive);
   const bytes = readFileSync(f.archive);
   writeFileSync(f.archive, bytes.subarray(0, bytes.length - 5));
   await assert.rejects(scanReleasePrivacy(f.archive, { projectDir }), /ASAR member range/);
