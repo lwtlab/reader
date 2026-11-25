@@ -1,5 +1,5 @@
 name: Desktop candidate packages
-run-name: Desktop ${{ inputs.target || 'all' }} candidates
+run-name: Desktop ${{ inputs.contracts_only && 'storage contracts' || format('{0} candidates', inputs.target || 'all') }}
 
 on:
   workflow_dispatch:
@@ -427,7 +427,7 @@ jobs:
 
   windows-storage:
     if: inputs.contracts_only
-    runs-on: windows-2022
+    runs-on: windows-latest
     timeout-minutes: 15
     defaults:
       run:
