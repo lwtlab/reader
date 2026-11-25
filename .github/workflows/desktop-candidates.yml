@@ -151,7 +151,7 @@ jobs:
 
       - name: Test desktop lifecycle and browser assets
         run: >-
-          node ci/private-step.mjs host-contracts source/apps/reader pnpm exec vitest run
+          node ci/private-step.mjs host-contracts source/apps/reader pnpm exec vitest run --maxWorkers=2
           scripts/reader-module-preloads.test.ts electron/main lib/desktop app/api/health/route.test.ts
           lib/transcribe/asr-readiness.test.ts lib/transcribe/availability.test.ts lib/transcribe/paths.test.ts
           lib/transcribe/sync.test.ts lib/transcribe/qwen3/manager.test.ts app/api/transcribe/route.test.ts
@@ -206,6 +206,7 @@ jobs:
         timeout-minutes: 40
         env:
           CI: true
+          NODE_OPTIONS: --max-old-space-size=4096
           READER_BUILD_SHA: ${{ inputs.source_ref }}
           APPIMAGE_EXTRACT_AND_RUN: '1'
         run: node ci/private-step.mjs build source/apps/reader pnpm dist --profile=core --unsigned --${{ matrix.arch }} --publish never
