@@ -28,7 +28,7 @@ on:
         type: boolean
 
       contracts_only:
-        description: Run Windows storage contracts only (no candidates or release acceptance)
+        description: Run Windows desktop contracts only (no candidates or release acceptance)
         required: true
         default: false
         type: boolean
@@ -467,6 +467,10 @@ jobs:
         run: >-
           node ci/private-step.mjs native-import source/apps/reader node --input-type=module
           -e "await import('./scripts/desktop-storage-probe.mjs'); console.log('PASS native ESM storage probe import')"
+      - name: Check pinned Windows PDFium input
+        run: >-
+          node ci/private-step.mjs pdfium-input source/apps/reader node --input-type=module
+          -e "const {preparePdfiumBuild}=await import('./scripts/pdfium-build.mjs'); const {resolve}=await import('node:path'); await preparePdfiumBuild(resolve('../..')); console.log('PASS pinned Windows PDFium library and notices')"
       - name: Run storage contracts
         run: >-
           node ci/private-step.mjs storage-contracts source/apps/reader pnpm exec vitest run --maxWorkers=1 --reporter=json
