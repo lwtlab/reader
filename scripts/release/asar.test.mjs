@@ -1,6 +1,14 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
-import { appendFileSync, copyFileSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import {
+  appendFileSync,
+  copyFileSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { createRequire } from "node:module";
 import os from "node:os";
 import path from "node:path";
@@ -62,8 +70,14 @@ test("packaged ASAR uses classified member bytes without exempting header, tail 
     previewModeEncryptionKey: key("encryption"),
   };
   const reference = path.join(next, "server/server-reference-manifest.json");
-  writeFileSync(reference, JSON.stringify({ node: {}, edge: {}, encryptionKey: Buffer.alloc(32, 42).toString("base64") }));
-  writeFileSync(path.join(next, "prerender-manifest.json"), JSON.stringify({ version: 4, routes: { "/favicon.ico": {} }, dynamicRoutes: {}, preview }));
+  writeFileSync(
+    reference,
+    JSON.stringify({ node: {}, edge: {}, encryptionKey: Buffer.alloc(32, 42).toString("base64") }),
+  );
+  writeFileSync(
+    path.join(next, "prerender-manifest.json"),
+    JSON.stringify({ version: 4, routes: { "/favicon.ico": {} }, dynamicRoutes: {}, preview }),
+  );
   writeFileSync(path.join(next, "server/preview-props.json"), JSON.stringify(preview));
   const resources = path.join(f.root, "resources");
   mkdirSync(resources);
