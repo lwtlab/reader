@@ -424,6 +424,7 @@ export async function scanReleasePrivacy(input, { projectDir = path.join(reposit
     const needle = Buffer.from(row.Secret);
     if (needle.length < 8 || needle.length > 4096) return;
     const key = matchKey(row), occurrences = [], members = asarMembers.get(file);
+    const safeDigest = file => fileDigests.get(file) === row.Secret ? undefined : fileDigests.get(file);
     const diagnosticKey = `${file}\0${row.RuleID}\0${key}`;
     if (asarDiagnostics.has(diagnosticKey)) return;
     asarDiagnostics.add(diagnosticKey);
@@ -439,13 +440,13 @@ export async function scanReleasePrivacy(input, { projectDir = path.join(reposit
         const member = members.find(item => start >= item.start && start + needle.length <= item.end);
         occurrences.push(member ? {
           member: member.name.includes(row.Secret) ? "[redacted]" : member.name,
-          fileSha256: fileDigests.get(member.file),
+          fileSha256: safeDigest(member.file),
           offset: start - member.start,
           classified: classifiedMatches.get(member.file)?.has(key) ?? false,
         } : { member: null, offset: start, classified: false,
           boundaryMembers: [start, start + needle.length - 1].map(offset => {
             const adjacent = members.find(item => offset >= item.start && offset < item.end);
-            return adjacent ? { member: adjacent.name.includes(row.Secret) ? "[redacted]" : adjacent.name, fileSha256: fileDigests.get(adjacent.file), offset: offset - adjacent.start } : null;
+            return adjacent ? { member: adjacent.name.includes(row.Secret) ? "[redacted]" : adjacent.name, fileSha256: safeDigest(adjacent.file), offset: offset - adjacent.start } : null;
           }),
         });
       }

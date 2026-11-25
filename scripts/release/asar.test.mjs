@@ -196,6 +196,41 @@ test("blocked ASAR diagnostics contain only bounded member positions and digests
   assert.ok(!JSON.stringify(diagnostics).includes(value));
 });
 
+test("diagnostics cannot echo a matched value through a neighbouring file digest", async (t) => {
+  const f = fixture(t);
+  let suffix, value;
+  for (let i = 0; i < 10000; i++) {
+    suffix = `a';// authored digest boundary ${i}`;
+    value = createHash("sha256").update(suffix).digest("hex");
+    if (value.endsWith("a")) break;
+  }
+  assert.ok(value.endsWith("a"));
+  writeFileSync(path.join(f.payload, "nested/a.txt"), `const apiKey='${value.slice(0, -1)}`);
+  writeFileSync(path.join(f.payload, "nested/b.txt"), suffix);
+  const resources = path.join(f.root, "resources");
+  mkdirSync(resources);
+  await packFixture(f.payload, path.join(resources, "runtime.asar"));
+  const diagnostics = [];
+  assert.equal(
+    (
+      await scanReleasePrivacy(resources, {
+        projectDir,
+        onAsarUnclassifiedMatch: (record) => diagnostics.push(record),
+      })
+    ).status,
+    "FAIL",
+  );
+  assert.ok(
+    diagnostics.some(
+      (row) => row.secretSha256 === createHash("sha256").update(value).digest("hex"),
+    ),
+  );
+  assert.ok(
+    !JSON.stringify(diagnostics).includes(value),
+    "A digest that equals the matched value must be redacted too",
+  );
+});
+
 test("packaged ASAR uses classified member bytes without exempting header, tail or other members", async (t) => {
   const f = fixture(t);
   const next = path.join(f.payload, "apps/reader/.next");

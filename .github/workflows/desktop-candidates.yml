@@ -39,6 +39,12 @@ on:
         default: false
         type: boolean
 
+      browser_assets:
+        description: Rebuild and inspect the fixed Windows browser module in contracts-only diagnostics (no candidates)
+        required: true
+        default: false
+        type: boolean
+
 permissions:
   contents: read
   actions: read
@@ -490,6 +496,10 @@ jobs:
         run: >-
           node ci/private-step.mjs native-import source/apps/reader node --input-type=module
           -e "await import('./scripts/desktop-storage-probe.mjs'); console.log('PASS native ESM storage probe import')"
+      - name: Inspect fixed Windows browser assignment
+        if: inputs.browser_assets
+        timeout-minutes: 5
+        run: node ci/private-step.mjs browser-proof source/apps/reader node scripts/windows-browser-privacy.mjs
       - name: Check pinned Windows PDFium input
         run: >-
           node ci/private-step.mjs pdfium-input source/apps/reader node --input-type=module
