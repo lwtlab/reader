@@ -278,7 +278,8 @@ print(json.dumps(ranges))
 // never reach the filesystem. Do not execute self-extracting installers/AppImages.
 function unpackSevenZip(file, dest, sevenZip) {
   // Pin the DEB outer container; newer 7-Zip otherwise auto-opens its nameless XZ stream.
-  const container = /\.deb$/i.test(file) ? ["-tAr"] : [];
+  const nsis = /\.exe$/i.test(file);
+  const container = /\.deb$/i.test(file) ? ["-tAr"] : nsis ? ["-tNsis"] : [];
   const listing = command(sevenZip, ["l", "-slt", "-ba", "-sccUTF-8", ...container, "--", file], 32 * 1024 ** 2);
   if (listing.status !== 0) throw new Error("Installer/archive listing failed");
   const rows = listing.stdout.split(/\r?\n\r?\n/).filter(block => block.trim()).map((block) => {
@@ -308,7 +309,10 @@ function unpackSevenZip(file, dest, sevenZip) {
   const names = new Set();
   let total = 0;
   for (const row of rows) {
-    const name = row.Path, size = Number(row.Size);
+    const rawName = row.Path;
+    // Windows 7-Zip renders member separators natively. Normalize only its
+    // display/API boundary; raw ZIP/TAR/ASAR header validation stays strict.
+    const name = process.platform === "win32" && typeof rawName === "string" ? rawName.replaceAll("\\", "/") : rawName;
     const key = typeof name === "string" ? path.posix.normalize(name).toLowerCase() : "";
     if (!safeArchiveName(name) || names.has(key) || row.Encrypted === "+") throw new Error("Unsafe installer/archive entry");
     names.add(key);
@@ -319,9 +323,17 @@ function unpackSevenZip(file, dest, sevenZip) {
       writeFileSync(target, row["Symbolic Link"] || row["Hard Link"], { mode: 0o600 });
       continue;
     }
-    if (!Number.isSafeInteger(size) || size < 0 || size > 1024 ** 3 || (total += size) > 8 * 1024 ** 3) throw new Error("Archive size bound");
-    const result = spawnSync(sevenZip, ["x", "-so", "-spd", "-y", ...container, "--", file, ...(namelessTarStream ? [] : [name])], { maxBuffer: Math.max(size + 65536, 1024 * 1024), timeout: 300000, input: "" });
-    if (result.error || result.status !== 0 || result.stdout.length !== size) throw new Error("Archive member could not be completely read");
+    // NSIS compressed records need not store an unpacked size. Force the NSIS
+    // decoder and read to successful EOF under the SAME member/total bounds;
+    // an absent size in any other format remains incomplete, never zero.
+    const unknownSize = nsis && row.Size === "";
+    const size = !unknownSize && /^\d+$/.test(row.Size ?? "") ? Number(row.Size) : NaN;
+    if (!unknownSize && (!Number.isSafeInteger(size) || size < 0 || size > 1024 ** 3 || total + size > 8 * 1024 ** 3)) throw new Error("Archive size bound");
+    const maximum = unknownSize ? Math.min(1024 ** 3, 8 * 1024 ** 3 - total) : size;
+    const result = spawnSync(sevenZip, ["x", "-so", "-spd", "-y", ...container, "--", file, ...(namelessTarStream ? [] : [rawName])], { maxBuffer: unknownSize ? maximum + 1 : Math.max(size + 65536, 1024 * 1024), timeout: 300000, input: "" });
+    if (result.error || result.status !== 0 || (!unknownSize && result.stdout.length !== size)) throw new Error("Archive member could not be completely read");
+    if (result.stdout.length > maximum) throw new Error("Archive size bound");
+    total += result.stdout.length;
     const target = path.join(dest, name);
     mkdirSync(path.dirname(target), { recursive: true, mode: 0o700 });
     writeFileSync(target, result.stdout, { mode: 0o600 });

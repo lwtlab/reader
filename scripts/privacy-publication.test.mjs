@@ -10,6 +10,16 @@ import { auditPublication } from './privacy-publication.mjs';
 import { scanReleasePrivacy } from './release-privacy.mjs';
 import { syntheticHermes } from './release/hermes-strings.test.mjs';
 
+test('real 7z separator aliases never overwrite an audited member', async () => {
+  const directory = mkdtempSync(path.join(tmpdir(), 'public-privacy-7z-alias-'));
+  try {
+    const archive = path.join(directory, 'aliases.7z');
+    // Authored two-member fixture, not user content or a captured payload.
+    writeFileSync(archive, Buffer.from('N3q8ryccAATIRd4snQAAAAAAAAAhAAAAAAAAAHiVj4NBdXRob3JlZCBzeW50aGV0aWMgZmlyc3QgbWVtYmVyLgpBdXRob3JlZCBzeW50aGV0aWMgYWxpYXMgbWVtYmVyLgoAAIEzB64xmmkDYhBp8gjD1qTaxaUgWU7rj+niGwsxfcBqTLzfDEn0TxxPyyI8P4VMF4p9Jx9MjQlaWjLXkZetZpYqCWHV+kWnHCJXFR4chPfRmiPBnZYlVisAFwZCAQlbAAcLAQABIwMBAQVdABAAAAyAjgoBSvsXMQAA', 'base64'));
+    await assert.rejects(scanReleasePrivacy(archive), /Unsafe installer\/archive entry/);
+  } finally { rmSync(directory, { recursive: true, force: true }); }
+});
+
 test('public Hermes scanner retains unreviewed cross-string values and whole credentials', async () => {
   const directory = mkdtempSync(path.join(tmpdir(), 'public-privacy-hermes-'));
   try {
