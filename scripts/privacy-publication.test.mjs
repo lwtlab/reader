@@ -2,13 +2,35 @@ import './release/asar.test.mjs';
 import assert from 'node:assert/strict';
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { generateKeyPairSync } from 'node:crypto';
-import { execFileSync } from 'node:child_process';
+import { execFileSync, spawnSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
 import { auditPublication } from './privacy-publication.mjs';
 import { scanReleasePrivacy } from './release-privacy.mjs';
 import { syntheticHermes } from './release/hermes-strings.test.mjs';
+
+test('final candidate audit fails closed with bounded redacted artifact diagnostics', () => {
+  const directory = mkdtempSync(path.join(tmpdir(), 'candidate-diagnostic-'));
+  try {
+    writeFileSync(path.join(directory, 'metadata.json'), '{"authored":"synthetic"}');
+    const run = () => spawnSync(process.execPath, ['ci/privacy-candidates.mjs', directory], { encoding: 'utf8' });
+    assert.equal(run().status, 0);
+    const token = ['ghp_', 'abcdefghijklmnopqrstuvwxyz0123456789'].join('');
+    execFileSync('python3', ['-c', 'import sys,zipfile\nwith zipfile.ZipFile(sys.argv[1],"w") as z:\n for n in range(40):z.writestr("authored-%s.json"%n,sys.argv[2])', path.join(directory, 'leak.zip'), JSON.stringify({ token })]);
+    const result = run();
+    assert.notEqual(result.status, 0);
+    const line = result.stderr.split(/\r?\n/).find(line => line.startsWith('{"kind":"candidate-privacy-block"'));
+    const diagnostic = JSON.parse(line);
+    assert.equal(diagnostic.artifact, 'leak.zip');
+    assert.match(diagnostic.artifactSha256, /^[a-f0-9]{64}$/);
+    assert.ok(diagnostic.findingCount >= 40);
+    assert.equal(diagnostic.findings.length, 32);
+    assert.equal(diagnostic.truncated, true);
+    assert(!JSON.stringify(diagnostic).includes(directory));
+    assert(!result.stderr.includes(token));
+  } finally { rmSync(directory, { recursive: true, force: true }); }
+});
 
 test('real 7z literal backslash paths remain unsafe on each host', async () => {
   const directory = mkdtempSync(path.join(tmpdir(), 'public-privacy-7z-alias-'));
