@@ -504,6 +504,8 @@ jobs:
         run: >-
           node ci/private-step.mjs pdfium-input source/apps/reader node --input-type=module
           -e "const {preparePdfiumBuild}=await import('./scripts/pdfium-build.mjs'); const {resolve}=await import('node:path'); await preparePdfiumBuild(resolve('../..')); console.log('PASS pinned Windows PDFium library and notices')"
+      - name: Test native installer archive privacy
+        run: node ci/private-step.mjs installer-privacy source/apps/reader node scripts/windows-installer-privacy.mjs
       - name: Test native compiler privacy
         run: >-
           node ci/private-step.mjs compiler-privacy source/apps/reader node --test
