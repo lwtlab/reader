@@ -67,7 +67,9 @@ jobs:
     if: ${{ !inputs.contracts_only }}
     needs: targets
     name: ${{ matrix.id }}
-    timeout-minutes: 75
+    # Cold Intel tool install/build plus the complete recovery/offline/privacy tail
+    # exceeded 75 minutes in 45777132115. Per-step limits stay unchanged.
+    timeout-minutes: ${{ matrix.id == 'darwin-x64' && 105 || 75 }}
     strategy:
       fail-fast: false
       matrix:
