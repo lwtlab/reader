@@ -10,6 +10,85 @@
     },
     "ios": null
   },
-  "desktop": null,
+  "desktop": {
+    "version": "0.26.0",
+    "updatePolicy": "manual",
+    "releaseUrl": "https://github.com/lwtlab/reader/releases/tag/desktop/v0.26.0",
+    "checksumsUrl": "https://github.com/lwtlab/reader/releases/download/desktop/v0.26.0/SHA256SUMS",
+    "assets": [
+      {
+        "platform": "darwin",
+        "arch": "arm64",
+        "profile": "core",
+        "name": "Reader-0.26.0-mac-arm64-core.dmg",
+        "url": "https://github.com/lwtlab/reader/releases/download/desktop/v0.26.0/Reader-0.26.0-mac-arm64-core.dmg",
+        "sha256": "bfa85708067a1faa6d940455970ecbb377a808996c4d476a39f3f5df3248a009",
+        "bytes": 180112839
+      },
+      {
+        "platform": "darwin",
+        "arch": "arm64",
+        "profile": "core",
+        "name": "Reader-0.26.0-mac-arm64-core.zip",
+        "url": "https://github.com/lwtlab/reader/releases/download/desktop/v0.26.0/Reader-0.26.0-mac-arm64-core.zip",
+        "sha256": "3f500354753482c6ac591c0e03bbf10c88549a7ea55b487c7af5dd48f70932ac",
+        "bytes": 176851634
+      },
+      {
+        "platform": "darwin",
+        "arch": "x64",
+        "profile": "core",
+        "name": "Reader-0.26.0-mac-x64-core.dmg",
+        "url": "https://github.com/lwtlab/reader/releases/download/desktop/v0.26.0/Reader-0.26.0-mac-x64-core.dmg",
+        "sha256": "0140237165e6a0624a7bbdb6811d68a0b93ed2e26632007cd04e182d06409966",
+        "bytes": 188110544
+      },
+      {
+        "platform": "darwin",
+        "arch": "x64",
+        "profile": "core",
+        "name": "Reader-0.26.0-mac-x64-core.zip",
+        "url": "https://github.com/lwtlab/reader/releases/download/desktop/v0.26.0/Reader-0.26.0-mac-x64-core.zip",
+        "sha256": "e9b1390f1917fd796e9af4b6f9af7eb81f2a43cf9f949b36a257d783c4043b09",
+        "bytes": 184771229
+      },
+      {
+        "platform": "linux",
+        "arch": "x64",
+        "profile": "core",
+        "name": "Reader-0.26.0-linux-x64-core.AppImage",
+        "url": "https://github.com/lwtlab/reader/releases/download/desktop/v0.26.0/Reader-0.26.0-linux-x64-core.AppImage",
+        "sha256": "d63627664df33a03a0460242aa62c87519bc28bcfc54ec94602ef4e649a7f092",
+        "bytes": 172642423
+      },
+      {
+        "platform": "linux",
+        "arch": "x64",
+        "profile": "core",
+        "name": "Reader-0.26.0-linux-x64-core.deb",
+        "url": "https://github.com/lwtlab/reader/releases/download/desktop/v0.26.0/Reader-0.26.0-linux-x64-core.deb",
+        "sha256": "f96f11a2bf2273fc8cf44eb9c399bc64882213c5c114741886801187c0b31d23",
+        "bytes": 147156088
+      },
+      {
+        "platform": "win32",
+        "arch": "x64",
+        "profile": "core",
+        "name": "Reader-0.26.0-win-x64-core-portable.exe",
+        "url": "https://github.com/lwtlab/reader/releases/download/desktop/v0.26.0/Reader-0.26.0-win-x64-core-portable.exe",
+        "sha256": "6606c05ab02670d3f9334f800ce32ff35f70b2c51b0056dc86ef8c2b899facc6",
+        "bytes": 140361517
+      },
+      {
+        "platform": "win32",
+        "arch": "x64",
+        "profile": "core",
+        "name": "Reader-0.26.0-win-x64-core-setup.exe",
+        "url": "https://github.com/lwtlab/reader/releases/download/desktop/v0.26.0/Reader-0.26.0-win-x64-core-setup.exe",
+        "sha256": "ab130bb0e8f9c934a3d1876011d6d93bfe7577ac7e2999fc55b7785556183213",
+        "bytes": 157274342
+      }
+    ]
+  },
   "extension": null
 }

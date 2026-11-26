@@ -4,7 +4,7 @@
   "version": "0.26.0",
   "profile": "core",
   "sourceSha": "df4d7deee21fd3722eabb38a17f5990a1872c870",
-  "decisionDate": "2026-11-26",
+  "decisionDate": "2026-11-27",
   "authority": "explicit-maintainer-instruction-in-current-session",
   "manualAcceptance": {
     "status": "skipped-by-maintainer",
@@ -72,11 +72,9 @@
       "sha256": "ab130bb0e8f9c934a3d1876011d6d93bfe7577ac7e2999fc55b7785556183213"
     }
   ],
-  "publicationAuthorized": false,
+  "publicationAuthorized": true,
   "websiteDeploymentAuthorized": false,
-  "otherRequirements": [
-    "explicit-release-publication-authorization"
-  ],
+  "otherRequirements": [],
   "installerSnapshotStatus": "engineering-verified-materials-complete",
   "previousInstallerSnapshot": {
     "schemaVersion": 1,
@@ -227,5 +225,12 @@
     "sourceInventoryCoverage": "incomplete-with-declared-supplements-and-unshipped-components",
     "actualPayloadSharpAndLibvips": "absent-in-all-eight-installers",
     "approvalClaim": "Exact material coverage is distinct from permission to publish or deploy"
+  },
+  "publicationAuthorization": {
+    "authority": "explicit-maintainer-instruction-in-current-session",
+    "date": "2026-11-27",
+    "instruction": "发布并合并PR",
+    "scope": "Publish the eight verified Reader core 0.26.0 desktop installers and merge private PR #332; Chrome store submission and website deployment excluded",
+    "websiteDeploymentAuthorized": false
   }
 }
