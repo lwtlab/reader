@@ -10,9 +10,19 @@ Reader 浏览器扩展用于保存当前页面、剪藏文章，以及在支持�
 
 ## 当前安装入口
 
-从官网下载页进入 Chrome Web Store 的正式安装页，核对发布者和版本。下载页尚未提供商店入口时，表示扩展尚未公开发布；请勿从来源不明的网站下载同名扩展。
+Reader Clipper **0.26.0** 已发布手动安装 ZIP，配套 Reader 桌面版 **0.26.0**。目前未在 Chrome Web Store 上架；ZIP 下载与商店安装是独立入口，手动安装版不通过商店自动更新。
 
-如需参与开发测试，请向维护者获取对应版本的扩展 ZIP，解压后在浏览器扩展管理页面开启开发者模式，选择“加载已解压的扩展程序”，并指定包含 manifest.json 的目录。这是开发测试安装方式，更新时需要自行替换文件。
+1. 从教程导航中的“下载与安装”或[官方版本页面](https://github.com/lwtlab/reader/releases/tag/extension/v0.26.0)下载 [reader-clipper-v0.26.0.zip](https://github.com/lwtlab/reader/releases/download/extension/v0.26.0/reader-clipper-v0.26.0.zip)。
+2. 核对版本和 [SHA256SUMS 校验文件](https://github.com/lwtlab/reader/releases/download/extension/v0.26.0/SHA256SUMS)，确认来源为 `lwtlab/reader` 的官方 Release。
+3. 解压到准备长期保留的目录，例如 `Reader-Clipper`。安装后不要删除或移动该目录，浏览器会持续从这里加载文件。
+4. 在 Chrome 地址栏打开 `chrome://extensions/`，开启“开发者模式”，选择“加载已解压的扩展程序”，再选择包含 `manifest.json` 的目录。
+5. 确认扩展列表显示 Reader Clipper 0.26.0，再按下节连接 Reader。
+
+## 手动更新扩展
+
+下载新版本后先核对对应的桌面版本和摘要，再解压，用新版本文件替换原固定目录中的文件。在 `chrome://extensions/` 的 Reader Clipper 卡片上点击“重新加载”。继续使用同一目录，避免每次更新重复添加一份扩展。
+
+手动安装版不会自动获取新版；请从官方版本页面或下载页查看更新。以后如提供 Chrome Web Store 入口，请从官网下载页进入正式商店页面，不把 ZIP 当作商店包安装。
 
 ## 连接 Reader
 

@@ -16,7 +16,9 @@ function published() {
 }
 
 test('unpublished channels have no executable or store download links', () => {
-  assert.deepEqual(releaseDownloads({ schemaVersion: 1, desktop: null, extension: null }), { desktop: null, extension: null, assets: [] });
+  const unavailable = { desktop: null, extension: null, extensionUnpacked: null, assets: [] };
+  assert.deepEqual(releaseDownloads({ schemaVersion: 1, desktop: null, extension: null }), unavailable);
+  assert.deepEqual(releaseDownloads({ schemaVersion: 1, desktop: null, extension: null, extensionUnpacked: null }), unavailable);
 });
 test('reviewed metadata names all targets and separate Mac architectures', () => {
   assert.deepEqual(releaseDownloads(published()).assets.map(a => a.label), [
@@ -51,4 +53,69 @@ test('extension requires the declared published companion and official store', (
     d => { d.extension.storeUrl = 'https://example.com/reader.zip'; },
     d => { d.extension.storeUrl += '?tracking=1'; },
   ]) { const d = published(); change(d); assert.throws(() => releaseDownloads(d)); }
+});
+
+function unpacked() {
+  const d = published();
+  d.extension = null;
+  d.extensionUnpacked = {
+    version: '0.26.0', desktopVersion: '0.26.0',
+    releaseUrl: `${root}/tag/extension/v0.26.0`,
+    name: 'reader-clipper-v0.26.0.zip',
+    url: `${root}/download/extension/v0.26.0/reader-clipper-v0.26.0.zip`,
+    sha256: 'b'.repeat(64), bytes: 309272,
+  };
+  return d;
+}
+
+test('published unpacked extension is available independently of the absent store channel', () => {
+  const d = unpacked(), result = releaseDownloads(d);
+  assert.equal(result.extension, null);
+  assert.deepEqual(result.extensionUnpacked, d.extensionUnpacked);
+  assert.deepEqual(result.assets, releaseDownloads(published()).assets);
+});
+
+test('an extension revision can declare the existing desktop as its companion', () => {
+  const d = unpacked();
+  d.extensionUnpacked.version = '0.26.1';
+  d.extensionUnpacked.name = 'reader-clipper-v0.26.1.zip';
+  d.extensionUnpacked.releaseUrl = `${root}/tag/extension/v0.26.1`;
+  d.extensionUnpacked.url = `${root}/download/extension/v0.26.1/reader-clipper-v0.26.1.zip`;
+  assert.equal(releaseDownloads(d).extensionUnpacked.desktopVersion, '0.26.0');
+});
+
+test('store availability remains compatible with absent, null or independently published ZIP metadata', () => {
+  const d = published();
+  assert.deepEqual(releaseDownloads(d).extension, d.extension);
+  assert.equal(releaseDownloads(d).extensionUnpacked, null);
+  d.extensionUnpacked = null;
+  assert.equal(releaseDownloads(d).extensionUnpacked, null);
+  d.extensionUnpacked = unpacked().extensionUnpacked;
+  assert.deepEqual(releaseDownloads(d).extension, d.extension);
+  assert.deepEqual(releaseDownloads(d).extensionUnpacked, d.extensionUnpacked);
+});
+
+test('unpacked extension rejects incorrect source, filename, digest, size, version or companion', () => {
+  for (const change of [
+    d => { d.desktop = null; },
+    d => { d.extensionUnpacked.version = '0.26.1'; },
+    d => { d.extensionUnpacked.version = '0.26.0-beta.1'; },
+    d => { d.extensionUnpacked.desktopVersion = '0.25.0'; },
+    d => { d.extensionUnpacked.releaseUrl = `${root}/latest`; },
+    d => { d.extensionUnpacked.releaseUrl = `${root}/tag/desktop/v0.26.0`; },
+    d => { d.extensionUnpacked.name = 'reader-clipper-v0.26.1.zip'; },
+    d => { d.extensionUnpacked.url = 'https://unreviewed.example/reader-clipper-v0.26.0.zip'; },
+    d => { d.extensionUnpacked.url = d.extensionUnpacked.url.replace('/lwtlab/reader/', '/another/reader/'); },
+    d => { d.extensionUnpacked.url += '?tracking=1'; },
+    d => { d.extensionUnpacked.sha256 = 'invalid'; },
+    d => { d.extensionUnpacked.bytes = 0; },
+    d => { d.extensionUnpacked.bytes = 1.5; },
+  ]) { const d = unpacked(); change(d); assert.throws(() => releaseDownloads(d)); }
+});
+
+test('official extension URLs may encode the release tag slash', () => {
+  const d = unpacked();
+  d.extensionUnpacked.releaseUrl = d.extensionUnpacked.releaseUrl.replace('extension/v', 'extension%2Fv');
+  d.extensionUnpacked.url = d.extensionUnpacked.url.replace('extension/v', 'extension%2Fv');
+  assert.deepEqual(releaseDownloads(d).extensionUnpacked, d.extensionUnpacked);
 });
