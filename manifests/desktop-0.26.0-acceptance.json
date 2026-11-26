@@ -3,14 +3,14 @@
   "kind": "reader-release-acceptance-decision",
   "version": "0.26.0",
   "profile": "core",
-  "sourceSha": "85181a57add13dd8d723e7a420a7a94a165beedb",
+  "sourceSha": "df4d7deee21fd3722eabb38a17f5990a1872c870",
   "decisionDate": "2026-11-26",
   "authority": "explicit-maintainer-instruction-in-current-session",
   "manualAcceptance": {
     "status": "skipped-by-maintainer",
     "performed": false,
     "passed": false,
-    "scope": "This core 0.26.0 release, including replacement candidates; the eight installers below are the current engineering-verified snapshot",
+    "scope": "This core 0.26.0 release, including replacement candidates; these are the final eight verified installer hashes",
     "casesPerInstaller": 12,
     "totalCases": 96,
     "evidenceClaim": "No human acceptance or trusted-human publisher receipt is claimed",
@@ -26,114 +26,206 @@
     {
       "target": "darwin-arm64",
       "name": "Reader-0.26.0-mac-arm64-core.dmg",
-      "bytes": 188417718,
-      "sha256": "326d67b7a6e7e00dbce3f43b7b992530c909d82dcfdd5ba0e10f57bec769ffea"
+      "bytes": 180112839,
+      "sha256": "bfa85708067a1faa6d940455970ecbb377a808996c4d476a39f3f5df3248a009"
     },
     {
       "target": "darwin-arm64",
       "name": "Reader-0.26.0-mac-arm64-core.zip",
-      "bytes": 184911674,
-      "sha256": "795488c352e30de71ea8481de8dd18f5f2e6a82eaba4a7949f6627d39ac77e58"
+      "bytes": 176851634,
+      "sha256": "3f500354753482c6ac591c0e03bbf10c88549a7ea55b487c7af5dd48f70932ac"
     },
     {
       "target": "darwin-x64",
       "name": "Reader-0.26.0-mac-x64-core.dmg",
-      "bytes": 197297325,
-      "sha256": "fbd50f3201e4884932e2f06c59e3fbed30e2011df0fbadea50544dd9a37ade60"
+      "bytes": 188110544,
+      "sha256": "0140237165e6a0624a7bbdb6811d68a0b93ed2e26632007cd04e182d06409966"
     },
     {
       "target": "darwin-x64",
       "name": "Reader-0.26.0-mac-x64-core.zip",
-      "bytes": 193695631,
-      "sha256": "1b26cb4a5911eefeeeee013296224539c753ce99fb5ae2974ac9b83b877cc154"
+      "bytes": 184771229,
+      "sha256": "e9b1390f1917fd796e9af4b6f9af7eb81f2a43cf9f949b36a257d783c4043b09"
     },
     {
       "target": "linux-x64",
       "name": "Reader-0.26.0-linux-x64-core.AppImage",
-      "bytes": 180522453,
-      "sha256": "98625263ec03d6599c9597f4144c73ffeabaefb1c8127c517e51c38fb717b6e0"
+      "bytes": 172642423,
+      "sha256": "d63627664df33a03a0460242aa62c87519bc28bcfc54ec94602ef4e649a7f092"
     },
     {
       "target": "linux-x64",
       "name": "Reader-0.26.0-linux-x64-core.deb",
-      "bytes": 153953320,
-      "sha256": "5ffe9d631bb2f137ab520918a75de73e3a5ca45755cfcb3ca43f6b7528e35bf6"
+      "bytes": 147156088,
+      "sha256": "f96f11a2bf2273fc8cf44eb9c399bc64882213c5c114741886801187c0b31d23"
     },
     {
       "target": "win32-x64",
       "name": "Reader-0.26.0-win-x64-core-portable.exe",
-      "bytes": 140524914,
-      "sha256": "c037f7b692dd7cb80fc209124274adb3aaabd1d0962bc51ffd57e5295e380884"
+      "bytes": 140361517,
+      "sha256": "6606c05ab02670d3f9334f800ce32ff35f70b2c51b0056dc86ef8c2b899facc6"
     },
     {
       "target": "win32-x64",
       "name": "Reader-0.26.0-win-x64-core-setup.exe",
-      "bytes": 157463096,
-      "sha256": "956cb762ff25e203793b671ac3a2b3e80430f9a61b318fa372008e91dec5d53b"
+      "bytes": 157274342,
+      "sha256": "ab130bb0e8f9c934a3d1876011d6d93bfe7577ac7e2999fc55b7785556183213"
     }
   ],
   "publicationAuthorized": false,
   "websiteDeploymentAuthorized": false,
   "otherRequirements": [
-    "whole-product-redistribution-review",
-    "missing-srtparse-payload-notice",
-    "actual-release-URLs-and-contact-details",
-    "explicit-release-and-deployment-authorization"
+    "explicit-release-publication-authorization"
   ],
-  "installerSnapshotStatus": "engineering-verified-redistribution-blocked",
+  "installerSnapshotStatus": "engineering-verified-materials-complete",
   "previousInstallerSnapshot": {
-    "sourceSha": "3f7f71dde7b0f79f42534b7b8d989e8276a08508",
-    "installerSnapshotStatus": "withdrawn-rebuild-required",
-    "withdrawalReason": "GPL EPUB dependency and incomplete dependency notice resources require new native candidates",
+    "schemaVersion": 1,
+    "kind": "reader-release-acceptance-decision",
+    "version": "0.26.0",
+    "profile": "core",
+    "sourceSha": "85181a57add13dd8d723e7a420a7a94a165beedb",
+    "decisionDate": "2026-11-26",
+    "authority": "explicit-maintainer-instruction-in-current-session",
+    "manualAcceptance": {
+      "status": "skipped-by-maintainer",
+      "performed": false,
+      "passed": false,
+      "scope": "This core 0.26.0 release, including replacement candidates; the eight installers below are the current engineering-verified snapshot",
+      "casesPerInstaller": 12,
+      "totalCases": 96,
+      "evidenceClaim": "No human acceptance or trusted-human publisher receipt is claimed",
+      "automatedChecks": "Existing exact-byte, privacy, native runtime, cryptographic signing and notarization evidence retained"
+    },
+    "windowsCodeSigning": {
+      "status": "unsupported-for-this-release",
+      "required": false,
+      "authenticodePublisherVerified": false,
+      "automaticUpdates": "disabled"
+    },
     "installers": [
       {
         "target": "darwin-arm64",
         "name": "Reader-0.26.0-mac-arm64-core.dmg",
-        "bytes": 188062025,
-        "sha256": "c6bd2f6ec5ec4963486135462e8e99011fc8353c4cc0817d287b924321edd0f4"
+        "bytes": 188417718,
+        "sha256": "326d67b7a6e7e00dbce3f43b7b992530c909d82dcfdd5ba0e10f57bec769ffea"
       },
       {
         "target": "darwin-arm64",
         "name": "Reader-0.26.0-mac-arm64-core.zip",
-        "bytes": 184592456,
-        "sha256": "c15ba78139b5df4fad853c540f3f5abcb25fb782ffc5e718e868c1bbecaf7e40"
+        "bytes": 184911674,
+        "sha256": "795488c352e30de71ea8481de8dd18f5f2e6a82eaba4a7949f6627d39ac77e58"
       },
       {
         "target": "darwin-x64",
         "name": "Reader-0.26.0-mac-x64-core.dmg",
-        "bytes": 196936753,
-        "sha256": "0dedda64d401467d655a356bfddc1ecbe08c111fb28f65b2e424627582b19388"
+        "bytes": 197297325,
+        "sha256": "fbd50f3201e4884932e2f06c59e3fbed30e2011df0fbadea50544dd9a37ade60"
       },
       {
         "target": "darwin-x64",
         "name": "Reader-0.26.0-mac-x64-core.zip",
-        "bytes": 193388859,
-        "sha256": "4bee0d2efa68a77201410b7b11d5e892c731ac7b841f758f0f883a03679cab5c"
+        "bytes": 193695631,
+        "sha256": "1b26cb4a5911eefeeeee013296224539c753ce99fb5ae2974ac9b83b877cc154"
       },
       {
         "target": "linux-x64",
         "name": "Reader-0.26.0-linux-x64-core.AppImage",
-        "bytes": 180202281,
-        "sha256": "143843039e84b99ffd6c7ad16bb32ceb30fbf68be2bfc480c0397bd27b5ae9fc"
+        "bytes": 180522453,
+        "sha256": "98625263ec03d6599c9597f4144c73ffeabaefb1c8127c517e51c38fb717b6e0"
       },
       {
         "target": "linux-x64",
         "name": "Reader-0.26.0-linux-x64-core.deb",
-        "bytes": 154202128,
-        "sha256": "1ebaee14fd4c160b31e52cfaf37785d15a8ca84fe1dce6f2ad3ef668583323dd"
+        "bytes": 153953320,
+        "sha256": "5ffe9d631bb2f137ab520918a75de73e3a5ca45755cfcb3ca43f6b7528e35bf6"
       },
       {
         "target": "win32-x64",
         "name": "Reader-0.26.0-win-x64-core-portable.exe",
-        "bytes": 140440905,
-        "sha256": "7b4c581a7f955d0cc6c637d099eedb000fb27174fb33c08a0b2b85a66b3930f8"
+        "bytes": 140524914,
+        "sha256": "c037f7b692dd7cb80fc209124274adb3aaabd1d0962bc51ffd57e5295e380884"
       },
       {
         "target": "win32-x64",
         "name": "Reader-0.26.0-win-x64-core-setup.exe",
-        "bytes": 157290009,
-        "sha256": "85bb7a49ab7a88dd1bda98c81c29bf50e4d57b766f8de919a310f3f7c1736eab"
+        "bytes": 157463096,
+        "sha256": "956cb762ff25e203793b671ac3a2b3e80430f9a61b318fa372008e91dec5d53b"
       }
-    ]
+    ],
+    "publicationAuthorized": false,
+    "websiteDeploymentAuthorized": false,
+    "otherRequirements": [
+      "whole-product-redistribution-review",
+      "missing-srtparse-payload-notice",
+      "actual-release-URLs-and-contact-details",
+      "explicit-release-and-deployment-authorization"
+    ],
+    "installerSnapshotStatus": "engineering-verified-redistribution-blocked",
+    "previousInstallerSnapshot": {
+      "sourceSha": "3f7f71dde7b0f79f42534b7b8d989e8276a08508",
+      "installerSnapshotStatus": "withdrawn-rebuild-required",
+      "withdrawalReason": "GPL EPUB dependency and incomplete dependency notice resources require new native candidates",
+      "installers": [
+        {
+          "target": "darwin-arm64",
+          "name": "Reader-0.26.0-mac-arm64-core.dmg",
+          "bytes": 188062025,
+          "sha256": "c6bd2f6ec5ec4963486135462e8e99011fc8353c4cc0817d287b924321edd0f4"
+        },
+        {
+          "target": "darwin-arm64",
+          "name": "Reader-0.26.0-mac-arm64-core.zip",
+          "bytes": 184592456,
+          "sha256": "c15ba78139b5df4fad853c540f3f5abcb25fb782ffc5e718e868c1bbecaf7e40"
+        },
+        {
+          "target": "darwin-x64",
+          "name": "Reader-0.26.0-mac-x64-core.dmg",
+          "bytes": 196936753,
+          "sha256": "0dedda64d401467d655a356bfddc1ecbe08c111fb28f65b2e424627582b19388"
+        },
+        {
+          "target": "darwin-x64",
+          "name": "Reader-0.26.0-mac-x64-core.zip",
+          "bytes": 193388859,
+          "sha256": "4bee0d2efa68a77201410b7b11d5e892c731ac7b841f758f0f883a03679cab5c"
+        },
+        {
+          "target": "linux-x64",
+          "name": "Reader-0.26.0-linux-x64-core.AppImage",
+          "bytes": 180202281,
+          "sha256": "143843039e84b99ffd6c7ad16bb32ceb30fbf68be2bfc480c0397bd27b5ae9fc"
+        },
+        {
+          "target": "linux-x64",
+          "name": "Reader-0.26.0-linux-x64-core.deb",
+          "bytes": 154202128,
+          "sha256": "1ebaee14fd4c160b31e52cfaf37785d15a8ca84fe1dce6f2ad3ef668583323dd"
+        },
+        {
+          "target": "win32-x64",
+          "name": "Reader-0.26.0-win-x64-core-portable.exe",
+          "bytes": 140440905,
+          "sha256": "7b4c581a7f955d0cc6c637d099eedb000fb27174fb33c08a0b2b85a66b3930f8"
+        },
+        {
+          "target": "win32-x64",
+          "name": "Reader-0.26.0-win-x64-core-setup.exe",
+          "bytes": 157290009,
+          "sha256": "85bb7a49ab7a88dd1bda98c81c29bf50e4d57b766f8de919a310f3f7c1736eab"
+        }
+      ]
+    }
+  },
+  "previousSnapshotPolicy": "Historical source851 evidence only; not selected for final delivery. Its nested source3f history is retained unchanged.",
+  "chromeStoreSubmission": "out-of-scope-for-this-round",
+  "materialsReview": {
+    "status": "scoped-core-materials-verified",
+    "components": 1190,
+    "noticeBlobs": 752,
+    "rawNoticeBytes": 2167903,
+    "sourceInventoryCoverage": "incomplete-with-declared-supplements-and-unshipped-components",
+    "actualPayloadSharpAndLibvips": "absent-in-all-eight-installers",
+    "approvalClaim": "Exact material coverage is distinct from permission to publish or deploy"
   }
 }
