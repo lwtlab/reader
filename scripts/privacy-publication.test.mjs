@@ -1,13 +1,46 @@
+import './release/asar.test.mjs';
 import assert from 'node:assert/strict';
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { generateKeyPairSync } from 'node:crypto';
-import { execFileSync } from 'node:child_process';
+import { execFileSync, spawnSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
 import { auditPublication } from './privacy-publication.mjs';
 import { scanReleasePrivacy } from './release-privacy.mjs';
 import { syntheticHermes } from './release/hermes-strings.test.mjs';
+
+test('final candidate audit fails closed with bounded redacted artifact diagnostics', () => {
+  const directory = mkdtempSync(path.join(tmpdir(), 'candidate-diagnostic-'));
+  try {
+    writeFileSync(path.join(directory, 'metadata.json'), '{"authored":"synthetic"}');
+    const run = () => spawnSync(process.execPath, ['ci/privacy-candidates.mjs', directory], { encoding: 'utf8' });
+    assert.equal(run().status, 0);
+    const token = ['ghp_', 'abcdefghijklmnopqrstuvwxyz0123456789'].join('');
+    execFileSync('python3', ['-c', 'import sys,zipfile\nwith zipfile.ZipFile(sys.argv[1],"w") as z:\n for n in range(40):z.writestr("authored-%s.json"%n,sys.argv[2])', path.join(directory, 'leak.zip'), JSON.stringify({ token })]);
+    const result = run();
+    assert.notEqual(result.status, 0);
+    const line = result.stderr.split(/\r?\n/).find(line => line.startsWith('{"kind":"candidate-privacy-block"'));
+    const diagnostic = JSON.parse(line);
+    assert.equal(diagnostic.artifact, 'leak.zip');
+    assert.match(diagnostic.artifactSha256, /^[a-f0-9]{64}$/);
+    assert.ok(diagnostic.findingCount >= 40);
+    assert.equal(diagnostic.findings.length, 32);
+    assert.equal(diagnostic.truncated, true);
+    assert(!JSON.stringify(diagnostic).includes(directory));
+    assert(!result.stderr.includes(token));
+  } finally { rmSync(directory, { recursive: true, force: true }); }
+});
+
+test('real 7z literal backslash paths remain unsafe on each host', async () => {
+  const directory = mkdtempSync(path.join(tmpdir(), 'public-privacy-7z-alias-'));
+  try {
+    const archive = path.join(directory, 'aliases.7z');
+    // Authored two-member fixture, not user content or a captured payload.
+    writeFileSync(archive, Buffer.from('N3q8ryccAATIRd4snQAAAAAAAAAhAAAAAAAAAHiVj4NBdXRob3JlZCBzeW50aGV0aWMgZmlyc3QgbWVtYmVyLgpBdXRob3JlZCBzeW50aGV0aWMgYWxpYXMgbWVtYmVyLgoAAIEzB64xmmkDYhBp8gjD1qTaxaUgWU7rj+niGwsxfcBqTLzfDEn0TxxPyyI8P4VMF4p9Jx9MjQlaWjLXkZetZpYqCWHV+kWnHCJXFR4chPfRmiPBnZYlVisAFwZCAQlbAAcLAQABIwMBAQVdABAAAAyAjgoBSvsXMQAA', 'base64'));
+    await assert.rejects(scanReleasePrivacy(archive), /Unsafe installer\/archive entry/);
+  } finally { rmSync(directory, { recursive: true, force: true }); }
+});
 
 test('public Hermes scanner retains unreviewed cross-string values and whole credentials', async () => {
   const directory = mkdtempSync(path.join(tmpdir(), 'public-privacy-hermes-'));
@@ -79,6 +112,80 @@ test('desktop-only inactive Next metadata retains key-shape, account-key and act
   } finally { rmSync(directory, { recursive: true, force: true }); }
 });
 
+test('literal POSIX backslashes do not classify a filename as inactive compiler metadata', { skip: process.platform === 'win32' }, async () => {
+  const directory = mkdtempSync(path.join(tmpdir(), 'public-privacy-separators-'));
+  try {
+    writeFileSync(path.join(directory, '.next\\server\\server-reference-manifest.json'), JSON.stringify({ node: {}, edge: {}, encryptionKey: Buffer.alloc(32).toString('base64') }));
+    const report = await scanReleasePrivacy(directory, { profile: 'desktop' });
+    assert.equal(report.status, 'FAIL');
+    assert(!report.notices.some(n => n.rule === 'unused-next-desktop-action-key'));
+  } finally { rmSync(directory, { recursive: true, force: true }); }
+});
+
+test('Next preview sidecar requires matching manifests and keeps generic/active cases blocked', async () => {
+  const directory = mkdtempSync(path.join(tmpdir(), 'public-privacy-preview-'));
+  try {
+    const preview = { previewModeId:'1'.repeat(32), previewModeSigningKey:'0'.repeat(64), previewModeEncryptionKey:'f'.repeat(64) };
+    const copy = path.join(directory,'.next/server/preview-props.json');
+    const prerender = path.join(directory,'.next/prerender-manifest.json');
+    const actions = path.join(directory,'.next/server/server-reference-manifest.json');
+    mkdirSync(path.dirname(copy),{recursive:true});
+    writeFileSync(copy,JSON.stringify(preview));
+    assert.equal((await scanReleasePrivacy(directory,{profile:'desktop'})).status,'FAIL');
+    const manifest={version:4,routes:{},dynamicRoutes:{},preview};
+    const reference={node:{},edge:{},encryptionKey:Buffer.alloc(32).toString('base64')};
+    writeFileSync(prerender,JSON.stringify(manifest));
+    writeFileSync(actions,JSON.stringify(reference));
+    assert.equal((await scanReleasePrivacy(directory)).status,'FAIL');
+    assert.equal((await scanReleasePrivacy(directory,{profile:'desktop'})).status,'PASS');
+    for(const value of [{...preview,previewModeSigningKey:'2'.repeat(64)},{...preview,unknown:true},{...preview,accountApiKey:['ghp_','abcdefghijklmnopqrstuvwxyz0123456789'].join('')}]){
+      writeFileSync(copy,JSON.stringify(value));
+      assert.equal((await scanReleasePrivacy(directory,{profile:'desktop'})).status,'FAIL');
+    }
+    writeFileSync(copy,JSON.stringify(preview));
+    writeFileSync(actions,JSON.stringify({...reference,node:{action:{}}}));
+    assert.equal((await scanReleasePrivacy(directory,{profile:'desktop'})).status,'FAIL');
+    writeFileSync(actions,JSON.stringify(reference));
+    writeFileSync(prerender,JSON.stringify({...manifest,dynamicRoutes:{'/[slug]':{}}}));
+    assert.equal((await scanReleasePrivacy(directory,{profile:'desktop'})).status,'FAIL');
+  } finally { rmSync(directory, { recursive: true, force: true }); }
+});
+
+test('nameless XZ tar streams are inspected and unsafe tar members still block', async () => {
+  const directory = mkdtempSync(path.join(tmpdir(), 'public-privacy-xz-'));
+  try {
+    const archive=path.join(directory,'data.tar.xz');
+    const create=(name,content)=>execFileSync('python3',['-c',
+      "import io,lzma,pathlib,sys,tarfile\nb=io.BytesIO();d=sys.argv[3].encode()\nwith tarfile.open(fileobj=b,mode='w') as t:\n i=tarfile.TarInfo(sys.argv[2]);i.size=len(d);t.addfile(i,io.BytesIO(d))\npathlib.Path(sys.argv[1]).write_bytes(lzma.compress(b.getvalue()))",archive,name,content]);
+    create('app.js','const count = 42;');
+    assert.equal((await scanReleasePrivacy(archive)).status,'PASS');
+    create('app.js',['ghp_','abcdefghijklmnopqrstuvwxyz0123456789'].join(''));
+    assert.equal((await scanReleasePrivacy(archive)).status,'FAIL');
+    create('../outside','const count = 42;');
+    await assert.rejects(scanReleasePrivacy(archive),/Unsafe/);
+    create('clean.js','x');
+    execFileSync('python3',['-c',"import lzma,pathlib,sys;p=pathlib.Path(sys.argv[1]);b=lzma.decompress(p.read_bytes());p.write_bytes(lzma.compress(b[:1024]+b'x'*512+b'\\0'*1024))",archive]);
+    await assert.rejects(scanReleasePrivacy(archive),/TAR/,'bad header after a valid member cannot pass');
+  } finally { rmSync(directory, { recursive: true, force: true }); }
+});
+
+test('Next home route filenames in checksum metadata do not exempt real homes or credentials', async () => {
+  const directory=mkdtempSync(path.join(tmpdir(),'public-privacy-route-'));
+  try {
+    const file=path.join(directory,'md5sums'),prefix='opt/Reader/resources/standalone/apps/reader/.next/server/app/api';
+    writeFileSync(file,`${"1".repeat(32)}  ${prefix}/home/route/build-manifest.json\n`);
+    assert.equal((await scanReleasePrivacy(directory)).status,'PASS');
+    for(const extra of ['/home/route/private.txt',`${prefix}/home/route/private.txt`,['ghp_','abcdefghijklmnopqrstuvwxyz0123456789'].join('')]){
+      writeFileSync(file,`${"1".repeat(32)}  ${prefix}/home/route/build-manifest.json\n${extra}`);
+      assert.equal((await scanReleasePrivacy(directory)).status,'FAIL');
+    }
+    for(const line of [`1234  ${prefix}/home/route/build-manifest.json`,`${"1".repeat(32)}  /${prefix}/home/route/build-manifest.json`,`${"1".repeat(32)}  extra/${prefix}/home/route/build-manifest.json`]){
+      writeFileSync(file,`${line}\n`);
+      assert.equal((await scanReleasePrivacy(directory)).status,'FAIL');
+    }
+  } finally { rmSync(directory, { recursive: true, force: true }); }
+});
+
 test('standalone public scanner detects synthetic secrets in ZIP members, without private checkout', async () => {
   const directory = mkdtempSync(path.join(tmpdir(), 'public-privacy-'));
   try {
@@ -97,4 +204,93 @@ test('standalone public scanner detects synthetic secrets in ZIP members, withou
     assert.equal(aliasReport.status, 'FAIL');
     assert.equal(aliasReport.filesScanned, 3, 'Both case-sensitive members must be inspected on macOS too');
   } finally { rmSync(directory, { recursive: true, force: true }); }
+});
+
+// Authored metadata only; these fixtures never contain product source or user evidence.
+const macMetadataSecret = ["ghp_", "abcdefghijklmnopqrstuvwxyz0123456789"].join("");
+function macMetadataFixture(t) {
+  const root = mkdtempSync(path.join(tmpdir(), "public-mac-metadata-"));
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  const payload = path.join(root, "payload");
+  mkdirSync(payload);
+  return { root, payload, write(name, value) {
+    const file = path.join(payload, name);
+    mkdirSync(path.dirname(file), { recursive: true });
+    writeFileSync(file, value);
+    return file;
+  }};
+}
+test("Mac resource indices classify only typed compiler keys, never values or unknown paths", async (t) => {
+  const f = macMetadataFixture(t);
+  const relative = "Reader.app/Contents/_CodeSignature/CodeResources";
+  const file = f.write(relative, "");
+  const generate = (mode) =>
+    execFileSync("python3", [
+      "-c",
+      `
+import pathlib,plistlib,sys
+prefix='Resources/standalone/apps/reader/.next/server/app/api/home/route/'
+key=prefix+'build-manifest.json'
+d={'files':{key:b'a'*20},'files2':{key:{'hash2':b'b'*32}},'rules':{},'rules2':{}}
+mode=sys.argv[2]
+if mode=='unknown':d['files'][prefix+'private.txt']=b'c'*20
+if mode=='value':d['rules']['note']='/home/route/build-manifest.json'
+if mode=='forged-key':d['rules'][key]={}
+if mode=='wrong-hash':d['files2'][key]['hash2']=b'x'
+if mode=='real-home':d['files']['/home/synthetic-user/private.txt']=b'a'*20
+if mode=='credential':d['rules']['note']=sys.argv[3]
+if mode=='schema':d['unknown']={}
+pathlib.Path(sys.argv[1]).write_bytes(plistlib.dumps(d))
+`,
+      file,
+      mode,
+      macMetadataSecret,
+    ]);
+  generate("clean");
+  const clean = await scanReleasePrivacy(f.payload);
+  assert.equal(clean.status, "PASS");
+  assert.ok(clean.notices.some((n) => n.rule === "next-api-route-metadata-path"));
+  for (const mode of [
+    "unknown",
+    "value",
+    "forged-key",
+    "wrong-hash",
+    "real-home",
+    "credential",
+    "schema",
+  ]) {
+    generate(mode);
+    assert.equal((await scanReleasePrivacy(f.payload)).status, "FAIL", mode);
+  }
+});
+
+test("Mac ZIP compiler names are proven in both headers without exempting stored prose", async (t) => {
+  const f = macMetadataFixture(t);
+  const archive = path.join(f.root, "candidate.zip");
+  const generate = (mode) =>
+    execFileSync("python3", [
+      "-c",
+      `
+import sys,zipfile
+name='Reader.app/Contents/Resources/standalone/apps/reader/.next/server/app/api/home/route/build-manifest.json'
+mode=sys.argv[2]
+if mode=='unknown':name=name.replace('build-manifest.json','private.txt')
+if mode=='wrong-prefix':name='unreviewed/'+name
+with zipfile.ZipFile(sys.argv[1],'w',compression=zipfile.ZIP_STORED) as z:
+ z.writestr(name.rsplit('/',1)[0]+'/',b'')
+ z.writestr(name,'{}')
+ if mode=='prose':z.writestr('notes.txt',name)
+ if mode=='credential':z.writestr('app.js',sys.argv[3])
+ if mode=='real-home':z.writestr('notes.txt','/home/synthetic-user/private.txt')
+`,
+      archive,
+      mode,
+      macMetadataSecret,
+    ]);
+  generate("clean");
+  assert.equal((await scanReleasePrivacy(archive)).status, "PASS");
+  for (const mode of ["unknown", "wrong-prefix", "prose", "credential", "real-home"]) {
+    generate(mode);
+    assert.equal((await scanReleasePrivacy(archive)).status, "FAIL", mode);
+  }
 });

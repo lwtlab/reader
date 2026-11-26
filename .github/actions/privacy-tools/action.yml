@@ -23,7 +23,13 @@ runs:
       shell: bash
       run: |
         sudo apt-get update -qq
-        sudo apt-get install -y 7zip 7zip-standalone squashfs-tools
+        sudo apt-get install -y 7zip squashfs-tools
+        # Ubuntu 22 provides 7zz in 7zip; newer Ubuntu splits it into standalone.
+        if ! command -v 7zz >/dev/null 2>&1; then
+          sudo apt-get install -y 7zip-standalone
+        fi
+        command -v 7zz
+        command -v unsquashfs
     - if: runner.os == 'Windows'
       shell: bash
       run: echo 'C:\Program Files\7-Zip' >> "$GITHUB_PATH"

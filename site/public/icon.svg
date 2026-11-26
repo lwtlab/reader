@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024" role="img" aria-labelledby="title">
+  <title id="title">Reader</title>
+  <path id="background" fill="#151312" d="M0 0h1024v1024H0z"/>
+  <g id="mark">
+    <path fill="#e9e8e6" fill-rule="evenodd" d="M237 230H584C700 230 782 304 782 420C782 521 709 596 607 596L789 816H560L366 635V816H237ZM366 350V554C386 503 422 494 470 494H579C624 494 648 467 648 423C648 380 626 350 579 350Z"/>
+    <path fill="#fe9a00" d="M366 635C385 591 424 589 467 593L607 596C537 610 423 650 435 701C410 680 373 656 366 635Z"/>
+  </g>
+</svg>

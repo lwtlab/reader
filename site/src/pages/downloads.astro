@@ -2,15 +2,25 @@
 import Page from '../layouts/Page.astro';
 import { urlFor } from '../lib/paths';
 import channels from '../../../manifests/channels.json';
+import { desktopPlatforms, releaseDownloads } from '../lib/release-downloads.mjs';
 const android = channels.mobile.android;
+const { desktop, extension, assets } = releaseDownloads(channels);
 ---
 <Page title="下载 Reader" description="选择适合自己的 Reader 使用方式，查看 Android 下载及桌面、iOS 和浏览器扩展的公开发布状态。">
   <header class="page-heading"><p class="eyebrow">选择你的阅读方式</p><h1>在哪里，都能开始。</h1><p class="lede">现在可以使用网页版，或下载 Android 版。<br />其他平台的正式安装入口会在这里更新。</p></header>
   <div class="download-grid">
     <section class="download-card"><span class="platform-label">浏览器</span><h2>Reader 网页版</h2><p>打开书库，导入内容，开始阅读与复习。</p><a class="button primary" href="https://reader.cubbber.com/">打开网页版 ↗</a></section>
     <section class="download-card"><span class="platform-label">Android</span><h2>随身的阅读书库</h2><p>当前版本 {android.version}。安装系统提示来自浏览器的 APK 时，请核对下载来源。</p><a class="button" href={android.url}>下载 Android APK <span aria-hidden="true">↓</span></a><a href={`https://github.com/lwtlab/reader/releases/tag/${android.tag}`}>版本说明与附件校验 ↗</a></section>
-    <section class="download-card"><span class="platform-label">macOS · Windows · Linux</span><h2>桌面版</h2><p>正式安装包准备中。当前可以先使用网页版。</p><span class="availability">尚未公开发布</span></section>
+    {desktopPlatforms.map(platform => <section class="download-card" data-desktop-platform={platform.id}>
+      <span class="platform-label">桌面版 · {platform.title}</span><h2>{platform.title} 版</h2>
+      <p>{platform.pending}。{desktop ? `当前桌面版本 ${desktop.version}，采用手动更新。` : '正式安装包准备中。'}</p>
+      {assets.some(asset => asset.platform === platform.id)
+        ? <ul class="platform-downloads">{assets.filter(asset => asset.platform === platform.id).map(asset => <li><a href={asset.url}>下载 {asset.label} <span aria-hidden="true">↓</span></a></li>)}</ul>
+        : <span class="availability">尚未公开发布</span>}
+      <a href={urlFor(`guides/desktop/#${platform.anchor}`)}>{platform.title} 安装说明 <span aria-hidden="true">→</span></a>
+    </section>)}
     <section class="download-card"><span class="platform-label">iPhone · iPad</span><h2>iOS 版</h2><p>公开安装入口准备中，可先在浏览器中使用 Reader。</p><span class="availability">尚未公开发布</span></section>
   </div>
-  <section class="closing section-block"><div><p class="eyebrow">Chrome · Edge</p><h2>把浏览到的好文章带回来。</h2><p>浏览器扩展的公开商店入口准备中。</p></div><a class="button" href={urlFor('guides/extension/')}>了解扩展与测试安装 →</a></section>
+  <section class="section-block"><h2>保留自己的阅读积累。</h2><p>本机桌面书库无需 Reader 账号。更新前备份资料，再核验新安装包。</p><a href={urlFor('guides/desktop/#updates')}>手动更新与资料保留说明 →</a>{desktop && <><p><a href={desktop.releaseUrl}>桌面版 {desktop.version} 版本说明 ↗</a></p><a href={desktop.checksumsUrl}>下载桌面版 SHA256SUMS 校验文件 ↓</a></>}</section>
+  <section class="closing section-block"><div><p class="eyebrow">Chrome 浏览器扩展</p><h2>把浏览到的好文章带回来。</h2><p>{extension ? `Reader Clipper ${extension.version}，配套桌面版 ${extension.desktopVersion}。` : '浏览器扩展的公开商店入口准备中。'}</p></div><div>{extension && <a class="button primary" href={extension.storeUrl}>从 Chrome Web Store 安装 ↗</a>}<a class="button" href={urlFor('guides/extension/')}>扩展安装与配对说明 →</a></div></section>
 </Page>
