@@ -58,5 +58,16 @@ export function releaseDownloads(channels) {
     assert.equal(url.username + url.password + url.search + url.hash, '');
     assert.match(url.pathname, /^\/detail\/[^/]+\/[a-p]{32}$/);
   }
-  return { desktop, extension, assets };
+  const extensionUnpacked = channels.extensionUnpacked ?? null;
+  if (extensionUnpacked !== null) {
+    assert.ok(extensionUnpacked && stableVersion.test(extensionUnpacked.version), 'Published extension ZIP version required');
+    assert.ok(desktop && extensionUnpacked.desktopVersion === desktop.version, 'Published companion desktop required');
+    const tag = `extension/v${extensionUnpacked.version}`;
+    assert.equal(extensionUnpacked.name, `reader-clipper-v${extensionUnpacked.version}.zip`);
+    publishedUrl(extensionUnpacked.releaseUrl, `tag/${tag}`);
+    publishedUrl(extensionUnpacked.url, `download/${tag}/${extensionUnpacked.name}`);
+    assert.match(extensionUnpacked.sha256, /^[a-f0-9]{64}$/);
+    assert.ok(Number.isSafeInteger(extensionUnpacked.bytes) && extensionUnpacked.bytes > 0);
+  }
+  return { desktop, extension, extensionUnpacked, assets };
 }

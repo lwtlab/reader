@@ -4,7 +4,7 @@ import { urlFor } from '../lib/paths';
 import channels from '../../../manifests/channels.json';
 import { desktopPlatforms, releaseDownloads } from '../lib/release-downloads.mjs';
 const android = channels.mobile.android;
-const { desktop, extension, assets } = releaseDownloads(channels);
+const { desktop, extension, extensionUnpacked, assets } = releaseDownloads(channels);
 ---
 <Page title="下载 Reader" description="选择适合自己的 Reader 使用方式，查看 Android 下载及桌面、iOS 和浏览器扩展的公开发布状态。">
   <header class="page-heading"><p class="eyebrow">选择你的阅读方式</p><h1>在哪里，都能开始。</h1><p class="lede">{desktop ? '现在可以使用网页版，或下载 Android 和桌面版。' : '现在可以使用网页版，或下载 Android 版。'}<br />{desktop ? '请按操作系统选择安装包，并核对版本说明与文件摘要。' : '其他平台的正式安装入口会在这里更新。'}</p></header>
@@ -23,5 +23,12 @@ const { desktop, extension, assets } = releaseDownloads(channels);
     <section class="download-card"><span class="platform-label">iPhone · iPad</span><h2>iOS 版</h2><p>公开安装入口准备中，可先在浏览器中使用 Reader。</p><span class="availability">尚未公开发布</span></section>
   </div>
   <section class="section-block"><h2>保留自己的阅读积累。</h2><p>本机桌面书库无需 Reader 账号。更新前备份资料，再核验新安装包。</p><a href={urlFor('guides/desktop/#updates')}>手动更新与资料保留说明 →</a>{desktop && <><p><a href={desktop.releaseUrl}>桌面版 {desktop.version} 版本说明 ↗</a></p><a href={desktop.checksumsUrl}>下载桌面版 SHA256SUMS 校验文件 ↓</a></>}</section>
-  <section class="closing section-block"><div><p class="eyebrow">Chrome 浏览器扩展</p><h2>把浏览到的好文章带回来。</h2><p>{extension ? `Reader Clipper ${extension.version}，配套桌面版 ${extension.desktopVersion}。` : '浏览器扩展的公开商店入口准备中。'}</p></div><div>{extension && <a class="button primary" href={extension.storeUrl}>从 Chrome Web Store 安装 ↗</a>}<a class="button" href={urlFor('guides/extension/')}>扩展安装与配对说明 →</a></div></section>
+  <section class="closing section-block"><div><p class="eyebrow">Chrome 浏览器扩展</p><h2>把浏览到的好文章带回来。</h2>
+    <p>{extension ? `Reader Clipper ${extension.version}，配套桌面版 ${extension.desktopVersion}。` : extensionUnpacked ? `Reader Clipper ${extensionUnpacked.version} 手动安装版，配套桌面版 ${extensionUnpacked.desktopVersion}。Chrome 商店尚未上架。` : '浏览器扩展的公开安装入口准备中。'}</p>
+    {extensionUnpacked && <p>ZIP 需要手动解压、加载和更新。<a href={extensionUnpacked.releaseUrl}>版本说明与 SHA-256 校验 ↗</a></p>}
+  </div><div>
+    {extension && <a class="button primary" href={extension.storeUrl}>从 Chrome Web Store 安装 ↗</a>}
+    {extensionUnpacked && <a class={extension ? 'button' : 'button primary'} href={extensionUnpacked.url}>下载扩展 ZIP（手动安装） <span aria-hidden="true">↓</span></a>}
+    <a class="button" href={urlFor('guides/extension/')}>扩展安装与配对说明 →</a>
+  </div></section>
 </Page>

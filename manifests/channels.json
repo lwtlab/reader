@@ -90,5 +90,14 @@
       }
     ]
   },
-  "extension": null
+  "extension": null,
+  "extensionUnpacked": {
+    "version": "0.26.0",
+    "desktopVersion": "0.26.0",
+    "releaseUrl": "https://github.com/lwtlab/reader/releases/tag/extension/v0.26.0",
+    "name": "reader-clipper-v0.26.0.zip",
+    "url": "https://github.com/lwtlab/reader/releases/download/extension/v0.26.0/reader-clipper-v0.26.0.zip",
+    "sha256": "ffaf7c35a757c079beafb5a1bd9e2127a8de0347a8b5168526afd5ae0077b121",
+    "bytes": 309272
+  }
 }

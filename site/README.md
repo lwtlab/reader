@@ -7,12 +7,11 @@ deployment. The product API remains at its existing address.
 
 The first implementation follows Reader's warm neutral palette, restrained amber accents, clear
 keyboard focus and readable typography. Its task path is landing → start the web app or read a guide
-→ choose an available download. Android links refer to the existing published v0.22.0 APK; desktop,
-iOS and the extension store entry remain explicitly unavailable. The reading sample is an original
+→ choose an available download. Android links retain the existing published v0.22.0 APK. Desktop 0.26.0 and the manually loaded
+Clipper ZIP are published; iOS and the Chrome store entry remain unavailable. The reading sample is an original
 static illustration, not an interactive screenshot or a claim of on-device verification.
 
-This initial structure implements the authorized repository/site foundation. Visual design has not
-received user signoff. Browser checks cover the landing, download and tutorial paths at desktop and
+The existing site structure is authorized for deployment on 2026-11-27. Browser checks cover the landing, download and tutorial paths at desktop and
 320/390px widths, focus/navigation and dark mode; exact execution results are recorded in the PR.
 No analytics, account session or user source content is collected by the site.
 
@@ -21,8 +20,9 @@ No analytics, account session or user source content is collected by the site.
 The download page is prepared for macOS arm64/x64, Windows x64 and Linux x64 core.
 The desktop guide covers installation, SHA-256 checks, private backups, manual updates and
 explicit reduced-protection Linux AppImage launch. It is available before installers are released.
-Availability remains controlled by `manifests/channels.json`; keep `desktop` and `extension`
-**null** until their real public channels exist. Do not use candidate/CI URLs as public downloads.
+Availability remains controlled by `manifests/channels.json`; each channel remains null until its
+actual public payload exists. Desktop and manual extension ZIP metadata now bind published assets;
+the Chrome store channel remains null. Do not use candidate/CI URLs as public downloads.
 
 After final-byte privacy, signature/native acceptance and actual publication, the desktop value is:
 
@@ -54,9 +54,14 @@ When Chrome Web Store installation is actually available, `extension` has `versi
 `desktopVersion` (matching the published companion) and `storeUrl` (the real official store URL,
 including its actual 32-character extension ID). Until then it remains null. Do not invent an ID.
 A store button appears only for verified metadata; the pairing guide remains accessible either way.
+Manual ZIP delivery is a separate `extensionUnpacked` channel, with its own published version,
+matching desktop version, exact official release/download URLs, filename, SHA-256 and byte size.
+It can be available while the store channel is null. It is labelled manual installation and does not
+claim Chrome store identity or automatic updates.
 The static site does not infer compatibility, fetch GitHub Latest or collect browser OS/account data.
 
 Run `npm --prefix site run verify` and `SITE_BASE=/ npm --prefix site run verify` before updating the
 site; these include download contract tests. Verify actual external links separately, after the assets
-and policy URL exist. Confirm the final hostname/base, private security contact and privacy/store URLs
-before independently authorizing deployment. Changing this JSON neither publishes an installer nor deploys Pages.
+and policy URL exist. Confirm the final hostname/base and applicable privacy/security links before deployment. Verify
+store URLs when the store channel is enabled; a manual ZIP does not require a store listing.
+Changing this JSON neither publishes an installer nor deploys Pages.
