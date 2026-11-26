@@ -1,12 +1,12 @@
 {
   "darwin-arm64": {
     "os": "macos-15",
-    "run_id": 45740566585,
-    "artifact_id": 15081769309,
+    "run_id": 45777132115,
+    "artifact_id": 15097559754,
     "artifact_name": "reader-darwin-arm64-candidate",
-    "archive_digest": "sha256:2dbe504fe2cf67518e92bf5102e92f3215d4db5406ad1f6332511b48408f7b1e",
-    "source_ref": "3f7f71dde7b0f79f42534b7b8d989e8276a08508",
-    "workflow_ref": "bc8c0dedf2dc0c14e4705a4d3f37c0494a3ddc89"
+    "archive_digest": "sha256:5672fb4d5100eb4097f4c519897f01b328814d1aa7906cc8bc2f84cdee85622f",
+    "source_ref": "85181a57add13dd8d723e7a420a7a94a165beedb",
+    "workflow_ref": "683d165cc1fdd825b324ca4d53a89c1a31dcbee8"
   },
   "darwin-x64": {
     "os": "macos-15-intel",
