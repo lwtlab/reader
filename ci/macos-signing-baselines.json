@@ -10,11 +10,11 @@
   },
   "darwin-x64": {
     "os": "macos-15-intel",
-    "run_id": 45740570444,
-    "artifact_id": 15083284341,
+    "run_id": 45788553133,
+    "artifact_id": 15106322867,
     "artifact_name": "reader-darwin-x64-candidate",
-    "archive_digest": "sha256:9ac96e7998b828c1c39c973d6517cb0a25a1578b2d8ce9be3b8149427ff9ed04",
-    "source_ref": "3f7f71dde7b0f79f42534b7b8d989e8276a08508",
-    "workflow_ref": "bc8c0dedf2dc0c14e4705a4d3f37c0494a3ddc89"
+    "archive_digest": "sha256:cb02aff06b1bba0f35f2952a3e2d7e3f9d822397f9bfd6859734b2ffe4ec1e6a",
+    "source_ref": "85181a57add13dd8d723e7a420a7a94a165beedb",
+    "workflow_ref": "46e4bf920dea96c3feac866cd14414cbdfdb9bcb"
   }
 }
