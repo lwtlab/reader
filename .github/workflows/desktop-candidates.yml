@@ -168,6 +168,7 @@ jobs:
           scripts/desktop-packaging.test.mjs scripts/native-build-privacy.test.mjs scripts/windows-native-paths.test.mjs scripts/windows-rust-privacy.test.mjs scripts/pdfium-build.test.mjs scripts/appimage-runtime.test.mjs scripts/desktop-artifacts.test.mjs
           scripts/desktop-source.test.mjs scripts/windows-native-signing.test.mjs
           scripts/desktop-source-maps.test.mjs
+          scripts/onnx-runtime-distribution.test.mjs
           scripts/desktop-installer-target.test.mjs scripts/desktop-profile-storage-probe.test.mjs
           scripts/desktop-upgrade-pair.test.mjs scripts/desktop-network-canary.test.mjs
 
