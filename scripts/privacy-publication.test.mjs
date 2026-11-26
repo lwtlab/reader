@@ -1,7 +1,7 @@
 import './release/asar.test.mjs';
 import assert from 'node:assert/strict';
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
-import { generateKeyPairSync } from 'node:crypto';
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { createHash, generateKeyPairSync } from 'node:crypto';
 import { execFileSync, spawnSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
@@ -67,6 +67,73 @@ test('publication requires passing checks of the exact staged bytes and scans no
   assert.equal(checked[1][1], true);
   await assert.rejects(auditPublication(manifest, ['candidate.zip'], [], async () => ({ status: 'FAIL' })));
   await assert.rejects(auditPublication(manifest, ['candidate.zip'], [], async () => ({ status: 'PASS', hashKind: 'file-sha256', artifactSha256: 'b'.repeat(64) })));
+});
+
+test('publication audits supported desktop metadata assets through the real privacy gate', async () => {
+  const directory = mkdtempSync(path.join(tmpdir(), 'publication-leaf-assets-'));
+  try {
+    const entries = [
+      ['SHA256SUMS', `${'a'.repeat(64)}  Reader-0.26.0-linux-x64-core.AppImage\n`],
+      ['acceptance-decision.json', JSON.stringify({ source: 'authored-synthetic', manualAcceptance: { performed: false, passed: false } })],
+      ['delivery-policy.json', JSON.stringify({ automaticUpdates: 'disabled', publicationAuthorized: true })],
+    ];
+    const assets = entries.map(([name, bytes]) => {
+      const file = path.join(directory, name);
+      writeFileSync(file, bytes);
+      return file;
+    });
+    const manifest = { product: 'desktop', assets: entries.map(([name, bytes]) => ({ name, sha256: createHash('sha256').update(bytes).digest('hex') })) };
+    await auditPublication(manifest, assets, []);
+  } finally { rmSync(directory, { recursive: true, force: true }); }
+});
+
+test('publication blocks synthetic credentials in every supported desktop metadata asset', async () => {
+  const directory = mkdtempSync(path.join(tmpdir(), 'publication-leaf-secrets-'));
+  try {
+    const token = ['ghp_', 'abcdefghijklmnopqrstuvwxyz0123456789'].join('');
+    for (const name of ['SHA256SUMS', 'acceptance-decision.json', 'delivery-policy.json']) {
+      const file = path.join(directory, name);
+      const bytes = name === 'SHA256SUMS' ? `${token}\n` : JSON.stringify({ authoredSyntheticToken: token });
+      writeFileSync(file, bytes);
+      const manifest = { product: 'desktop', assets: [{ name, sha256: createHash('sha256').update(bytes).digest('hex') }] };
+      await assert.rejects(auditPublication(manifest, [file], []), /Release privacy gate blocked/);
+    }
+  } finally { rmSync(directory, { recursive: true, force: true }); }
+});
+
+test('publication keeps unknown top-level asset formats blocked', async () => {
+  const directory = mkdtempSync(path.join(tmpdir(), 'publication-unknown-asset-'));
+  try {
+    const name = 'notice.unknown', bytes = '{"authored":"synthetic"}';
+    const file = path.join(directory, name);
+    writeFileSync(file, bytes);
+    const manifest = { product: 'desktop', assets: [{ name, sha256: createHash('sha256').update(bytes).digest('hex') }] };
+    await assert.rejects(auditPublication(manifest, [file], []), /Unsupported artifact/);
+  } finally { rmSync(directory, { recursive: true, force: true }); }
+});
+
+test('publication rejects a clean metadata asset whose bytes differ from its manifest', async () => {
+  const directory = mkdtempSync(path.join(tmpdir(), 'publication-leaf-digest-'));
+  try {
+    const name = 'delivery-policy.json', file = path.join(directory, name);
+    writeFileSync(file, JSON.stringify({ authored: 'synthetic', automaticUpdates: 'disabled' }));
+    const manifest = { product: 'desktop', assets: [{ name, sha256: '0'.repeat(64) }] };
+    await assert.rejects(auditPublication(manifest, [file], []), /Audited bytes differ from publication manifest/);
+  } finally { rmSync(directory, { recursive: true, force: true }); }
+});
+
+test('publication still inspects compressed archive members when leaf assets are enabled', async () => {
+  const directory = mkdtempSync(path.join(tmpdir(), 'publication-archive-members-'));
+  try {
+    const name = 'authored.zip', file = path.join(directory, name);
+    const archive = (bytes) => execFileSync('python3', ['-c',
+      "import sys,zipfile\nwith zipfile.ZipFile(sys.argv[1],'w',compression=zipfile.ZIP_DEFLATED) as z:z.writestr('nested/authored.txt',sys.argv[2])", file, bytes]);
+    const manifest = () => ({ product: 'desktop', assets: [{ name, sha256: createHash('sha256').update(readFileSync(file)).digest('hex') }] });
+    archive('Authored synthetic public text.');
+    await auditPublication(manifest(), [file], []);
+    archive(['ghp_', 'abcdefghijklmnopqrstuvwxyz0123456789'].join(''));
+    await assert.rejects(auditPublication(manifest(), [file], []), /Release privacy gate blocked/);
+  } finally { rmSync(directory, { recursive: true, force: true }); }
 });
 
 test('compiler route names and PEM parsing literals pass; actual private key material does not', async () => {
