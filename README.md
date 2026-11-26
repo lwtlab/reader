@@ -6,17 +6,17 @@ See [repository maintenance](docs/maintaining.md) for product-scoped publishing,
 
 ## Desktop first release
 
-The preparation branch targets Electron **core 0.26.0**, macOS arm64/x64, Windows x64 and Linux x64, with Chrome companion 0.26.0. Automatic desktop updates remain disabled. The website keeps unavailable desktop/store URLs unset until actual files, identities and channels have been accepted.
+The preparation branch targets Electron **core 0.26.0**, macOS arm64/x64, Windows x64 and Linux x64, with Chrome companion 0.26.0. For this release, Windows NSIS and Portable packages are explicitly unsigned: there is no Reader Authenticode publisher identity, and Windows may show an unknown-publisher or SmartScreen warning. This is an accepted release limitation, not a successful signature check. macOS requires Developer ID signing/notarization. Automatic desktop updates remain disabled. The website keeps unavailable desktop/store URLs unset until actual files, identities and channels have been accepted.
 
 Workflow names alone do not identify a build lane:
 
 | Lane | Scope | Signing and provenance |
 | --- | --- | --- |
 | Core candidate workflow on the desktop preparation branch | Four native targets, private full source SHA, synthetic QA; unsigned engineering packages | No Release; seven-day candidate retention. `verify_upgrade=true` requires reviewed, unexpired immutable baselines. An explicit false builds a new baseline without claiming cross-version acceptance. |
-| Separate `macos-signed-candidates.yml` | Signs and notarizes previously approved Mac binaries; does not compile | Verifies original successful upload, main-branch provenance, artifact ID, archive digest and expiry. The recorded 0.1.10 baselines are historical inputs, not approval for 0.26.0. |
+| Separate `macos-signed-candidates.yml` | Signs and notarizes previously approved Mac binaries; does not compile | Verifies original successful upload, main-branch provenance, artifact ID, archive digest and expiry. The two approved 0.26.0 main-origin inputs are runs 45740566585 (arm64) and 45740570444 (Intel); the 0.1.10 entries have been replaced. |
 | `reader-internal-025-builds` full-product producer | Independently pinned tooling/application source; desktop currently bundled-speech, plus mobile/extension targets | Protected signing environments; not a core first-release dispatch merely because its workflow has the same filename. |
 
-As checked on 2026-11-24, all five macOS environment secrets are configured. `macos-signing` permits `main` and `reader-internal-025-builds`. Configuration does not establish a successful cloud-signed 0.26.0 candidate. Do not re-export certificates based on older documentation, weaken provenance checks or use expired artifacts.
+As checked on 2026-11-26, all five macOS environment secrets are configured. `macos-signing` permits `main` and `reader-internal-025-builds`. Both previous 0.26.0 signing runs succeeded: [arm64 45745534235](https://github.com/lwtlab/reader/actions/runs/45745534235) and [Intel 45748483345](https://github.com/lwtlab/reader/actions/runs/45748483345). That cohort is now withdrawn from release selection for native dependency and notice follow-up; those exact-byte results do not certify replacement builds. All four targets must be rebuilt and the replacement Mac packages signed/notarized. For this core 0.26.0 release, manual installer/system-prompt acceptance is explicitly skipped, including replacements, without claiming a pass. [The decision](manifests/desktop-0.26.0-acceptance.json) preserves the withdrawn eight-artifact snapshot. Whole-product redistribution review and publication authorization remain required. Do not weaken provenance checks or use expired artifacts.
 
 Independent portable/core/offline/storage workflows reuse only their explicitly approved immutable artifacts and fail closed on expiry. QA source and binary source are separate identities. They never turn a fixed old binary into a new source build. Scope, manual checks and current artifact hashes must be recorded per target and installer; one platform's success does not certify another.
 

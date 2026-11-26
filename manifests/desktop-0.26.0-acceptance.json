@@ -1,0 +1,84 @@
+{
+  "schemaVersion": 1,
+  "kind": "reader-release-acceptance-decision",
+  "version": "0.26.0",
+  "profile": "core",
+  "sourceSha": "3f7f71dde7b0f79f42534b7b8d989e8276a08508",
+  "decisionDate": "2026-11-26",
+  "authority": "explicit-maintainer-instruction-in-current-session",
+  "manualAcceptance": {
+    "status": "skipped-by-maintainer",
+    "performed": false,
+    "passed": false,
+    "scope": "This core 0.26.0 release, including replacement candidates; the eight installers below are the withdrawn historical snapshot",
+    "casesPerInstaller": 12,
+    "totalCases": 96,
+    "evidenceClaim": "No human acceptance or trusted-human publisher receipt is claimed",
+    "automatedChecks": "Existing exact-byte, privacy, native runtime, cryptographic signing and notarization evidence retained"
+  },
+  "windowsCodeSigning": {
+    "status": "unsupported-for-this-release",
+    "required": false,
+    "authenticodePublisherVerified": false,
+    "automaticUpdates": "disabled"
+  },
+  "installers": [
+    {
+      "target": "darwin-arm64",
+      "name": "Reader-0.26.0-mac-arm64-core.dmg",
+      "bytes": 188062025,
+      "sha256": "c6bd2f6ec5ec4963486135462e8e99011fc8353c4cc0817d287b924321edd0f4"
+    },
+    {
+      "target": "darwin-arm64",
+      "name": "Reader-0.26.0-mac-arm64-core.zip",
+      "bytes": 184592456,
+      "sha256": "c15ba78139b5df4fad853c540f3f5abcb25fb782ffc5e718e868c1bbecaf7e40"
+    },
+    {
+      "target": "darwin-x64",
+      "name": "Reader-0.26.0-mac-x64-core.dmg",
+      "bytes": 196936753,
+      "sha256": "0dedda64d401467d655a356bfddc1ecbe08c111fb28f65b2e424627582b19388"
+    },
+    {
+      "target": "darwin-x64",
+      "name": "Reader-0.26.0-mac-x64-core.zip",
+      "bytes": 193388859,
+      "sha256": "4bee0d2efa68a77201410b7b11d5e892c731ac7b841f758f0f883a03679cab5c"
+    },
+    {
+      "target": "linux-x64",
+      "name": "Reader-0.26.0-linux-x64-core.AppImage",
+      "bytes": 180202281,
+      "sha256": "143843039e84b99ffd6c7ad16bb32ceb30fbf68be2bfc480c0397bd27b5ae9fc"
+    },
+    {
+      "target": "linux-x64",
+      "name": "Reader-0.26.0-linux-x64-core.deb",
+      "bytes": 154202128,
+      "sha256": "1ebaee14fd4c160b31e52cfaf37785d15a8ca84fe1dce6f2ad3ef668583323dd"
+    },
+    {
+      "target": "win32-x64",
+      "name": "Reader-0.26.0-win-x64-core-portable.exe",
+      "bytes": 140440905,
+      "sha256": "7b4c581a7f955d0cc6c637d099eedb000fb27174fb33c08a0b2b85a66b3930f8"
+    },
+    {
+      "target": "win32-x64",
+      "name": "Reader-0.26.0-win-x64-core-setup.exe",
+      "bytes": 157290009,
+      "sha256": "85bb7a49ab7a88dd1bda98c81c29bf50e4d57b766f8de919a310f3f7c1736eab"
+    }
+  ],
+  "publicationAuthorized": false,
+  "websiteDeploymentAuthorized": false,
+  "otherRequirements": [
+    "whole-product-redistribution-review",
+    "actual-release-URLs-and-contact-details",
+    "explicit-release-and-deployment-authorization"
+  ],
+  "installerSnapshotStatus": "withdrawn-rebuild-required",
+  "withdrawalReason": "GPL EPUB dependency and incomplete dependency notice resources require new native candidates"
+}
