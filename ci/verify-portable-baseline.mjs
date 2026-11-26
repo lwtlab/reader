@@ -17,7 +17,17 @@ export function verifyBaseline(target, run, artifact, jobs, approved = baselines
   assert.equal(run.head_sha, baseline.workflow_ref);
   const job = jobs.find(job => job.name === target);
   assert.equal(job?.conclusion, 'success', 'Only a successful platform job is approved');
-  assert.ok(job.steps.some(step => step.name === 'Upload verified candidate artifacts only' && step.conclusion === 'success'));
+  const upload = job.steps.find(step => step.name === 'Upload privacy-checked candidate artifacts only');
+  if (upload) {
+    assert.equal(upload.conclusion, 'success', 'Candidate upload must succeed');
+    const audit = job.steps.find(step => step.name === 'Audit final candidate files before upload');
+    assert.equal(audit?.conclusion, 'success', 'Final candidate privacy audit must succeed');
+    assert.ok(Number.isInteger(audit.number) && audit.number > 0);
+    assert.ok(Number.isInteger(upload.number) && upload.number > audit.number, 'Final privacy audit must precede upload');
+  } else {
+    // Historical producer commits used this name; the pinned workflow SHA still applies.
+    assert.ok(job.steps.some(step => step.name === 'Upload verified candidate artifacts only' && step.conclusion === 'success'));
+  }
   assert.equal(artifact.id, baseline.artifact_id);
   assert.equal(artifact.name, baseline.artifact_name);
   assert.equal(artifact.workflow_run.id, baseline.run_id);

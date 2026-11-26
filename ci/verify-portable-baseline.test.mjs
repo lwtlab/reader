@@ -34,3 +34,40 @@ for (const target of Object.keys(approved)) {
     }
   });
 }
+
+function currentProducerFixture() {
+  const workflow = readFileSync(new URL('../.github/workflows/desktop-candidates.yml', import.meta.url), 'utf8');
+  const names = [...workflow.matchAll(/^      - name: (.+)$/gm)].map(match => match[1]);
+  const uploads = names.filter(name => /^Upload .*candidate artifacts only$/.test(name));
+  assert.equal(uploads.length, 1, 'Producer must have one final candidate upload gate');
+  const auditName = 'Audit final candidate files before upload';
+  assert.ok(names.indexOf(auditName) < names.indexOf(uploads[0]) && names.includes(auditName));
+  const target = 'darwin-arm64';
+  const baseline = { run_id: 101, artifact_id: 202, artifact_name: 'reader-darwin-arm64-candidate', archive_digest: 'sha256:' + '1'.repeat(64), source_ref: '2'.repeat(40), workflow_ref: '3'.repeat(40) };
+  const fixture = {
+    run: { id: baseline.run_id, status: 'completed', repository: { full_name: 'lwtlab/reader' }, head_repository: { full_name: 'lwtlab/reader' }, path: '.github/workflows/desktop-candidates.yml', event: 'workflow_dispatch', head_branch: 'main', head_sha: baseline.workflow_ref },
+    artifact: { id: baseline.artifact_id, name: baseline.artifact_name, workflow_run: { id: baseline.run_id, head_sha: baseline.workflow_ref }, digest: baseline.archive_digest, expired: false },
+    jobs: [{ name: target, conclusion: 'success', steps: [{ name: auditName, conclusion: 'success', number: 1 }, { name: uploads[0], conclusion: 'success', number: 2 }] }],
+  };
+  return { fixture, invoke: value => verifyBaseline(target, value.run, value.artifact, value.jobs, { [target]: baseline }) };
+}
+
+test('current production upload is accepted only after the actual final audit succeeds', () => {
+  const { fixture, invoke } = currentProducerFixture();
+  assert.ok(invoke(fixture));
+  for (const mutate of [
+    value => { value.jobs[0].steps[0].conclusion = 'failure'; },
+    value => { value.jobs[0].steps[0].conclusion = 'skipped'; },
+    value => { value.jobs[0].steps[0].name = 'Other audit'; },
+    value => { delete value.jobs[0].steps[0].number; },
+    value => { value.jobs[0].steps[1].conclusion = 'failure'; },
+    value => { value.jobs[0].steps[1].conclusion = 'skipped'; },
+    value => { delete value.jobs[0].steps[1].number; },
+    value => { value.jobs[0].steps[0].number = 3; },
+    value => { value.jobs[0].steps[1].conclusion = 'failure'; value.jobs[0].steps.push({ name: 'Upload verified candidate artifacts only', conclusion: 'success', number: 3 }); },
+    value => { value.run.head_branch = 'review-branch'; },
+    value => { value.artifact.expired = true; },
+  ]) {
+    const changed = structuredClone(fixture); mutate(changed); assert.throws(() => invoke(changed));
+  }
+});
