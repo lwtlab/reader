@@ -14,6 +14,7 @@ const { desktop, extension, assets } = releaseDownloads(channels);
     {desktopPlatforms.map(platform => <section class="download-card" data-desktop-platform={platform.id}>
       <span class="platform-label">桌面版 · {platform.title}</span><h2>{platform.title} 版</h2>
       <p>{platform.pending}。{desktop ? `当前桌面版本 ${desktop.version}，采用手动更新。` : '正式安装包准备中。'}</p>
+      {platform.id === 'win32' && (!desktop || desktop.version === '0.26.0') && <p>本次 Windows 安装版与 Portable 不提供代码签名，系统可能显示“未知发布者”或 SmartScreen 警告。请先阅读安装说明并核对正式来源与文件摘要。</p>}
       {assets.some(asset => asset.platform === platform.id)
         ? <ul class="platform-downloads">{assets.filter(asset => asset.platform === platform.id).map(asset => <li><a href={asset.url}>下载 {asset.label} <span aria-hidden="true">↓</span></a></li>)}</ul>
         : <span class="availability">尚未公开发布</span>}
