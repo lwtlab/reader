@@ -20,7 +20,7 @@ export function releaseDownloads(channels) {
   const assets = [];
   if (desktop !== null) {
     assert.ok(desktop && stableVersion.test(desktop.version), 'Published desktop version required');
-    assert.equal(desktop.updatePolicy, 'manual', 'Initial desktop channel requires manual updates');
+    assert.ok(['manual', 'authenticated'].includes(desktop.updatePolicy), 'Explicit supported desktop update policy required');
     const tag = `desktop/v${desktop.version}`;
     publishedUrl(desktop.releaseUrl, `tag/${tag}`);
     publishedUrl(desktop.checksumsUrl, `download/${tag}/SHA256SUMS`);

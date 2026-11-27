@@ -13,8 +13,8 @@ const { desktop, extension, extensionUnpacked, assets } = releaseDownloads(chann
     <section class="download-card"><span class="platform-label">Android</span><h2>随身的阅读书库</h2><p>当前版本 {android.version}。安装系统提示来自浏览器的 APK 时，请核对下载来源。</p><a class="button" href={android.url}>下载 Android APK <span aria-hidden="true">↓</span></a><a href={`https://github.com/lwtlab/reader/releases/tag/${android.tag}`}>版本说明与附件校验 ↗</a></section>
     {desktopPlatforms.map(platform => <section class="download-card" data-desktop-platform={platform.id}>
       <span class="platform-label">桌面版 · {platform.title}</span><h2>{platform.title} 版</h2>
-      <p>{platform.pending}。{desktop ? `当前桌面版本 ${desktop.version}，采用手动更新。` : '正式安装包准备中。'}</p>
-      {platform.id === 'win32' && (!desktop || desktop.version === '0.26.0') && <p>本次 Windows 安装版与 Portable 不提供代码签名，系统可能显示“未知发布者”或 SmartScreen 警告。请先阅读安装说明并核对正式来源与文件摘要。</p>}
+      <p>{platform.pending}。{desktop ? `当前桌面版本 ${desktop.version}，更新方式请查看安装说明。` : '正式安装包准备中。'}</p>
+      {platform.id === 'win32' && <p>本次 Windows 安装版与 Portable 不提供代码签名，系统可能显示“未知发布者”或 SmartScreen 警告。请先阅读安装说明并核对正式来源与文件摘要。</p>}
       {assets.some(asset => asset.platform === platform.id)
         ? <ul class="platform-downloads">{assets.filter(asset => asset.platform === platform.id).map(asset => <li><a href={asset.url}>下载 {asset.label} <span aria-hidden="true">↓</span></a></li>)}</ul>
         : <span class="availability">尚未公开发布</span>}
@@ -22,7 +22,7 @@ const { desktop, extension, extensionUnpacked, assets } = releaseDownloads(chann
     </section>)}
     <section class="download-card"><span class="platform-label">iPhone · iPad</span><h2>iOS 版</h2><p>公开安装入口准备中，可先在浏览器中使用 Reader。</p><span class="availability">尚未公开发布</span></section>
   </div>
-  <section class="section-block"><h2>保留自己的阅读积累。</h2><p>本机桌面书库无需 Reader 账号。更新前备份资料，再核验新安装包。</p><a href={urlFor('guides/desktop/#updates')}>手动更新与资料保留说明 →</a>{desktop && <><p><a href={desktop.releaseUrl}>桌面版 {desktop.version} 版本说明 ↗</a></p><a href={desktop.checksumsUrl}>下载桌面版 SHA256SUMS 校验文件 ↓</a></>}</section>
+  <section class="section-block"><h2>保留自己的阅读积累。</h2><p>本机桌面书库无需 Reader 账号。更新前备份资料，再核验新安装包。</p><a href={urlFor('guides/desktop/#updates')}>更新与资料保留说明 →</a>{desktop && <><p><a href={desktop.releaseUrl}>桌面版 {desktop.version} 版本说明 ↗</a></p><a href={desktop.checksumsUrl}>下载桌面版 SHA256SUMS 校验文件 ↓</a></>}</section>
   <section class="closing section-block"><div><p class="eyebrow">Chrome 浏览器扩展</p><h2>把浏览到的好文章带回来。</h2>
     <p>{extension ? `Reader Clipper ${extension.version}，配套桌面版 ${extension.desktopVersion}。` : extensionUnpacked ? `Reader Clipper ${extensionUnpacked.version} 手动安装版，配套桌面版 ${extensionUnpacked.desktopVersion}。Chrome 商店尚未上架。` : '浏览器扩展的公开安装入口准备中。'}</p>
     {extensionUnpacked && <p>ZIP 需要手动解压、加载和更新。<a href={extensionUnpacked.releaseUrl}>版本说明与 SHA-256 校验 ↗</a></p>}
