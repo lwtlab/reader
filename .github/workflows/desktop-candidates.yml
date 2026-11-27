@@ -10,7 +10,7 @@ on:
         type: string
 
       qa_source_ref:
-        description: Optional immutable QA correction SHA; only three fixed existing host-test and owned-volume QA files may differ
+        description: Optional immutable QA correction SHA; only four fixed existing host-test, owned-volume and portable QA files may differ
         required: false
         default: ''
         type: string
@@ -191,10 +191,6 @@ jobs:
         with:
           toolchain: 1.100.0
 
-      - name: Install fixed Rust dependency scanner
-        timeout-minutes: 20
-        run: node ci/private-step.mjs rust-audit-tools source cargo install cargo-audit --version 0.23.0 --locked
-
       - uses: pnpm/action-setup@v4
         with:
           version: 11.5.2
@@ -318,6 +314,10 @@ jobs:
         timeout-minutes: 2
         run: node ci/private-step.mjs installer-privacy source/apps/reader node scripts/windows-installer-privacy.mjs ../../../ci/privacy-candidates.mjs
 
+      - name: Install fixed Rust dependency scanner
+        timeout-minutes: 20
+        run: node ci/private-step.mjs rust-audit-tools source cargo install cargo-audit --version 0.23.0 --locked
+
       - name: Build unsigned candidates without publishing
         timeout-minutes: 40
         env:
@@ -380,12 +380,18 @@ jobs:
 
       - name: Validate Windows single-file runtime
         if: runner.os == 'Windows'
+        shell: pwsh
         timeout-minutes: 10
         env:
           READER_INSTALLER_TEST_DISPOSABLE: '1'
-        run: >-
-          node ci/private-step.mjs portable source/apps/reader node scripts/smoke-desktop-portable.mjs
-          release/core/${{ matrix.platform }}-${{ matrix.arch }}
+          SOURCE_REF: ${{ inputs.source_ref }}
+          QA_SOURCE_REF: ${{ inputs.qa_source_ref }}
+        run: |
+          $qaArgs = @()
+          if ($env:QA_SOURCE_REF) { $qaArgs = @('--qa-source', (Join-Path $env:GITHUB_WORKSPACE 'qa-source'), '--qa-ref', $env:QA_SOURCE_REF) }
+          $sourceRoot = Join-Path $env:GITHUB_WORKSPACE 'source'
+          $candidate = Join-Path $sourceRoot 'apps/reader/release/core/${{ matrix.platform }}-${{ matrix.arch }}'
+          node ci/private-step.mjs portable source/apps/reader node ../../../ci/verify-qa-source.mjs run-portable-qa --source $sourceRoot --source-ref $env:SOURCE_REF @qaArgs --candidate $candidate
 
       - name: Validate Linux single-file runtime
         if: runner.os == 'Linux'

@@ -6,7 +6,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import test from 'node:test';
 import {
-  allowedQaChangedPath, allowedQaChangedPaths, linkQaDependencies, recordQaSource, runHostContracts, runVolumeQa, verifyQaSource, volumeQaEntries,
+  allowedQaChangedPath, allowedQaChangedPaths, linkQaDependencies, portableQaEntry, recordQaSource, runHostContracts, runPortableQa, runVolumeQa, verifyQaSource, volumeQaEntries,
 } from './verify-qa-source.mjs';
 
 function git(root, ...args) {
@@ -30,7 +30,7 @@ function commit(root, message = 'Authored synthetic fixture') {
   git(root, 'commit', '-qm', message);
   return git(root, 'rev-parse', 'HEAD');
 }
-function fixture(t, { gitlink = false, inheritedAutoCrlf = false, volumeBody } = {}) {
+function fixture(t, { gitlink = false, inheritedAutoCrlf = false, volumeBody, portableBody } = {}) {
   const directory = mkdtempSync(path.join(os.tmpdir(), 'reader-independent-qa-fixture-'));
   t.after(() => rmSync(directory, { recursive: true, force: true }));
   const source = path.join(directory, 'application source 中文');
@@ -41,6 +41,7 @@ function fixture(t, { gitlink = false, inheritedAutoCrlf = false, volumeBody } =
   put(source, allowedQaChangedPaths[1], "export const fixtureVolume = 'original';\n");
   put(source, allowedQaChangedPaths[2], `import { writeFileSync } from 'node:fs'; import path from 'node:path'; import test from 'node:test'; writeFileSync(path.join(process.cwd(),'volume-contract-call.json'),JSON.stringify({cwd:process.cwd(),entry:process.argv[1],args:process.argv.slice(2)})); test('original synthetic volume contract',()=>{});\n`);
   for (const name of volumeQaEntries) put(source, `apps/reader/scripts/${name}`, volumeBody || `import { fixtureVolume } from './desktop-storage-volume.mjs'; import { writeFileSync } from 'node:fs'; import path from 'node:path'; writeFileSync(path.join(process.cwd(),'volume-call.json'),JSON.stringify({cwd:process.cwd(),entry:process.argv[1],args:process.argv.slice(2),fixtureVolume}));\n`);
+  put(source, `apps/reader/scripts/${portableQaEntry}`, portableBody || `import { writeFileSync } from 'node:fs'; import path from 'node:path'; writeFileSync(path.join(process.cwd(),'portable-call.json'),JSON.stringify({cwd:process.cwd(),entry:process.argv[1],args:process.argv.slice(2)}));\n`);
   put(source, 'apps/reader/electron/main/runtime.ts', 'Authored synthetic runtime must stay unchanged\n');
   put(source, 'apps/reader/package.json', '{"name":"synthetic-reader-fixture","version":"0.26.1"}\n');
   put(source, 'apps/reader/pnpm-lock.yaml', 'lockfileVersion: synthetic-fixture\n');
@@ -272,7 +273,7 @@ function candidate(f, root = f.source) {
 }
 
 for (const filename of allowedQaChangedPaths.slice(1)) {
-  test(`allows only the existing reviewed owned-volume QA blob: ${filename}`, (t) => {
+  test(`allows only the existing reviewed QA blob: ${filename}`, (t) => {
     const f = fixture(t);
     const original = readFileSync(path.join(f.source, filename));
     put(f.qaSource, filename, 'Reviewed authored synthetic volume QA correction\n');
@@ -284,7 +285,7 @@ for (const filename of allowedQaChangedPaths.slice(1)) {
 
 test('the fixed allowance cannot authorize new QA files or mode changes', (t) => {
   assert.equal(Object.isFrozen(allowedQaChangedPaths), true);
-  assert.equal(allowedQaChangedPaths.length, 3);
+  assert.equal(allowedQaChangedPaths.length, 4);
   const f = fixture(t);
   git(f.qaSource, 'update-index', '--chmod=+x', allowedQaChangedPaths[1]);
   git(f.qaSource, 'commit', '-qm', 'Original synthetic mode-only QA mutation');
@@ -392,6 +393,101 @@ test('packaged volume QA retains child failure and rejects post-test source muta
   assert.throws(() => runVolumeQa({source:changed.source,sourceRef:changed.sourceRef},volumeQaEntries[0],candidate(changed)),/tracked modifications/);
 });
 
+function portableCommand(f, additional = [], independent = true) {
+  const helper = fileURLToPath(new URL('./verify-qa-source.mjs', import.meta.url));
+  const args = [helper, 'run-portable-qa', '--source', f.source, '--source-ref', f.sourceRef];
+  if (independent) args.push('--qa-source', f.qaSource, '--qa-ref', f.options.qaRef);
+  args.push('--candidate', candidate(f), ...additional);
+  return execFileSync(process.execPath, args, { cwd: f.directory, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
+}
+
+test('portable QA rejects a non-Windows native host before executing any script', { skip: process.platform === 'win32' }, (t) => {
+  const f = fixture(t); f.dependencies(); linkQaDependencies(f.options);
+  assert.throws(() => portableCommand(f), /native Windows host/);
+  assert.equal(existsSync(path.join(f.source, 'apps/reader/portable-call.json')), false);
+});
+
+test('portable CLI runs only the actual reviewed QA entry with application cwd and candidate', { skip: process.platform !== 'win32' }, (t) => {
+  const f = fixture(t);
+  put(f.qaSource, allowedQaChangedPaths[3], readFileSync(path.join(f.source, allowedQaChangedPaths[3]), 'utf8') + '// Reviewed synthetic portable diagnostics correction\n');
+  f.options.qaRef = commit(f.qaSource);
+  f.dependencies(); linkQaDependencies(f.options);
+  assert.match(portableCommand(f), /Verified immutable application/);
+  const call = JSON.parse(readFileSync(path.join(f.source, 'apps/reader/portable-call.json')));
+  assert.equal(call.cwd, realpathSync.native(path.join(f.source, 'apps/reader')));
+  assert.equal(call.entry, realpathSync.native(path.join(f.qaSource, allowedQaChangedPaths[3])));
+  assert.deepEqual(call.args, [realpathSync.native(candidate(f))]);
+  assert.deepEqual(verifyQaSource(f.options).changedPaths, [allowedQaChangedPaths[3]]);
+});
+
+test('portable CLI accepts no entry, Vitest, arbitrary arguments or output override', (t) => {
+  const f = fixture(t); f.dependencies(); linkQaDependencies(f.options);
+  for (const args of [['--entry', portableQaEntry], ['--entry', '../arbitrary.mjs'], ['--vitest', 'arbitrary.mjs'], ['--', '--cleanup'], ['--output', 'arbitrary.json']]) {
+    assert.throws(() => portableCommand(f, args), /Only (packaged volume QA accepts an entry|host contracts accept|provenance recording accepts)/);
+  }
+  assert.equal(existsSync(path.join(f.source, 'apps/reader/portable-call.json')), false);
+});
+
+test('portable QA rejects QA-owned, external and relative candidates before any execution', (t) => {
+  const f = fixture(t); f.dependencies(); linkQaDependencies(f.options);
+  candidate(f);
+  for (const root of [f.qaSource, path.join(f.directory, 'external')]) {
+    assert.throws(() => runPortableQa(f.options, candidate(f, root)), /application-owned/);
+  }
+  assert.throws(() => runPortableQa(f.options, 'release/core/win32-x64'), /absolute application/);
+  assert.equal(existsSync(path.join(f.source, 'apps/reader/portable-call.json')), false);
+});
+
+for (const field of ['schemaVersion', 'version', 'platform', 'arch', 'profile', 'target']) {
+  test(`portable QA rejects a mismatched application candidate ${field}`, (t) => {
+    const f = fixture(t); f.dependencies();
+    const directory = candidate(f);
+    const indexFile = path.join(directory, 'desktop-artifacts.json');
+    const index = JSON.parse(readFileSync(indexFile));
+    let selected = directory;
+    if (field === 'target') {
+      selected = path.join(path.dirname(directory), 'wrong-target');
+      mkdirSync(selected);
+      writeFileSync(path.join(selected, 'desktop-artifacts.json'), JSON.stringify(index));
+    } else {
+      index[field] = field === 'schemaVersion' ? 99 : 'not-the-original';
+      writeFileSync(indexFile, JSON.stringify(index));
+    }
+    assert.throws(() => runPortableQa({ source: f.source, sourceRef: f.sourceRef }, selected), /volume QA|Volume QA/);
+    assert.equal(existsSync(path.join(f.source, 'apps/reader/portable-call.json')), false);
+  });
+}
+
+test('default-source portable QA needs no second checkout or dependency install', { skip: process.platform !== 'win32' }, (t) => {
+  const f = fixture(t); f.dependencies();
+  portableCommand(f, [], false);
+  const call = JSON.parse(readFileSync(path.join(f.source, 'apps/reader/portable-call.json')));
+  assert.equal(call.entry, realpathSync.native(path.join(f.source, allowedQaChangedPaths[3])));
+  assert.equal(existsSync(path.join(f.qaSource, 'apps/reader/node_modules')), false);
+});
+
+test('portable QA preserves child failure and rejects post-test tracked source mutation', { skip: process.platform !== 'win32' }, (t) => {
+  const failed = fixture(t, { portableBody: "throw new Error('Original synthetic portable QA failure');\n" });
+  failed.dependencies();
+  assert.throws(() => runPortableQa({ source: failed.source, sourceRef: failed.sourceRef }, candidate(failed)), error => Number.isInteger(error.status) && error.status > 0);
+  assert.deepEqual(verifyQaSource({ source: failed.source, sourceRef: failed.sourceRef }).changedPaths, []);
+  const changed = fixture(t, { portableBody: "import { writeFileSync } from 'node:fs'; writeFileSync('electron/main/runtime.ts','Original synthetic forbidden mutation');\n" });
+  changed.dependencies();
+  assert.throws(() => runPortableQa({ source: changed.source, sourceRef: changed.sourceRef }, candidate(changed)), /tracked modifications/);
+});
+
+test('portable-only receipt preserves exact source identities and the four fixed paths', (t) => {
+  const f = fixture(t);
+  put(f.qaSource, allowedQaChangedPaths[3], '// Reviewed synthetic portable QA correction\n');
+  f.options.qaRef = commit(f.qaSource); f.dependencies(); linkQaDependencies(f.options);
+  const receipt = recordQaSource(f.options, path.join(candidate(f), 'desktop-qa-source.json'));
+  assert.deepEqual(receipt.allowedChangedPaths, [...allowedQaChangedPaths]);
+  assert.deepEqual(receipt.changedPaths, [allowedQaChangedPaths[3]]);
+  assert.equal(receipt.applicationSourceSha, f.sourceRef);
+  assert.equal(receipt.qaSourceSha, f.options.qaRef);
+  assert.equal(receipt.allowedTestDiffers, false);
+});
+
 test('records only separate SHAs and the fixed allowed path after candidate finalization', (t) => {
   const f = fixture(t);
   f.correctTest();
@@ -435,8 +531,14 @@ for (const [lineEnding, newline] of [['LF', '\n'], ['CRLF', '\r\n']]) {
     assert.match(workflow, /Test reviewed owned-volume cleanup contracts\r?\n\s+if: inputs\.qa_source_ref != ''[\s\S]*?run-volume-contracts/);
     assert.equal((workflow.match(/run-volume-qa/g)||[]).length,4);
     for(const entry of volumeQaEntries) assert.equal((workflow.match(new RegExp(`--entry ${entry.replaceAll('.','\\.')}`,'g'))||[]).length,2);
-    assert.equal((workflow.match(/--candidate (?:"\$GITHUB_WORKSPACE\/source\/apps\/reader\/release\/core\/|\$candidate)/g)||[]).length,4);
+    assert.equal((workflow.match(/--candidate (?:"\$GITHUB_WORKSPACE\/source\/apps\/reader\/release\/core\/|\$candidate)/g)||[]).length,5);
     assert.ok(workflow.includes("scripts/desktop-installer-target.test.mjs scripts/desktop-profile-storage-probe.test.mjs"), 'The original application Node contracts must stay unchanged');
-
+    assert.equal((workflow.match(/cargo install cargo-audit --version 0\.23\.0 --locked/g) || []).length, 1);
+    assert.match(workflow, /Install fixed Rust dependency scanner\r?\n\s+timeout-minutes: 20\r?\n\s+run: node ci\/private-step\.mjs rust-audit-tools source cargo install cargo-audit --version 0\.23\.0 --locked\r?\n\r?\n\s+- name: Build unsigned candidates without publishing/);
+    assert.ok(workflow.indexOf('dtolnay/rust-toolchain@stable') < workflow.indexOf('Test desktop build contracts'));
+    assert.ok(workflow.indexOf('Confirm host tests left both tracked source trees unchanged') < workflow.indexOf('Install fixed Rust dependency scanner'));
+    assert.ok(workflow.indexOf('Test native Windows installer archive privacy') < workflow.indexOf('Install fixed Rust dependency scanner'));
+    assert.equal((workflow.match(/run-portable-qa/g) || []).length, 1);
+    assert.match(workflow, /Validate Windows single-file runtime\r?\n\s+if: runner\.os == 'Windows'\r?\n\s+shell: pwsh\r?\n\s+timeout-minutes: 10[\s\S]*?READER_INSTALLER_TEST_DISPOSABLE: '1'[\s\S]*?QA_SOURCE_REF: \$\{\{ inputs\.qa_source_ref \}\}[\s\S]*?portable source\/apps\/reader node \.\.\/\.\.\/\.\.\/ci\/verify-qa-source\.mjs run-portable-qa --source \$sourceRoot --source-ref \$env:SOURCE_REF @qaArgs --candidate \$candidate/);
   });
 }

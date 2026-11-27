@@ -5,15 +5,17 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parseArgs } from 'node:util';
 
-// Reviewed host-test and owned-volume QA corrections cannot change compiled inputs.
+// Reviewed host-test, owned-volume and portable QA corrections cannot change compiled inputs.
 export const allowedQaChangedPaths = Object.freeze([
   'apps/reader/electron/main/appimage-install.test.ts',
   'apps/reader/scripts/desktop-storage-volume.mjs',
   'apps/reader/scripts/desktop-profile-storage-probe.test.mjs',
+  'apps/reader/scripts/smoke-desktop-portable.mjs',
 ]);
 // Compatibility for consumers of the original host-test-only receipt.
 export const allowedQaChangedPath = allowedQaChangedPaths[0];
 export const volumeQaEntries = Object.freeze(['smoke-desktop-storage.mjs', 'smoke-desktop-profile-storage.mjs']);
+export const portableQaEntry = 'smoke-desktop-portable.mjs';
 const revision = /^[a-f0-9]{40}$/;
 // Git for Windows expands 8.3 temporary-directory aliases. Use the native
 // filesystem result on both sides, including junction and Reader path checks.
@@ -178,6 +180,14 @@ export function runVolumeQa(options, entryName, selectedCandidate) {
   runFixedQa(options, entryName, { before: [], after: [candidate] });
 }
 
+/** Only Windows may execute the fixed portable QA against its application candidate. */
+export function runPortableQa(options, selectedCandidate) {
+  const locations = sharedDependencies(verifyQaSource(options));
+  const candidate = applicationCandidate(locations, selectedCandidate);
+  assert.equal(process.platform, 'win32', 'Portable QA requires a native Windows host');
+  runFixedQa(options, portableQaEntry, { before: [], after: [candidate] });
+}
+
 export function recordQaSource(options, output) {
   const binding = verifyQaSource(options);
   sharedDependencies(binding);
@@ -203,7 +213,7 @@ export function recordQaSource(options, output) {
 
 function main() {
   const [action, ...raw] = process.argv.slice(2);
-  assert.ok(['verify', 'link', 'check-clean', 'run-host-contracts', 'run-volume-contracts', 'run-volume-qa', 'record'].includes(action), 'Unknown QA source verification operation');
+  assert.ok(['verify', 'link', 'check-clean', 'run-host-contracts', 'run-volume-contracts', 'run-volume-qa', 'run-portable-qa', 'record'].includes(action), 'Unknown QA source verification operation');
   const separator = raw.indexOf('--');
   const flags = separator < 0 ? raw : raw.slice(0, separator);
   const args = separator < 0 ? [] : raw.slice(separator + 1);
@@ -216,11 +226,13 @@ function main() {
   const options = { source: values.source, sourceRef: values['source-ref'], qaSource: values['qa-source'] || undefined, qaRef: values['qa-ref'] || undefined };
   assert.ok(action === 'run-host-contracts' || (!values.vitest && !args.length), 'Only host contracts accept a Vitest entry and arguments');
   assert.ok(action === 'record' || !values.output, 'Only provenance recording accepts an output path');
-  assert.ok(action === 'run-volume-qa' || (!values.entry && !values.candidate), 'Only packaged volume QA accepts an entry and candidate');
+  assert.ok(action === 'run-volume-qa' || !values.entry, 'Only packaged volume QA accepts an entry');
+  assert.ok(['run-volume-qa', 'run-portable-qa'].includes(action) || !values.candidate, 'Only packaged QA accepts a candidate');
   if (action === 'link') linkQaDependencies(options);
   else if (action === 'run-host-contracts') runHostContracts(options, values.vitest, args);
   else if (action === 'run-volume-contracts') runVolumeContracts(options);
   else if (action === 'run-volume-qa') runVolumeQa(options, values.entry, values.candidate);
+  else if (action === 'run-portable-qa') runPortableQa(options, values.candidate);
   else if (action === 'record') recordQaSource(options, values.output);
   else verifyQaSource(options);
   console.log(action === 'record' ? 'Recorded separate application and reviewed QA source provenance' : 'Verified immutable application and limited host-test source without changing build inputs');
