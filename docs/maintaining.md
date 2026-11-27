@@ -28,7 +28,7 @@ APK URLs from `v<VERSION>` and `lwt-reader-<VERSION>.apk`. Preserve those paths 
 releases. Namespacing alone does not isolate Latest: every non-mobile publisher must explicitly
 avoid Latest. A future per-product update protocol needs coordinated server/client rollout and old
 client compatibility. The existing desktop `desktop-stable` feed is separate from versioned releases;
-this work does not modify it or enable production updates.
+promoting that feed is a separate authorized operation after publishing an immutable versioned archive and qualifying the exact payload through real native upgrade QA.
 
 Before a real release, complete the product's existing verification, signing and acceptance gates,
 push the immutable private source commit, and commit/push reviewed public tooling. Hashes produced
@@ -45,7 +45,7 @@ node /path/to/public/reader/scripts/publish-release.mjs \
 The default is plan-only: it hashes local files and prints metadata without GitHub writes. Replace
 the example SHA/version/paths; review the plan, then add `--publish` only under release authorization.
 For mobile use `--product mobile` with the matching APK; desktop uses `--product desktop` and one or
-more verified installers. Repeat `--asset` for additional payloads, signing reports or checksums.
+more verified installers. For an updater-enabled desktop release, include every final `desktop-artifacts.json` entry: installers, authenticated channel YML and blockmaps. Repeat `--asset` for additional payloads and target-scoped signing/index/authentication metadata; retain canonical payload/feed names and disambiguate colliding metadata names. Create one global `SHA256SUMS` for the staged attachment set.
 
 Publication targets `lwtlab/reader` explicitly and verifies that the current public HEAD exists there.
 Tags point at that **public commit**, not the private app SHA. `reader-release.json` records both

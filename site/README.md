@@ -7,8 +7,8 @@ deployment. The product API remains at its existing address.
 
 The first implementation follows Reader's warm neutral palette, restrained amber accents, clear
 keyboard focus and readable typography. Its task path is landing → start the web app or read a guide
-→ choose an available download. Android links retain the existing published v0.22.0 APK. Desktop 0.26.0 and the manually loaded
-Clipper ZIP are published; iOS and the Chrome store entry remain unavailable. The reading sample is an original
+→ choose an available download. Android links retain the existing published v0.22.0 APK. Published desktop and manually loaded
+Clipper ZIP versions are recorded in `manifests/channels.json`; iOS and the Chrome store entry remain unavailable. The reading sample is an original
 static illustration, not an interactive screenshot or a claim of on-device verification.
 
 The existing site structure is authorized for deployment on 2026-11-27. Browser checks cover the landing, download and tutorial paths at desktop and
@@ -18,7 +18,7 @@ No analytics, account session or user source content is collected by the site.
 ## Desktop and companion publication metadata
 
 The download page is prepared for macOS arm64/x64, Windows x64 and Linux x64 core.
-The desktop guide covers installation, SHA-256 checks, private backups, manual updates and
+The desktop guide covers installation, SHA-256 checks, private backups, authenticated online or manual updates and
 explicit reduced-protection Linux AppImage launch. It is available before installers are released.
 Availability remains controlled by `manifests/channels.json`; each channel remains null until its
 actual public payload exists. Desktop and manual extension ZIP metadata now bind published assets;
@@ -29,7 +29,7 @@ After final-byte privacy, signature/native acceptance and actual publication, th
 ```text
 {
   version: "<stable version>",
-  updatePolicy: "manual",
+  updatePolicy: "manual" | "authenticated",
   releaseUrl: "https://github.com/lwtlab/reader/releases/tag/desktop/v<VERSION>",
   checksumsUrl: "https://github.com/lwtlab/reader/releases/download/desktop/v<VERSION>/SHA256SUMS",
   assets: [{
@@ -48,7 +48,7 @@ This is a schema illustration, not paste-ready published metadata. Names must ma
 Reader version, OS, architecture and format: mac DMG/ZIP, win setup/portable EXE, linux DEB/AppImage.
 Each platform displays only its own published assets; absent targets remain unavailable.
 The build rejects foreign repositories, mismatched filenames/versions, incomplete checksums,
-duplicate downloads and an automatic-update policy. Android's existing tag, APK and Latest remain untouched.
+duplicate downloads and an unknown update policy. `authenticated` identifies the enabled project-authenticated update path; it does not claim platform code signing. The actual signing status is recorded separately in `manifests/desktop-signing-status.json`. Android's existing tag, APK and Latest remain untouched.
 
 When Chrome Web Store installation is actually available, `extension` has `version`,
 `desktopVersion` (matching the published companion) and `storeUrl` (the real official store URL,
