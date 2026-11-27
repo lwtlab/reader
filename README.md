@@ -16,6 +16,20 @@ Native candidates verify frozen source-input and original-notice bytes immediate
 checkout, before installing native tools or Reader dependencies; this early integrity check does not
 replace full dependency/notice coverage checks or make a redistribution decision.
 
+The native candidate lane optionally accepts a separate immutable `qa_source_ref` for a reviewed
+host-test correction. Both revision inputs use full lowercase 40-character commit SHAs; empty QA
+means the application source remains the test source. The public verifier
+compares complete tracked path, mode, blob and Gitlink maps and clean HEADs: only
+`apps/reader/electron/main/appimage-install.test.ts` may have different bytes, and its mode must stay
+unchanged. Runtime, notices, dependency locks, metadata and every other compiled input must match.
+Only the lifecycle/browser host-contract step runs in that QA checkout, using the application
+checkout's fixed Vitest executable and dependencies through a newly created directory link (Windows
+junction). It never runs a second install, overlays files or changes the application build source.
+Both tracked trees are checked again after the tests. Final candidates include
+`desktop-qa-source.json`, with separate application/QA SHAs and the one permitted test path; the final
+privacy gate scans it before upload. Other contracts, compilation, packaging and native acceptance
+continue to use the application checkout and its original source SHA.
+
 | Lane | Scope | Signing and provenance |
 | --- | --- | --- |
 | `desktop-candidates.yml` on main | Four native core targets, one immutable private source SHA, synthetic QA; unsigned engineering packages | No Release; seven-day retention. This first-release replacement uses explicit `verify_upgrade=false`, continuing baseline rebuilding without claiming cross-version upgrade acceptance. Future `verify_upgrade=true` requires reviewed, available immutable [upgrade baselines](ci/upgrade-baselines.json) and a strictly increasing version. |
