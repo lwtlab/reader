@@ -341,24 +341,36 @@ jobs:
           release/core/${{ matrix.platform }}-${{ matrix.arch }}/${{ matrix.executable }}
           release/core/${{ matrix.platform }}-${{ matrix.arch }}/${{ matrix.resources }}
 
-      - name: Validate installed desktop window
-        timeout-minutes: 5
-        if: runner.os != 'Linux'
-        run: >-
-          node ci/private-step.mjs window source/apps/reader node scripts/smoke-desktop-window.mjs
-          release/core/${{ matrix.platform }}-${{ matrix.arch }}/${{ matrix.executable }}
-
-      - name: Validate Linux desktop window
-        timeout-minutes: 5
-        if: runner.os == 'Linux'
-        run: >-
-          node ci/private-step.mjs window source/apps/reader bash ../../../ci/run-xvfb.sh bash scripts/smoke-desktop-window-linux.sh
-          release/core/${{ matrix.platform }}-${{ matrix.arch }}/${{ matrix.executable }}
-
       - name: Prepare checksums
         run: |
           node ci/private-step.mjs checksums source/apps/reader node scripts/desktop-artifacts.mjs ${{ matrix.platform }} ${{ matrix.arch }} core
           node ci/private-step.mjs verify source/apps/reader node scripts/desktop-artifacts.mjs ${{ matrix.platform }} ${{ matrix.arch }} core --verify
+
+      - name: Validate installed desktop window
+        timeout-minutes: 5
+        if: runner.os != 'Linux'
+        env:
+          SOURCE_REF: ${{ inputs.source_ref }}
+          QA_SOURCE_REF: ${{ inputs.qa_source_ref }}
+        run: |
+          qa_args=()
+          if [[ -n "$QA_SOURCE_REF" ]]; then qa_args+=(--qa-source "$GITHUB_WORKSPACE/qa-source" --qa-ref "$QA_SOURCE_REF"); fi
+          node ci/private-step.mjs window source/apps/reader node ../../../ci/verify-qa-source.mjs run-window-qa \
+            --source "$GITHUB_WORKSPACE/source" --source-ref "$SOURCE_REF" "${qa_args[@]}" \
+            --candidate "$GITHUB_WORKSPACE/source/apps/reader/release/core/${{ matrix.platform }}-${{ matrix.arch }}"
+
+      - name: Validate Linux desktop window
+        timeout-minutes: 5
+        if: runner.os == 'Linux'
+        env:
+          SOURCE_REF: ${{ inputs.source_ref }}
+          QA_SOURCE_REF: ${{ inputs.qa_source_ref }}
+        run: |
+          qa_args=()
+          if [[ -n "$QA_SOURCE_REF" ]]; then qa_args+=(--qa-source "$GITHUB_WORKSPACE/qa-source" --qa-ref "$QA_SOURCE_REF"); fi
+          node ci/private-step.mjs window source/apps/reader bash ../../../ci/run-xvfb.sh bash ../../../ci/run-window-qa-linux.sh \
+            --source "$GITHUB_WORKSPACE/source" --source-ref "$SOURCE_REF" "${qa_args[@]}" \
+            --candidate "$GITHUB_WORKSPACE/source/apps/reader/release/core/${{ matrix.platform }}-${{ matrix.arch }}"
 
       - name: Validate actual installer lifecycle
         if: runner.os != 'Linux'

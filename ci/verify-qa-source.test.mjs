@@ -6,7 +6,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import test from 'node:test';
 import {
-  allowedQaChangedPath, allowedQaChangedPaths, linkQaDependencies, portableQaEntry, recordQaSource, runHostContracts, runPortableQa, runVolumeQa, verifyQaSource, volumeQaEntries,
+  allowedQaChangedPath, allowedQaChangedPaths, linkQaDependencies, portableQaEntry, recordQaSource, runHostContracts, runPortableQa, runVolumeQa, runWindowQa, verifyQaSource, volumeQaEntries, windowQaEntry,
 } from './verify-qa-source.mjs';
 
 function git(root, ...args) {
@@ -30,7 +30,7 @@ function commit(root, message = 'Authored synthetic fixture') {
   git(root, 'commit', '-qm', message);
   return git(root, 'rev-parse', 'HEAD');
 }
-function fixture(t, { gitlink = false, inheritedAutoCrlf = false, volumeBody, portableBody } = {}) {
+function fixture(t, { gitlink = false, inheritedAutoCrlf = false, volumeBody, portableBody, windowBody } = {}) {
   const directory = mkdtempSync(path.join(os.tmpdir(), 'reader-independent-qa-fixture-'));
   t.after(() => rmSync(directory, { recursive: true, force: true }));
   const source = path.join(directory, 'application source 中文');
@@ -42,6 +42,8 @@ function fixture(t, { gitlink = false, inheritedAutoCrlf = false, volumeBody, po
   put(source, allowedQaChangedPaths[2], `import { writeFileSync } from 'node:fs'; import path from 'node:path'; import test from 'node:test'; writeFileSync(path.join(process.cwd(),'volume-contract-call.json'),JSON.stringify({cwd:process.cwd(),entry:process.argv[1],args:process.argv.slice(2)})); test('original synthetic volume contract',()=>{});\n`);
   for (const name of volumeQaEntries) put(source, `apps/reader/scripts/${name}`, volumeBody || `import { fixtureVolume } from './desktop-storage-volume.mjs'; import { writeFileSync } from 'node:fs'; import path from 'node:path'; writeFileSync(path.join(process.cwd(),'volume-call.json'),JSON.stringify({cwd:process.cwd(),entry:process.argv[1],args:process.argv.slice(2),fixtureVolume}));\n`);
   put(source, `apps/reader/scripts/${portableQaEntry}`, portableBody || `import { writeFileSync } from 'node:fs'; import path from 'node:path'; writeFileSync(path.join(process.cwd(),'portable-call.json'),JSON.stringify({cwd:process.cwd(),entry:process.argv[1],args:process.argv.slice(2)}));\n`);
+  put(source, allowedQaChangedPaths[4], "export const fixtureRenderer = 'original';\n");
+  put(source, `apps/reader/scripts/${windowQaEntry}`, windowBody || `import { fixtureRenderer } from './smoke-desktop-renderer.mjs'; import { writeFileSync } from 'node:fs'; import path from 'node:path'; writeFileSync(path.join(process.cwd(),'window-call.json'),JSON.stringify({cwd:process.cwd(),entry:process.argv[1],args:process.argv.slice(2),fixtureRenderer}));\n`);
   put(source, 'apps/reader/electron/main/runtime.ts', 'Authored synthetic runtime must stay unchanged\n');
   put(source, 'apps/reader/package.json', '{"name":"synthetic-reader-fixture","version":"0.26.1"}\n');
   put(source, 'apps/reader/pnpm-lock.yaml', 'lockfileVersion: synthetic-fixture\n');
@@ -272,6 +274,159 @@ function candidate(f, root = f.source) {
   return directory;
 }
 
+function windowCandidate(f, root = f.source) {
+  const directory = candidate(f, root);
+  const targets = JSON.parse(readFileSync(new URL('./targets.json', import.meta.url), 'utf8'));
+  const target = targets.find(item => item.platform === process.platform && item.arch === process.arch);
+  assert.ok(target, 'The fixture must use an actual supported native target');
+  const executable = path.join(directory, target.executable);
+  mkdirSync(path.dirname(executable), { recursive: true });
+  writeFileSync(executable, 'Authored synthetic executable marker; the public fixture never launches it.\n');
+  return { directory, executable };
+}
+
+function windowCommand(f, selected, additional = [], independent = true) {
+  const helper = fileURLToPath(new URL('./verify-qa-source.mjs', import.meta.url));
+  const args = [helper, 'run-window-qa', '--source', f.source, '--source-ref', f.sourceRef];
+  if (independent) args.push('--qa-source', f.qaSource, '--qa-ref', f.options.qaRef);
+  args.push('--candidate', selected, ...additional);
+  return execFileSync(process.execPath, args, { cwd: f.directory, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
+}
+
+test('window CLI runs the fixed QA entry and reviewed renderer with the original application executable', (t) => {
+  const f = fixture(t);
+  put(f.qaSource, allowedQaChangedPaths[4], "export const fixtureRenderer = 'reviewed-renderer';\n");
+  f.options.qaRef = commit(f.qaSource); f.dependencies(); linkQaDependencies(f.options);
+  const selected = windowCandidate(f);
+  assert.match(windowCommand(f, selected.directory), /Verified immutable application/);
+  const call = JSON.parse(readFileSync(path.join(f.source, 'apps/reader/window-call.json')));
+  assert.equal(call.cwd, realpathSync.native(path.join(f.source, 'apps/reader')));
+  assert.equal(call.entry, realpathSync.native(path.join(f.qaSource, `apps/reader/scripts/${windowQaEntry}`)));
+  assert.deepEqual(call.args, [realpathSync.native(selected.executable)]);
+  assert.equal(call.fixtureRenderer, 'reviewed-renderer');
+  assert.equal(readFileSync(path.join(f.source, allowedQaChangedPaths[4]), 'utf8'), "export const fixtureRenderer = 'original';\n");
+  assert.deepEqual(verifyQaSource(f.options).changedPaths, [allowedQaChangedPaths[4]]);
+});
+
+test('default-source window QA needs no second checkout or dependency installation', (t) => {
+  const f = fixture(t); f.dependencies();
+  const selected = windowCandidate(f);
+  assert.match(windowCommand(f, selected.directory, [], false), /Verified immutable application/);
+  const call = JSON.parse(readFileSync(path.join(f.source, 'apps/reader/window-call.json')));
+  assert.equal(call.entry, realpathSync.native(path.join(f.source, `apps/reader/scripts/${windowQaEntry}`)));
+  assert.deepEqual(call.args, [realpathSync.native(selected.executable)]);
+  assert.equal(existsSync(path.join(f.qaSource, 'apps/reader/node_modules')), false);
+});
+
+test('window CLI rejects entry selection, arbitrary arguments, Vitest and output overrides', (t) => {
+  const f = fixture(t); f.dependencies(); linkQaDependencies(f.options);
+  const selected = windowCandidate(f);
+  for (const args of [['--entry', windowQaEntry], ['--entry', '../arbitrary.mjs'], ['--vitest', 'arbitrary.mjs'], ['--', '--immutable-package'], ['--output', 'arbitrary.json']])
+    assert.throws(() => windowCommand(f, selected.directory, args), /Only (packaged volume QA accepts an entry|host contracts accept|provenance recording accepts)/);
+  assert.equal(existsSync(path.join(f.source, 'apps/reader/window-call.json')), false);
+});
+
+test('window QA rejects QA-owned, external, relative and redirected executables', (t) => {
+  const f = fixture(t); f.dependencies(); linkQaDependencies(f.options);
+  const selected = windowCandidate(f);
+  for (const root of [f.qaSource, path.join(f.directory, 'external')])
+    assert.throws(() => runWindowQa(f.options, windowCandidate(f, root).directory), /application-owned/);
+  assert.throws(() => runWindowQa(f.options, 'release/core/target'), /absolute application/);
+  const outside = path.join(f.directory, 'unrelated executable');
+  mkdirSync(outside); writeFileSync(path.join(outside, path.basename(selected.executable)), 'Authored unrelated executable\n');
+  rmSync(path.dirname(selected.executable), { recursive: true });
+  symlinkSync(outside, path.dirname(selected.executable), process.platform === 'win32' ? 'junction' : 'dir');
+  assert.throws(() => runWindowQa(f.options, selected.directory), /fixed regular application executable/);
+  assert.equal(existsSync(path.join(f.source, 'apps/reader/window-call.json')), false);
+});
+
+for (const field of ['schemaVersion', 'version', 'platform', 'arch', 'profile', 'target']) {
+  test(`window QA rejects a mismatched application candidate ${field}`, (t) => {
+    const f = fixture(t); f.dependencies();
+    const selected = windowCandidate(f), file = path.join(selected.directory, 'desktop-artifacts.json');
+    const index = JSON.parse(readFileSync(file));
+    if (field === 'target') {
+      const wrong = path.join(path.dirname(selected.directory), 'wrong-target');
+      mkdirSync(wrong); writeFileSync(path.join(wrong, 'desktop-artifacts.json'), JSON.stringify(index));
+      assert.throws(() => runWindowQa({ source: f.source, sourceRef: f.sourceRef }, wrong), /target differs/);
+    } else {
+      index[field] = field === 'schemaVersion' ? 99 : 'not-the-application';
+      writeFileSync(file, JSON.stringify(index));
+      assert.throws(() => runWindowQa({ source: f.source, sourceRef: f.sourceRef }, selected.directory));
+    }
+    assert.equal(existsSync(path.join(f.source, 'apps/reader/window-call.json')), false);
+  });
+}
+
+test('renderer allowance cannot authorize the window entry, mode changes or newly added QA paths', (t) => {
+  for (const mode of ['window-entry', 'renderer-mode', 'new-file']) {
+    const f = fixture(t);
+    if (mode === 'window-entry') put(f.qaSource, `apps/reader/scripts/${windowQaEntry}`, 'Original synthetic forbidden entry change\n');
+    else if (mode === 'renderer-mode') git(f.qaSource, 'update-index', '--chmod=+x', allowedQaChangedPaths[4]);
+    else put(f.qaSource, 'apps/reader/scripts/additional-renderer.mjs', 'Original synthetic additional QA path\n');
+    if (mode === 'renderer-mode') {
+      git(f.qaSource, 'commit', '-qm', 'Authored renderer mode-only change');
+      f.options.qaRef = git(f.qaSource, 'rev-parse', 'HEAD');
+    } else f.options.qaRef = commit(f.qaSource);
+    assert.throws(() => verifyQaSource(f.options), /mode|tracked modifications|outside the fixed|add or remove/);
+  }
+});
+
+test('window QA preserves child failure and rejects tracked source mutation', (t) => {
+  const failed = fixture(t, { windowBody: "throw new Error('Original synthetic window QA failure');\n" });
+  failed.dependencies();
+  assert.throws(() => runWindowQa({ source: failed.source, sourceRef: failed.sourceRef }, windowCandidate(failed).directory), error => error.status > 0);
+  const changed = fixture(t, { windowBody: "import { writeFileSync } from 'node:fs'; writeFileSync('electron/main/runtime.ts','Authored forbidden post-window mutation');\n" });
+  changed.dependencies();
+  assert.throws(() => runWindowQa({ source: changed.source, sourceRef: changed.sourceRef }, windowCandidate(changed).directory), /tracked modifications/);
+});
+
+test('private-step confines window QA output to the private log without broadening its cwd boundary', (t) => {
+  const f = fixture(t, { windowBody: "console.log('SYNTHETIC-PRIVATE-WINDOW-OUT'); console.error('SYNTHETIC-PRIVATE-WINDOW-ERR');\n" });
+  f.dependencies(); linkQaDependencies(f.options);
+  symlinkSync(f.source, path.join(f.directory, 'source'), process.platform === 'win32' ? 'junction' : 'dir');
+  const wrapper = fileURLToPath(new URL('./private-step.mjs', import.meta.url));
+  const helper = fileURLToPath(new URL('./verify-qa-source.mjs', import.meta.url));
+  const stdout = execFileSync(process.execPath, [wrapper, 'window', 'source/apps/reader', process.execPath, helper, 'run-window-qa', '--source', f.source, '--source-ref', f.sourceRef, '--qa-source', f.qaSource, '--qa-ref', f.options.qaRef, '--candidate', windowCandidate(f).directory], { cwd: f.directory, env: { ...process.env, RUNNER_TEMP: f.directory }, encoding: 'utf8' });
+  assert.match(stdout, /window passed/); assert.doesNotMatch(stdout, /SYNTHETIC-PRIVATE-WINDOW|Verified immutable|application source/);
+  const log = readFileSync(path.join(f.directory, 'reader-private-build.log'), 'utf8');
+  assert.match(log, /SYNTHETIC-PRIVATE-WINDOW-OUT/); assert.match(log, /SYNTHETIC-PRIVATE-WINDOW-ERR/);
+});
+
+test('renderer-only provenance records the fifth fixed path without changing the compiled source', (t) => {
+  const f = fixture(t);
+  put(f.qaSource, allowedQaChangedPaths[4], "export const fixtureRenderer = 'reviewed-renderer';\n");
+  f.options.qaRef = commit(f.qaSource); f.dependencies(); linkQaDependencies(f.options);
+  const receipt = recordQaSource(f.options, path.join(windowCandidate(f).directory, 'desktop-qa-source.json'));
+  assert.deepEqual(receipt.allowedChangedPaths, [...allowedQaChangedPaths]);
+  assert.deepEqual(receipt.changedPaths, [allowedQaChangedPaths[4]]);
+  assert.equal(receipt.allowedTestDiffers, false);
+});
+
+test('Linux window wrapper retains owned Openbox readiness, fixed entry and cleanup', { skip: process.platform === 'win32' }, (t) => {
+  for (const ready of [true, false]) {
+    const f = fixture(t); f.dependencies(); linkQaDependencies(f.options);
+    const tools = path.join(f.directory, 'synthetic window tools'), closed = path.join(f.directory, 'openbox-closed');
+    mkdirSync(tools);
+    const openbox = ready
+      ? '#!/usr/bin/env bash\ntrap \'echo closed >"$SYNTHETIC_WINDOW_CLOSED"; exit 0\' TERM\nwhile :; do sleep 0.02; done\n'
+      : '#!/usr/bin/env bash\nexit 0\n';
+    writeFileSync(path.join(tools, 'openbox'), openbox); chmodSync(path.join(tools, 'openbox'), 0o755);
+    writeFileSync(path.join(tools, 'xprop'), '#!/usr/bin/env bash\necho "window id # 0x${SYNTHETIC_WINDOW_READY}"\n'); chmodSync(path.join(tools, 'xprop'), 0o755);
+    const helper = fileURLToPath(new URL('./run-window-qa-linux.sh', import.meta.url));
+    const args = [helper, '--source', f.source, '--source-ref', f.sourceRef, '--qa-source', f.qaSource, '--qa-ref', f.options.qaRef, '--candidate', windowCandidate(f).directory];
+    const options = { cwd: path.join(f.source, 'apps/reader'), encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], timeout: 10000, env: { ...process.env, PATH: `${tools}${path.delimiter}${path.dirname(process.execPath)}${path.delimiter}${process.env.PATH}`, SYNTHETIC_WINDOW_CLOSED: closed, SYNTHETIC_WINDOW_READY: ready ? 'abc' : '0' } };
+    if (ready) {
+      assert.match(execFileSync('bash', args, options), /Verified immutable application/);
+      assert.equal(readFileSync(closed, 'utf8').trim(), 'closed');
+      assert.equal(existsSync(path.join(f.source, 'apps/reader/window-call.json')), true);
+    } else {
+      assert.throws(() => execFileSync('bash', args, options), /window manager did not become ready/);
+      assert.equal(existsSync(path.join(f.source, 'apps/reader/window-call.json')), false);
+    }
+  }
+});
+
 for (const filename of allowedQaChangedPaths.slice(1)) {
   test(`allows only the existing reviewed QA blob: ${filename}`, (t) => {
     const f = fixture(t);
@@ -285,7 +440,7 @@ for (const filename of allowedQaChangedPaths.slice(1)) {
 
 test('the fixed allowance cannot authorize new QA files or mode changes', (t) => {
   assert.equal(Object.isFrozen(allowedQaChangedPaths), true);
-  assert.equal(allowedQaChangedPaths.length, 4);
+  assert.equal(allowedQaChangedPaths.length, 5);
   const f = fixture(t);
   git(f.qaSource, 'update-index', '--chmod=+x', allowedQaChangedPaths[1]);
   git(f.qaSource, 'commit', '-qm', 'Original synthetic mode-only QA mutation');
@@ -531,13 +686,23 @@ for (const [lineEnding, newline] of [['LF', '\n'], ['CRLF', '\r\n']]) {
     assert.match(workflow, /Test reviewed owned-volume cleanup contracts\r?\n\s+if: inputs\.qa_source_ref != ''[\s\S]*?run-volume-contracts/);
     assert.equal((workflow.match(/run-volume-qa/g)||[]).length,4);
     for(const entry of volumeQaEntries) assert.equal((workflow.match(new RegExp(`--entry ${entry.replaceAll('.','\\.')}`,'g'))||[]).length,2);
-    assert.equal((workflow.match(/--candidate (?:"\$GITHUB_WORKSPACE\/source\/apps\/reader\/release\/core\/|\$candidate)/g)||[]).length,5);
+    assert.equal((workflow.match(/--candidate (?:"\$GITHUB_WORKSPACE\/source\/apps\/reader\/release\/core\/|\$candidate)/g)||[]).length,7);
     assert.ok(workflow.includes("scripts/desktop-installer-target.test.mjs scripts/desktop-profile-storage-probe.test.mjs"), 'The original application Node contracts must stay unchanged');
     assert.equal((workflow.match(/cargo install cargo-audit --version 0\.23\.0 --locked/g) || []).length, 1);
     assert.match(workflow, /Install fixed Rust dependency scanner\r?\n\s+timeout-minutes: 20\r?\n\s+run: node ci\/private-step\.mjs rust-audit-tools source cargo install cargo-audit --version 0\.23\.0 --locked\r?\n\r?\n\s+- name: Build unsigned candidates without publishing/);
     assert.ok(workflow.indexOf('dtolnay/rust-toolchain@stable') < workflow.indexOf('Test desktop build contracts'));
     assert.ok(workflow.indexOf('Confirm host tests left both tracked source trees unchanged') < workflow.indexOf('Install fixed Rust dependency scanner'));
     assert.ok(workflow.indexOf('Test native Windows installer archive privacy') < workflow.indexOf('Install fixed Rust dependency scanner'));
+    assert.ok(workflow.indexOf('Prepare checksums') < workflow.indexOf('Validate installed desktop window'));
+    assert.ok(workflow.includes('window source/apps/reader node ../../../ci/verify-qa-source.mjs run-window-qa'));
+    assert.ok(workflow.includes('window source/apps/reader bash ../../../ci/run-xvfb.sh bash ../../../ci/run-window-qa-linux.sh'));
+    assert.equal((workflow.match(/timeout-minutes: 5/g) || []).length > 0, true);
+    const linuxWrapper = readFileSync(new URL('./run-window-qa-linux.sh', import.meta.url), 'utf8');
+    assert.match(linuxWrapper, /for attempt in \{1\.\.50\}/);
+    assert.match(linuxWrapper, /sleep 0\.1/);
+    assert.match(linuxWrapper, /_NET_SUPPORTING_WM_CHECK/);
+    assert.match(linuxWrapper, /run-window-qa "\$@"/);
+    assert.doesNotMatch(linuxWrapper, /smoke-desktop-window-linux|--entry|--no-sandbox/);
     assert.equal((workflow.match(/run-portable-qa/g) || []).length, 1);
     assert.match(workflow, /Validate Windows single-file runtime\r?\n\s+if: runner\.os == 'Windows'\r?\n\s+shell: pwsh\r?\n\s+timeout-minutes: 10[\s\S]*?READER_INSTALLER_TEST_DISPOSABLE: '1'[\s\S]*?QA_SOURCE_REF: \$\{\{ inputs\.qa_source_ref \}\}[\s\S]*?portable source\/apps\/reader node \.\.\/\.\.\/\.\.\/ci\/verify-qa-source\.mjs run-portable-qa --source \$sourceRoot --source-ref \$env:SOURCE_REF @qaArgs --candidate \$candidate/);
   });

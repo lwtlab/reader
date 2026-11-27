@@ -19,15 +19,16 @@ checkout, before installing native tools or Reader dependencies; this early inte
 replace full dependency/notice coverage checks or make a redistribution decision.
 
 The native candidate lane optionally accepts a separate immutable `qa_source_ref` for reviewed
-host-test, owned-volume and Windows portable QA corrections. Both revision inputs use full lowercase 40-character
+host-test, owned-volume, Windows portable and renderer QA corrections. Both revision inputs use full lowercase 40-character
 commit SHAs; empty QA means the application source remains the test source. The public verifier
-compares complete tracked path, mode, blob and Gitlink maps and clean HEADs. Only these four
+compares complete tracked path, mode, blob and Gitlink maps and clean HEADs. Only these five
 existing regular files may differ in bytes, with unchanged modes:
 
 - `apps/reader/electron/main/appimage-install.test.ts`
 - `apps/reader/scripts/desktop-storage-volume.mjs`
 - `apps/reader/scripts/desktop-profile-storage-probe.test.mjs`
 - `apps/reader/scripts/smoke-desktop-portable.mjs`
+- `apps/reader/scripts/smoke-desktop-renderer.mjs`
 
 Runtime, notices, dependency locks, metadata and every other application input must match.
 The lifecycle/browser host contracts use the application's fixed Vitest entry in the QA checkout.
@@ -38,6 +39,13 @@ source, with application cwd and an absolute application-owned candidate whose c
 version match its artifact index. QA-owned/external candidates and arbitrary entries are rejected.
 Windows single-file acceptance likewise uses only the fixed `smoke-desktop-portable.mjs` QA entry
 on a native Windows host, retaining application cwd and the same candidate binding and timeout.
+The fixed `run-window-qa` executor runs only the unchanged `smoke-desktop-window.mjs` entry,
+which imports the reviewed renderer helper from the selected QA source. Its executable comes only
+from `ci/targets.json` inside the absolute application candidate; redirected executables and extra
+arguments are rejected. Checksums are prepared before window QA so the same strict artifact-index
+binding applies. Linux retains the existing Xvfb outer wrapper and Openbox readiness/cleanup;
+`ci/run-window-qa-linux.sh` invokes only this fixed executor. The window script's 45-second launch
+budget and all acceptance assertions remain application-owned and unchanged.
 The pinned Rust audit tool is installed after pre-build host checks, immediately before compilation;
 the toolchain, checks and their original budgets remain in place.
 The explicit dependency directory link (Windows junction) reuses the application dependencies;
