@@ -418,23 +418,25 @@ test('volume-only QA provenance records the complete fixed allowance and actual 
   assert.equal(receipt.allowedTestDiffers,false);
 });
 
-test('public workflow preserves every host filter and confines separate QA to fixed host and volume contracts', () => {
-  const workflow = readFileSync(new URL('../.github/workflows/desktop-candidates.yml', import.meta.url), 'utf8');
-  assert.match(workflow, /qa_source_ref:[\s\S]*?required: false/);
-  assert.match(workflow, /path: qa-source[\s\S]*?persist-credentials: false[\s\S]*?submodules: false/);
-  assert.match(workflow, /host-contracts source\/apps\/reader node \.\.\/\.\.\/\.\.\/ci\/verify-qa-source\.mjs run-host-contracts/);
-  assert.ok(workflow.includes('--vitest "$GITHUB_WORKSPACE/source/apps/reader/node_modules/vitest/vitest.mjs"'));
-  for (const filter of ['scripts/reader-module-preloads.test.ts', 'scripts/electron-sqlite.test.ts', 'electron/main lib/desktop app/api/health/route.test.ts', 'lib/transcribe/asr-readiness.test.ts', 'lib/transcribe/availability.test.ts', 'lib/transcribe/paths.test.ts', 'lib/transcribe/sync.test.ts', 'lib/transcribe/qwen3/manager.test.ts', 'app/api/transcribe/route.test.ts', 'app/api/transcribe/sync/route.test.ts', 'app/api/transcribe/retry/route.test.ts', 'app/api/narration/route.test.ts', 'lib/config/store.test.ts', 'lib/config/store-atomic.test.ts', 'lib/config/store-read-errors.test.ts', 'lib/config/store-corruption.test.ts', 'lib/db/client-retry.test.ts', 'lib/application/sync-push/review-local.real-db.test.ts', 'lib/lang/current.test.ts', 'lib/lang/context.test.ts', 'components/add-content/AddContentDialog.test.tsx', 'embed/app/routes/profile-route.test.tsx', 'lib/articles/part-store-read-errors.test.ts', 'lib/articles/part-store-corruption.test.ts', 'lib/articles/part-store-durable.test.ts', 'scripts/desktop-storage-probe.test.ts', 'lib/articles/part-store.test.ts', 'lib/books/list.test.ts', 'app/api/articles/[slug]/route.test.ts', 'app/api/articles/[slug]/parts/[partId]/route.test.ts']) assert.ok(workflow.includes(filter), `Missing original host-contract filter: ${filter}`);
-  assert.ok(workflow.includes("--maxWorkers=${{ matrix.id == 'darwin-x64' && 1 || 2 }}"));
-  assert.ok(workflow.indexOf('Confirm host tests left both tracked source trees unchanged') < workflow.indexOf('Build unsigned candidates without publishing'));
-  assert.ok(workflow.indexOf('Record immutable application and independent host-test provenance') < workflow.indexOf('Audit final candidate files before upload'));
-  assert.ok(workflow.includes('/desktop-*.json'));
-  assert.match(workflow, /READER_BUILD_SHA: \$\{\{ inputs.source_ref \}\}/);
-  assert.ok(workflow.indexOf('Test reviewed owned-volume cleanup contracts') < workflow.indexOf('Build unsigned candidates without publishing'));
-  assert.match(workflow, /Test reviewed owned-volume cleanup contracts\n\s+if: inputs\.qa_source_ref != ''[\s\S]*?run-volume-contracts/);
-  assert.equal((workflow.match(/run-volume-qa/g)||[]).length,4);
-  for(const entry of volumeQaEntries) assert.equal((workflow.match(new RegExp(`--entry ${entry.replaceAll('.','\\.')}`,'g'))||[]).length,2);
-  assert.equal((workflow.match(/--candidate (?:"\$GITHUB_WORKSPACE\/source\/apps\/reader\/release\/core\/|\$candidate)/g)||[]).length,4);
-  assert.ok(workflow.includes("scripts/desktop-installer-target.test.mjs scripts/desktop-profile-storage-probe.test.mjs"), 'The original application Node contracts must stay unchanged');
+for (const [lineEnding, newline] of [['LF', '\n'], ['CRLF', '\r\n']]) {
+  test(`public workflow preserves every host filter and confines separate QA to fixed host and volume contracts (${lineEnding})`, () => {
+    const workflow = readFileSync(new URL('../.github/workflows/desktop-candidates.yml', import.meta.url), 'utf8').replace(/\r?\n/gu, newline);
+    assert.match(workflow, /qa_source_ref:[\s\S]*?required: false/);
+    assert.match(workflow, /path: qa-source[\s\S]*?persist-credentials: false[\s\S]*?submodules: false/);
+    assert.match(workflow, /host-contracts source\/apps\/reader node \.\.\/\.\.\/\.\.\/ci\/verify-qa-source\.mjs run-host-contracts/);
+    assert.ok(workflow.includes('--vitest "$GITHUB_WORKSPACE/source/apps/reader/node_modules/vitest/vitest.mjs"'));
+    for (const filter of ['scripts/reader-module-preloads.test.ts', 'scripts/electron-sqlite.test.ts', 'electron/main lib/desktop app/api/health/route.test.ts', 'lib/transcribe/asr-readiness.test.ts', 'lib/transcribe/availability.test.ts', 'lib/transcribe/paths.test.ts', 'lib/transcribe/sync.test.ts', 'lib/transcribe/qwen3/manager.test.ts', 'app/api/transcribe/route.test.ts', 'app/api/transcribe/sync/route.test.ts', 'app/api/transcribe/retry/route.test.ts', 'app/api/narration/route.test.ts', 'lib/config/store.test.ts', 'lib/config/store-atomic.test.ts', 'lib/config/store-read-errors.test.ts', 'lib/config/store-corruption.test.ts', 'lib/db/client-retry.test.ts', 'lib/application/sync-push/review-local.real-db.test.ts', 'lib/lang/current.test.ts', 'lib/lang/context.test.ts', 'components/add-content/AddContentDialog.test.tsx', 'embed/app/routes/profile-route.test.tsx', 'lib/articles/part-store-read-errors.test.ts', 'lib/articles/part-store-corruption.test.ts', 'lib/articles/part-store-durable.test.ts', 'scripts/desktop-storage-probe.test.ts', 'lib/articles/part-store.test.ts', 'lib/books/list.test.ts', 'app/api/articles/[slug]/route.test.ts', 'app/api/articles/[slug]/parts/[partId]/route.test.ts']) assert.ok(workflow.includes(filter), `Missing original host-contract filter: ${filter}`);
+    assert.ok(workflow.includes("--maxWorkers=${{ matrix.id == 'darwin-x64' && 1 || 2 }}"));
+    assert.ok(workflow.indexOf('Confirm host tests left both tracked source trees unchanged') < workflow.indexOf('Build unsigned candidates without publishing'));
+    assert.ok(workflow.indexOf('Record immutable application and independent host-test provenance') < workflow.indexOf('Audit final candidate files before upload'));
+    assert.ok(workflow.includes('/desktop-*.json'));
+    assert.match(workflow, /READER_BUILD_SHA: \$\{\{ inputs.source_ref \}\}/);
+    assert.ok(workflow.indexOf('Test reviewed owned-volume cleanup contracts') < workflow.indexOf('Build unsigned candidates without publishing'));
+    assert.match(workflow, /Test reviewed owned-volume cleanup contracts\r?\n\s+if: inputs\.qa_source_ref != ''[\s\S]*?run-volume-contracts/);
+    assert.equal((workflow.match(/run-volume-qa/g)||[]).length,4);
+    for(const entry of volumeQaEntries) assert.equal((workflow.match(new RegExp(`--entry ${entry.replaceAll('.','\\.')}`,'g'))||[]).length,2);
+    assert.equal((workflow.match(/--candidate (?:"\$GITHUB_WORKSPACE\/source\/apps\/reader\/release\/core\/|\$candidate)/g)||[]).length,4);
+    assert.ok(workflow.includes("scripts/desktop-installer-target.test.mjs scripts/desktop-profile-storage-probe.test.mjs"), 'The original application Node contracts must stay unchanged');
 
-});
+  });
+}
