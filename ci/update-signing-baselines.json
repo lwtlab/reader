@@ -1,1 +1,14 @@
-{}
+{
+  "linux-x64": {
+    "os": "ubuntu-22.04",
+    "run_id": 45942603989,
+    "artifact_id": 15173928169,
+    "artifact_name": "reader-linux-x64-candidate",
+    "archive_digest": "sha256:caa1331e56c0e6f83a3e53a0c48cead57bb62094eee828f8ed8f615826972769",
+    "source_ref": "ecb4a655deafa8d3150e6618cd50ac76fd5457cb",
+    "workflow_ref": "b64010df61120bb30223a1af01c15e45299c9a38",
+    "version": "0.26.1",
+    "profile": "core",
+    "update_policy": "project-authenticated-v1"
+  }
+}
