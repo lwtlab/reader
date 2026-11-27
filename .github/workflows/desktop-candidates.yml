@@ -9,6 +9,12 @@ on:
         required: true
         type: string
 
+      qa_source_ref:
+        description: Optional immutable host-test correction SHA; only the reviewed AppImage test may differ from application source
+        required: false
+        default: ''
+        type: string
+
       target:
         description: Native build target
         required: true
@@ -92,9 +98,14 @@ jobs:
       - name: Validate immutable source revision
         env:
           SOURCE_REF: ${{ inputs.source_ref }}
+          QA_SOURCE_REF: ${{ inputs.qa_source_ref }}
         run: |
-          if [[ ! "$SOURCE_REF" =~ ^[0-9a-fA-F]{40}$ ]]; then
-            echo 'A full commit SHA is required.'
+          if [[ ! "$SOURCE_REF" =~ ^[0-9a-f]{40}$ ]]; then
+            echo 'A full lowercase 40-character commit SHA is required.'
+            exit 1
+          fi
+          if [[ -n "$QA_SOURCE_REF" && ! "$QA_SOURCE_REF" =~ ^[0-9a-f]{40}$ ]]; then
+            echo 'An independent QA revision must be a full lowercase 40-character commit SHA.'
             exit 1
           fi
 
@@ -103,7 +114,7 @@ jobs:
           node-version: 24.22.0
 
       - name: Test public CI infrastructure
-        run: node --test ci/log-crypto.test.mjs ci/private-step.test.mjs ci/verify-portable-baseline.test.mjs ci/run-xvfb.test.mjs ci/audit-package.test.mjs
+        run: node --test ci/log-crypto.test.mjs ci/private-step.test.mjs ci/verify-portable-baseline.test.mjs ci/run-xvfb.test.mjs ci/audit-package.test.mjs ci/verify-qa-source.test.mjs
 
       - uses: ./.github/actions/privacy-tools
 
@@ -145,6 +156,34 @@ jobs:
           -c submodule.srtparse.url=https://github.com/XUJiahua/srtparse.git
           submodule update --init aspeak srtparse
 
+      - name: Checkout optional immutable host-test source read-only
+        if: inputs.qa_source_ref != ''
+        uses: actions/checkout@v4
+        with:
+          repository: lwtlab/lwt-core
+          ref: ${{ inputs.qa_source_ref }}
+          path: qa-source
+          ssh-key: ${{ secrets.PRIVATE_SOURCE_SSH_KEY }}
+          persist-credentials: false
+          submodules: false
+
+      - name: Verify identical compiled inputs and the single allowed host-test difference
+        env:
+          SOURCE_REF: ${{ inputs.source_ref }}
+          QA_SOURCE_REF: ${{ inputs.qa_source_ref }}
+        run: |
+          qa_args=()
+          if [[ -n "$QA_SOURCE_REF" ]]; then qa_args+=(--qa-source "$GITHUB_WORKSPACE/qa-source" --qa-ref "$QA_SOURCE_REF"); fi
+          node ci/private-step.mjs qa-inputs source node ../ci/verify-qa-source.mjs verify --source "$GITHUB_WORKSPACE/source" --source-ref "$SOURCE_REF" "${qa_args[@]}"
+
+      - name: Initialize the same public Rust inputs for independent host tests
+        if: inputs.qa_source_ref != ''
+        run: >-
+          node ci/private-step.mjs qa-submodules source git -C ../qa-source
+          -c submodule.aspeak.url=https://github.com/XUJiahua/aspeak.git
+          -c submodule.srtparse.url=https://github.com/XUJiahua/srtparse.git
+          submodule update --init aspeak srtparse
+
       - name: Verify frozen source inputs and original notice bytes before native tools
         run: node ci/private-step.mjs frozen-inputs source node ../ci/verify-release-inputs.mjs .
 
@@ -173,6 +212,16 @@ jobs:
           READER_INSTALL_NETWORK: direct
         run: node ci/private-step.mjs dependencies source/apps/reader bash --noprofile --norc scripts/install.sh --frozen-lockfile
 
+      - name: Link reviewed host tests to the application dependencies without reinstalling
+        if: inputs.qa_source_ref != ''
+        env:
+          SOURCE_REF: ${{ inputs.source_ref }}
+          QA_SOURCE_REF: ${{ inputs.qa_source_ref }}
+        run: >-
+          node ci/private-step.mjs qa-dependencies source node ../ci/verify-qa-source.mjs link
+          --source "$GITHUB_WORKSPACE/source" --source-ref "$SOURCE_REF"
+          --qa-source "$GITHUB_WORKSPACE/qa-source" --qa-ref "$QA_SOURCE_REF"
+
       - name: Test desktop build contracts
         run: >-
           node ci/private-step.mjs contracts source/apps/reader node --test
@@ -185,17 +234,34 @@ jobs:
           scripts/desktop-upgrade-pair.test.mjs scripts/desktop-network-canary.test.mjs
 
       - name: Test desktop lifecycle and browser assets
-        run: >-
-          node ci/private-step.mjs host-contracts source/apps/reader pnpm exec vitest run --maxWorkers=${{ matrix.id == 'darwin-x64' && 1 || 2 }}
-          scripts/reader-module-preloads.test.ts scripts/electron-sqlite.test.ts electron/main lib/desktop app/api/health/route.test.ts
-          lib/transcribe/asr-readiness.test.ts lib/transcribe/availability.test.ts lib/transcribe/paths.test.ts
-          lib/transcribe/sync.test.ts lib/transcribe/qwen3/manager.test.ts app/api/transcribe/route.test.ts
-          app/api/transcribe/sync/route.test.ts app/api/transcribe/retry/route.test.ts app/api/narration/route.test.ts
-          lib/config/store.test.ts lib/config/store-atomic.test.ts lib/config/store-read-errors.test.ts lib/config/store-corruption.test.ts lib/db/client-retry.test.ts
-          lib/application/sync-push/review-local.real-db.test.ts lib/lang/current.test.ts lib/lang/context.test.ts
-          components/add-content/AddContentDialog.test.tsx embed/app/routes/profile-route.test.tsx
-          lib/articles/part-store-read-errors.test.ts lib/articles/part-store-corruption.test.ts lib/articles/part-store-durable.test.ts scripts/desktop-storage-probe.test.ts lib/articles/part-store.test.ts lib/books/list.test.ts
-          app/api/articles/[slug]/route.test.ts app/api/articles/[slug]/parts/[partId]/route.test.ts
+        env:
+          SOURCE_REF: ${{ inputs.source_ref }}
+          QA_SOURCE_REF: ${{ inputs.qa_source_ref }}
+        run: |
+          qa_args=()
+          if [[ -n "$QA_SOURCE_REF" ]]; then qa_args+=(--qa-source "$GITHUB_WORKSPACE/qa-source" --qa-ref "$QA_SOURCE_REF"); fi
+          node ci/private-step.mjs host-contracts source/apps/reader node ../../../ci/verify-qa-source.mjs run-host-contracts \
+            --source "$GITHUB_WORKSPACE/source" --source-ref "$SOURCE_REF" \
+            --vitest "$GITHUB_WORKSPACE/source/apps/reader/node_modules/vitest/vitest.mjs" "${qa_args[@]}" -- \
+            --maxWorkers=${{ matrix.id == 'darwin-x64' && 1 || 2 }} \
+            scripts/reader-module-preloads.test.ts scripts/electron-sqlite.test.ts electron/main lib/desktop app/api/health/route.test.ts \
+            lib/transcribe/asr-readiness.test.ts lib/transcribe/availability.test.ts lib/transcribe/paths.test.ts \
+            lib/transcribe/sync.test.ts lib/transcribe/qwen3/manager.test.ts app/api/transcribe/route.test.ts \
+            app/api/transcribe/sync/route.test.ts app/api/transcribe/retry/route.test.ts app/api/narration/route.test.ts \
+            lib/config/store.test.ts lib/config/store-atomic.test.ts lib/config/store-read-errors.test.ts lib/config/store-corruption.test.ts lib/db/client-retry.test.ts \
+            lib/application/sync-push/review-local.real-db.test.ts lib/lang/current.test.ts lib/lang/context.test.ts \
+            components/add-content/AddContentDialog.test.tsx embed/app/routes/profile-route.test.tsx \
+            lib/articles/part-store-read-errors.test.ts lib/articles/part-store-corruption.test.ts lib/articles/part-store-durable.test.ts scripts/desktop-storage-probe.test.ts lib/articles/part-store.test.ts lib/books/list.test.ts \
+            app/api/articles/[slug]/route.test.ts app/api/articles/[slug]/parts/[partId]/route.test.ts
+
+      - name: Confirm host tests left both tracked source trees unchanged
+        env:
+          SOURCE_REF: ${{ inputs.source_ref }}
+          QA_SOURCE_REF: ${{ inputs.qa_source_ref }}
+        run: |
+          qa_args=()
+          if [[ -n "$QA_SOURCE_REF" ]]; then qa_args+=(--qa-source "$GITHUB_WORKSPACE/qa-source" --qa-ref "$QA_SOURCE_REF"); fi
+          node ci/private-step.mjs qa-clean source node ../ci/verify-qa-source.mjs check-clean --source "$GITHUB_WORKSPACE/source" --source-ref "$SOURCE_REF" "${qa_args[@]}"
 
       - name: Validate native NSIS user path handling
         if: runner.os == 'Windows'
@@ -426,6 +492,17 @@ jobs:
             node ci/private-step.mjs offline source/apps/reader node scripts/smoke-desktop-offline.mjs release/core/${{ matrix.platform }}-${{ matrix.arch }}
           fi
 
+      - name: Record immutable application and independent host-test provenance
+        env:
+          SOURCE_REF: ${{ inputs.source_ref }}
+          QA_SOURCE_REF: ${{ inputs.qa_source_ref }}
+        run: |
+          qa_args=()
+          if [[ -n "$QA_SOURCE_REF" ]]; then qa_args+=(--qa-source "$GITHUB_WORKSPACE/qa-source" --qa-ref "$QA_SOURCE_REF"); fi
+          node ci/private-step.mjs qa-provenance source node ../ci/verify-qa-source.mjs record \
+            --source "$GITHUB_WORKSPACE/source" --source-ref "$SOURCE_REF" "${qa_args[@]}" \
+            --output "$GITHUB_WORKSPACE/source/apps/reader/release/core/${{ matrix.platform }}-${{ matrix.arch }}/desktop-qa-source.json"
+
       - name: Audit final candidate files before upload
         run: node ci/private-step.mjs privacy source node ../ci/privacy-candidates.mjs apps/reader/release/core/${{ matrix.platform }}-${{ matrix.arch }}
 
@@ -443,7 +520,7 @@ jobs:
             source/apps/reader/release/core/${{ matrix.platform }}-${{ matrix.arch }}/*.deb
             source/apps/reader/release/core/${{ matrix.platform }}-${{ matrix.arch }}/*.blockmap
             source/apps/reader/release/core/${{ matrix.platform }}-${{ matrix.arch }}/desktop-*.yml
-            source/apps/reader/release/core/${{ matrix.platform }}-${{ matrix.arch }}/desktop-artifacts.json
+            source/apps/reader/release/core/${{ matrix.platform }}-${{ matrix.arch }}/desktop-*.json
             source/apps/reader/release/core/${{ matrix.platform }}-${{ matrix.arch }}/SHA256SUMS
 
       - name: Encrypt private build logs
