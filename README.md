@@ -17,14 +17,15 @@ checkout, before installing native tools or Reader dependencies; this early inte
 replace full dependency/notice coverage checks or make a redistribution decision.
 
 The native candidate lane optionally accepts a separate immutable `qa_source_ref` for reviewed
-host-test and owned-volume QA corrections. Both revision inputs use full lowercase 40-character
+host-test, owned-volume and Windows portable QA corrections. Both revision inputs use full lowercase 40-character
 commit SHAs; empty QA means the application source remains the test source. The public verifier
-compares complete tracked path, mode, blob and Gitlink maps and clean HEADs. Only these three
+compares complete tracked path, mode, blob and Gitlink maps and clean HEADs. Only these four
 existing regular files may differ in bytes, with unchanged modes:
 
 - `apps/reader/electron/main/appimage-install.test.ts`
 - `apps/reader/scripts/desktop-storage-volume.mjs`
 - `apps/reader/scripts/desktop-profile-storage-probe.test.mjs`
+- `apps/reader/scripts/smoke-desktop-portable.mjs`
 
 Runtime, notices, dependency locks, metadata and every other application input must match.
 The lifecycle/browser host contracts use the application's fixed Vitest entry in the QA checkout.
@@ -33,6 +34,10 @@ application Node contract list stays intact. Packaged config-volume and library/
 use only `smoke-desktop-storage.mjs` and `smoke-desktop-profile-storage.mjs` from the selected QA
 source, with application cwd and an absolute application-owned candidate whose core target and
 version match its artifact index. QA-owned/external candidates and arbitrary entries are rejected.
+Windows single-file acceptance likewise uses only the fixed `smoke-desktop-portable.mjs` QA entry
+on a native Windows host, retaining application cwd and the same candidate binding and timeout.
+The pinned Rust audit tool is installed after pre-build host checks, immediately before compilation;
+the toolchain, checks and their original budgets remain in place.
 The explicit dependency directory link (Windows junction) reuses the application dependencies;
 there is no second install, file overlay or change to the compilation source.
 Both tracked trees are rechecked after execution. Final candidates include `desktop-qa-source.json`
