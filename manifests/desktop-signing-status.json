@@ -1,0 +1,22 @@
+{
+  "schemaVersion": 1,
+  "version": "0.26.0",
+  "releaseUrl": "https://github.com/lwtlab/reader/releases/tag/desktop/v0.26.0",
+  "platforms": {
+    "darwin": {
+      "architectures": ["arm64", "x64"],
+      "codeSigning": "developer-id",
+      "notarization": "accepted"
+    },
+    "win32": {
+      "architectures": ["x64"],
+      "codeSigning": "unsigned",
+      "publisherIdentityAvailable": false
+    },
+    "linux": {
+      "architectures": ["x64"],
+      "codeSigning": "unsigned"
+    }
+  },
+  "updateAuthenticationIsCodeSigning": false
+}

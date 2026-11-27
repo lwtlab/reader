@@ -27,6 +27,12 @@ on:
         default: true
         type: boolean
 
+      enable_updates:
+        description: Bake authenticated update policy into the new candidate; final macOS signing and update authentication run separately
+        required: true
+        default: false
+        type: boolean
+
       contracts_only:
         description: Run targeted Windows or Intel Mac contracts only (no candidates or release acceptance)
         required: true
@@ -240,7 +246,11 @@ jobs:
           NODE_OPTIONS: --max-old-space-size=4096
           READER_BUILD_SHA: ${{ inputs.source_ref }}
           APPIMAGE_EXTRACT_AND_RUN: '1'
-        run: node ci/private-step.mjs build source/apps/reader pnpm dist --profile=core --unsigned --${{ matrix.arch }} --publish never
+          READER_ENABLE_UPDATES: ${{ inputs.enable_updates }}
+        run: |
+          update_args=()
+          if [[ "$READER_ENABLE_UPDATES" == "true" ]]; then update_args+=(--auto-update); fi
+          node ci/private-step.mjs build source/apps/reader pnpm dist --profile=core --unsigned --${{ matrix.arch }} --publish never "${update_args[@]}"
 
       - name: Audit packaged source maps
         run: node ci/private-step.mjs audit source node ../ci/audit-package.mjs apps/reader/release/core/${{ matrix.platform }}-${{ matrix.arch }}/${{ matrix.app }}
