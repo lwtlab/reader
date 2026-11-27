@@ -84,6 +84,17 @@ test('default source needs no second checkout and never changes application iden
   assert.equal(linkQaDependencies({ source: f.source, sourceRef: f.sourceRef }).qa.head, f.sourceRef);
 });
 
+test('temporary-directory and native aliases select the same physical checkout root', (t) => {
+  const f = fixture(t);
+  const nativeRoot = realpathSync.native(f.source);
+  const fromTemporaryPath = verifyQaSource({ source: f.source, sourceRef: f.sourceRef });
+  const fromNativePath = verifyQaSource({ source: nativeRoot, sourceRef: f.sourceRef });
+  assert.equal(fromTemporaryPath.application.root, nativeRoot);
+  assert.equal(fromNativePath.application.root, nativeRoot);
+  assert.deepEqual(fromTemporaryPath.changedPaths, []);
+  assert.throws(() => verifyQaSource({ source: path.join(nativeRoot, 'apps/reader'), sourceRef: f.sourceRef }), /checkout root/);
+});
+
 test('allows only the reviewed test blob while retaining the original compiled source SHA', (t) => {
   const f = fixture(t);
   f.correctTest();
@@ -188,8 +199,8 @@ test('runs the fixed actual application entry in QA cwd with the original worker
   const args = ['--maxWorkers=2', 'electron/main', 'lib/desktop', 'app/api/articles/[slug]/route.test.ts'];
   runHostContracts(f.options, entry, args);
   const call = JSON.parse(readFileSync(marker, 'utf8'));
-  assert.equal(call.cwd, realpathSync(path.join(f.qaSource, 'apps/reader')));
-  assert.equal(call.entry, realpathSync(entry));
+  assert.equal(call.cwd, realpathSync.native(path.join(f.qaSource, 'apps/reader')));
+  assert.equal(call.entry, realpathSync.native(entry));
   assert.deepEqual(call.args, ['run', ...args]);
   assert.throws(() => runHostContracts(f.options, path.join(f.directory, 'arbitrary-runner.mjs'), []), /Only the selected application Vitest entry/);
 });
@@ -199,7 +210,7 @@ test('the unchanged default executes application cwd without creating a QA depen
   const marker = path.join(f.directory, 'default-host-contract-call.json');
   const entry = f.dependencies(`import { writeFileSync } from 'node:fs'; writeFileSync(${JSON.stringify(marker)}, process.cwd());\n`);
   runHostContracts({ source: f.source, sourceRef: f.sourceRef }, entry, ['electron/main']);
-  assert.equal(readFileSync(marker, 'utf8'), realpathSync(path.join(f.source, 'apps/reader')));
+  assert.equal(readFileSync(marker, 'utf8'), realpathSync.native(path.join(f.source, 'apps/reader')));
   assert.equal(existsSync(path.join(f.qaSource, 'apps/reader/node_modules')), false);
 });
 
@@ -215,7 +226,7 @@ test('real private-step wrapper retains its cwd allowlist and encrypted-log boun
   const stdout = execFileSync(process.execPath, [wrapper, 'host-contracts', 'source/apps/reader', process.execPath, helper, 'run-host-contracts', '--source', f.source, '--source-ref', f.sourceRef, '--qa-source', f.qaSource, '--qa-ref', f.options.qaRef, '--vitest', entry, '--', '--maxWorkers=1', 'electron/main'], { cwd: f.directory, env: { ...process.env, RUNNER_TEMP: f.directory }, encoding: 'utf8' });
   assert.match(stdout, /host-contracts passed/);
   const call = JSON.parse(readFileSync(marker, 'utf8'));
-  assert.equal(call.cwd, realpathSync(path.join(f.qaSource, 'apps/reader')));
+  assert.equal(call.cwd, realpathSync.native(path.join(f.qaSource, 'apps/reader')));
   assert.deepEqual(call.args, ['run', '--maxWorkers=1', 'electron/main']);
   const log = readFileSync(path.join(f.directory, 'reader-private-build.log'), 'utf8');
   assert.match(log, /Verified immutable application and limited host-test source/);
