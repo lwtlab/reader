@@ -10,5 +10,17 @@
     "version": "0.26.2",
     "profile": "core",
     "update_policy": "project-authenticated-v1"
+  },
+  "darwin-arm64": {
+    "os": "macos-15",
+    "run_id": 45948448410,
+    "artifact_id": 15176288616,
+    "artifact_name": "reader-darwin-arm64-signed-candidate",
+    "archive_digest": "sha256:34466504d4ac2f9610a52d343a68534c371e523a26186a2e112a0f31e8c6524a",
+    "source_ref": "ecb4a655deafa8d3150e6618cd50ac76fd5457cb",
+    "workflow_ref": "55d3340e53e93a41cf50dc466278b46bfa8f4843",
+    "version": "0.26.1",
+    "profile": "core",
+    "update_policy": "signed-stable-v1"
   }
 }
