@@ -1,0 +1,116 @@
+name: Authenticate approved desktop updates
+run-name: Authenticate desktop ${{ inputs.target }} updates
+on:
+  workflow_dispatch:
+    inputs:
+      source_ref:
+        description: Full private source SHA, matching reviewed final candidates
+        required: true
+        type: string
+      target:
+        description: Approved final native target
+        required: true
+        default: all
+        type: choice
+        options: [all, darwin-arm64, darwin-x64, win32-x64, linux-x64]
+permissions:
+  contents: read
+  actions: read
+jobs:
+  targets:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-22.04
+    outputs:
+      matrix: ${{ steps.select.outputs.matrix }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - id: select
+        env:
+          UPDATE_SELECT: 'true'
+          UPDATE_TARGET: ${{ inputs.target }}
+          SOURCE_REF: ${{ inputs.source_ref }}
+        run: node ci/verify-update-candidate.mjs
+  authenticate:
+    if: github.ref == 'refs/heads/main'
+    needs: targets
+    name: authenticate-${{ matrix.id }}
+    runs-on: ${{ matrix.os }}
+    environment: desktop-updates
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        include: ${{ fromJSON(needs.targets.outputs.matrix) }}
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24.22.0
+      - name: Test approved update provenance
+        run: node --test ci/verify-update-candidate.test.mjs ci/verify-portable-baseline.test.mjs
+      - name: Verify final candidate before accessing the update key
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          UPDATE_TARGET: ${{ matrix.id }}
+        run: node ci/verify-update-candidate.mjs
+      - name: Download approved immutable final native files
+        uses: actions/download-artifact@v4
+        with:
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: ${{ matrix.run_id }}
+          artifact-ids: ${{ matrix.artifact_id }}
+          merge-multiple: true
+          path: candidate
+      - name: Checkout immutable signing source read-only
+        uses: actions/checkout@v4
+        with:
+          repository: lwtlab/lwt-core
+          ref: ${{ inputs.source_ref }}
+          path: source
+          ssh-key: ${{ secrets.PRIVATE_SOURCE_SSH_KEY }}
+          persist-credentials: false
+          submodules: false
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11.5.2
+          package_json_file: source/apps/reader/package.json
+      - name: Install dependencies before exposing the signing key
+        env:
+          READER_INSTALL_NETWORK: direct
+        run: node ci/private-step.mjs dependencies source/apps/reader bash --noprofile --norc scripts/install.sh --frozen-lockfile
+      - uses: ./.github/actions/privacy-tools
+      - name: Authenticate exact final update bytes
+        env:
+          READER_UPDATE_SIGNING_KEY: ${{ secrets.READER_UPDATE_SIGNING_KEY }}
+        run: >-
+          node ci/private-step.mjs update-authentication source/apps/reader node scripts/sign-desktop-update.mjs
+          "${{ github.workspace }}/candidate" ${{ matrix.platform }} ${{ matrix.arch }}
+          ${{ matrix.profile }} ${{ matrix.version }}
+      - name: Audit authenticated payloads and channel before upload
+        run: node ci/private-step.mjs privacy source node ../ci/privacy-candidates.mjs ../candidate
+      - name: Upload authenticated candidates without publishing an update feed
+        uses: actions/upload-artifact@v4
+        with:
+          name: reader-${{ matrix.id }}-authenticated-candidate
+          retention-days: 7
+          if-no-files-found: error
+          path: candidate/*
+      - name: Encrypt private diagnostics
+        if: always()
+        run: node ci/seal-log.mjs
+      - name: Upload encrypted diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: reader-${{ matrix.id }}-authentication-encrypted-log
+          retention-days: 3
+          if-no-files-found: ignore
+          path: ${{ runner.temp }}/reader-private-build.log.enc.json

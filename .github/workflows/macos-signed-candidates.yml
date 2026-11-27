@@ -90,7 +90,7 @@ jobs:
           READER_INSTALL_NETWORK: direct
         run: node ci/private-step.mjs dependencies source/apps/reader bash --noprofile --norc scripts/install.sh --frozen-lockfile
       - name: Test signing and artifact contracts
-        run: node ci/private-step.mjs signing-contracts source/apps/reader node --test scripts/macos-notarization.test.mjs scripts/macos-signature.test.mjs scripts/macos-signed-artifacts.test.mjs scripts/macos-app-replacement.test.mjs scripts/desktop-artifacts.test.mjs scripts/desktop-installer-target.test.mjs
+        run: node ci/private-step.mjs signing-contracts source/apps/reader node --test scripts/macos-notarization.test.mjs scripts/macos-signature.test.mjs scripts/macos-signed-artifacts.test.mjs scripts/macos-update-policy.test.mjs scripts/macos-app-replacement.test.mjs scripts/desktop-artifacts.test.mjs scripts/desktop-installer-target.test.mjs
       - name: Import isolated signing credentials
         env:
           MACOS_SIGNING_P12_BASE64: ${{ secrets.MACOS_SIGNING_P12_BASE64 }}
