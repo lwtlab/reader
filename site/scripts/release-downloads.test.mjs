@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import test from 'node:test';
 import { releaseDownloads } from '../src/lib/release-downloads.mjs';
 
@@ -24,6 +25,51 @@ test('reviewed metadata names all targets and separate Mac architectures', () =>
   assert.deepEqual(releaseDownloads(published()).assets.map(a => a.label), [
     'macOS Apple Silicon · DMG', 'macOS Intel · ZIP', 'Windows x64 · 安装版', 'Linux x64 · AppImage',
   ]);
+});
+test('manual and authenticated policies preserve the reviewed downloads and companion binding', () => {
+  const manual = unpacked();
+  const authenticated = structuredClone(manual);
+  authenticated.desktop.updatePolicy = 'authenticated';
+  const oldResult = releaseDownloads(manual), nextResult = releaseDownloads(authenticated);
+  assert.equal(oldResult.desktop.updatePolicy, 'manual');
+  assert.equal(nextResult.desktop.updatePolicy, 'authenticated');
+  assert.deepEqual(nextResult.assets, oldResult.assets);
+  assert.deepEqual(nextResult.extensionUnpacked, oldResult.extensionUnpacked);
+});
+test('both policies retain all eight published download identities and extension ZIP metadata', () => {
+  const channels = JSON.parse(readFileSync(new URL('../../manifests/channels.json', import.meta.url), 'utf8'));
+  for (const policy of ['manual', 'authenticated']) {
+    const d = structuredClone(channels);
+    d.desktop.updatePolicy = policy;
+    const result = releaseDownloads(d);
+    assert.equal(result.assets.length, 8);
+    assert.deepEqual(result.assets.map(({ label, ...asset }) => asset), channels.desktop.assets);
+    assert.deepEqual(result.extensionUnpacked, channels.extensionUnpacked);
+  }
+});
+test('desktop update policy must be explicit and known', () => {
+  for (const policy of [undefined, null, '', 'automatic', 'Authenticated', true, ['authenticated']]) {
+    const d = published();
+    if (policy === undefined) delete d.desktop.updatePolicy;
+    else d.desktop.updatePolicy = policy;
+    assert.throws(() => releaseDownloads(d), /Explicit supported desktop update policy required/);
+  }
+});
+test('authenticated policy does not relax asset identity or the current desktop companion', () => {
+  for (const change of [
+    d => { d.desktop.assets[0].url = d.desktop.assets[0].url.replace('/lwtlab/reader/', '/another/reader/'); },
+    d => { d.desktop.assets[0].arch = 'x64'; },
+    d => { d.desktop.assets[0].profile = 'full'; },
+    d => { d.desktop.assets[0].sha256 = 'invalid'; },
+    d => { d.desktop.assets[0].bytes = 0; },
+    d => { d.desktop.assets.push(d.desktop.assets[0]); },
+    d => { d.extensionUnpacked.desktopVersion = '0.26.1'; },
+  ]) {
+    const d = unpacked();
+    d.desktop.updatePolicy = 'authenticated';
+    change(d);
+    assert.throws(() => releaseDownloads(d));
+  }
 });
 test('official URLs may encode a slash in the desktop release tag', () => {
   const d = published();

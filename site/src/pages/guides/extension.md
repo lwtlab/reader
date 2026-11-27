@@ -10,7 +10,7 @@ Reader 浏览器扩展用于保存当前页面、剪藏文章，以及在支持�
 
 ## 当前安装入口
 
-Reader Clipper **0.26.0** 已发布手动安装 ZIP，配套 Reader 桌面版 **0.26.0**。目前未在 Chrome Web Store 上架；ZIP 下载与商店安装是独立入口，手动安装版不通过商店自动更新。
+Reader Clipper **0.26.0** 已发布手动安装 ZIP，配套 Reader 桌面版 **0.26.1**。目前未在 Chrome Web Store 上架；ZIP 下载与商店安装是独立入口，手动安装版不通过商店自动更新。
 
 1. 从教程导航中的“下载与安装”或[官方版本页面](https://github.com/lwtlab/reader/releases/tag/extension/v0.26.0)下载 [reader-clipper-v0.26.0.zip](https://github.com/lwtlab/reader/releases/download/extension/v0.26.0/reader-clipper-v0.26.0.zip)。
 2. 核对版本和 [SHA256SUMS 校验文件](https://github.com/lwtlab/reader/releases/download/extension/v0.26.0/SHA256SUMS)，确认来源为 `lwtlab/reader` 的官方 Release。

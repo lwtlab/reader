@@ -4,7 +4,7 @@ title: 桌面 Reader 与浏览器扩展隐私说明
 description: 首发桌面应用与配套浏览器扩展的数据去向、权限和用户控制。
 ---
 
-更新日期：2026 年 11 月 24 日。本页描述首发候选的行为；实际可下载版本以下载页为准。
+更新日期：2026 年 11 月 27 日。本页说明桌面 Reader 与配套扩展的数据使用；可用版本及更新方式以下载页和对应版本说明为准。
 
 本页下方提供英文说明（English version below）。
 
@@ -43,9 +43,12 @@ AI 数据共享需另行确认，普通阅读不要求启用 AI。远程服务�
 这不授予内容的再分发权。麦克风仅用于主动开始的录音，退出录音界面会释放采集资源。
 语音识别匹配诊断是实验功能，不是音素级发音质量测评。
 
-本轮候选采用手动更新，不执行后台更新检查。其他启用在线更新的正式桌面版本会连接
-GitHub 及其内容分发服务；这些服务会接收随机更新标识、IP 和常规连接信息。
-更新请求不包含资料库正文、笔记或账号凭据，下载及重启安装分别需要确认。
+桌面 0.26.0 不执行后台更新检查。启用在线更新的桌面版本会在启动后及运行期间检查更新。
+更新组件会在本机保留随机分批更新标识（`.updaterId`），检查时通过 `x-user-staging-id` 请求头发送给
+GitHub 及其内容分发服务；这些服务也会接收 IP 地址和常规连接信息。更新请求不上传书库、笔记、正文或账号凭据。
+
+macOS、Windows 安装版和 AppImage 的下载与重启安装分别需要确认，普通退出不会顺便安装更新。
+DEB 下载需确认，验证后由用户另行打开系统安装器处理权限和安装；Portable 继续手动更新。
 
 可在浏览器扩展管理中撤销站点权限、停用或卸载扩展，也可修改 Reader 目标地址。
 撤销权限会阻止后续访问，不会收回已经发送的数据。涉及远程服务的数据访问、删除或保留问题，
@@ -54,8 +57,8 @@ GitHub 及其内容分发服务；这些服务会接收随机更新标识、IP �
 
 ## English privacy notice
 
-Updated 24 November 2026. This notice describes the first-release candidate;
-available downloads determine which version you can install.
+Updated 27 November 2026. This notice covers Reader desktop and its companion extension.
+Available versions and update methods are described on the download page and in each release.
 
 Reader desktop uses a local library without requiring a login. Imported documents,
 annotations, vocabulary, review records and settings are stored on your computer.
@@ -94,11 +97,20 @@ future access and does not recall information already sent.
 
 Microphone capture starts only when you choose to record and is released on leaving
 the recording interface. Recognition-match diagnostics are experimental and do not
-measure phoneme-level pronunciation quality. This unsigned candidate uses manual
-updates without background update checks. Other versions with online updates contact
-GitHub and its delivery services, sending a random update identifier and ordinary
-connection metadata, without library text, notes or account credentials. Downloading
-and restarting to install require separate confirmation.
+measure phoneme-level pronunciation quality.
+
+Desktop 0.26.0 does not perform background update checks. Update-enabled desktop builds
+check after startup and while running. The update component retains a random staging
+identifier locally in `.updaterId` and sends it in the `x-user-staging-id` request header
+when checking for updates. GitHub and its content delivery services also receive your
+IP address and ordinary connection information. Update requests do not upload your
+library, notes, document text or account credentials.
+
+On macOS, Windows installers and AppImage, downloading and restarting to install
+require separate confirmation; ordinary quitting does not install an update. DEB
+downloads require confirmation and source verification, after which you separately
+open the system installer to handle permissions and installation. Portable builds
+continue to require manual updates.
 
 You can change the destination, revoke site permissions, disable or uninstall the
 extension in Chrome. For remote-library access, deletion or retention, contact the
