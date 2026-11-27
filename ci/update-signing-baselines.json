@@ -37,15 +37,15 @@
   },
   "win32-x64": {
     "os": "windows-latest",
-    "run_id": 45947827961,
-    "artifact_id": 15178056662,
+    "run_id": 45957002971,
+    "artifact_id": 15181611284,
     "artifact_name": "reader-win32-x64-candidate",
-    "archive_digest": "sha256:206c01e677eadd7f9b01cf2f9f412142aecb60d861fd29fe7474bc11f9fb825f",
-    "source_ref": "80f695c4ac2c28b5059f77b9fe72d0201ace3060",
-    "workflow_ref": "3bdd9a6583f7f0158eafa11938f29a124cb79349",
-    "version": "0.26.2",
+    "archive_digest": "sha256:dfdbaeadf0ba65ba4b2e75f773fa38628596a8a6d916c65d5189645ed394ea9d",
+    "source_ref": "ecb4a655deafa8d3150e6618cd50ac76fd5457cb",
+    "workflow_ref": "ae5dc4ae6aeff90568429de27af9e897e327828e",
+    "version": "0.26.1",
     "profile": "core",
     "update_policy": "project-authenticated-v1",
-    "qa_source_ref": "f877db5e771b92973e60283ea04c07f7349bd05b"
+    "qa_source_ref": "b7cb7f53412704601406b186050eda62e27e166e"
   }
 }
