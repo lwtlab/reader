@@ -5,8 +5,15 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parseArgs } from 'node:util';
 
-// An independently reviewed host-test correction may not change compiled inputs.
-export const allowedQaChangedPath = 'apps/reader/electron/main/appimage-install.test.ts';
+// Reviewed host-test and owned-volume QA corrections cannot change compiled inputs.
+export const allowedQaChangedPaths = Object.freeze([
+  'apps/reader/electron/main/appimage-install.test.ts',
+  'apps/reader/scripts/desktop-storage-volume.mjs',
+  'apps/reader/scripts/desktop-profile-storage-probe.test.mjs',
+]);
+// Compatibility for consumers of the original host-test-only receipt.
+export const allowedQaChangedPath = allowedQaChangedPaths[0];
+export const volumeQaEntries = Object.freeze(['smoke-desktop-storage.mjs', 'smoke-desktop-profile-storage.mjs']);
 const revision = /^[a-f0-9]{40}$/;
 // Git for Windows expands 8.3 temporary-directory aliases. Use the native
 // filesystem result on both sides, including junction and Reader path checks.
@@ -58,8 +65,8 @@ export function verifyQaSource({ source, sourceRef, qaSource, qaRef } = {}) {
     assert.ok(before && after, 'QA may not add or remove tracked application inputs');
     assert.equal(after.mode, before.mode, 'QA may not change any tracked file mode or Gitlink mode');
     if (before.blob !== after.blob) {
-      assert.equal(filename, allowedQaChangedPath, 'QA differs outside the one reviewed host test');
-      assert.equal(before.mode, '100644', 'The allowed QA difference must remain a regular non-executable test');
+      assert.ok(allowedQaChangedPaths.includes(filename), 'QA differs outside the fixed reviewed QA allowance');
+      assert.equal(before.mode, '100644', 'Allowed QA differences must remain existing regular non-executable files');
       changedPaths.push(filename);
     }
   }
@@ -119,6 +126,58 @@ export function runHostContracts(options, vitest, args) {
   }
 }
 
+function regularQaEntry(locations, name) {
+  const entry = path.join(locations.qaReader, 'scripts', name);
+  const info = lstatSync(entry);
+  assert.ok(info.isFile() && !info.isSymbolicLink() && samePath(realpathSync.native(entry), entry), 'QA entry must be its fixed regular source file');
+  return entry;
+}
+
+function runFixedQa(options, entryName, args) {
+  const binding = verifyQaSource(options);
+  const locations = sharedDependencies(binding);
+  const entry = regularQaEntry(locations, entryName);
+  try {
+    execFileSync(process.execPath, [...args.before, entry, ...args.after], { cwd: locations.sourceReader, stdio: 'inherit', env: process.env });
+  } finally {
+    sharedDependencies(verifyQaSource(options));
+  }
+}
+
+/** Run only the fixed owned-volume regression; application Node contracts stay separate. */
+export function runVolumeContracts(options) {
+  runFixedQa(options, 'desktop-profile-storage-probe.test.mjs', { before: ['--test'], after: [] });
+}
+
+function applicationCandidate(locations, selected) {
+  assert.ok(selected && path.isAbsolute(selected), 'Volume QA requires an absolute application candidate directory');
+  const base = path.join(locations.sourceReader, 'release', 'core');
+  assert.ok(samePath(realpathSync.native(base), base), 'Application candidate root must not be redirected');
+  const candidate = realpathSync.native(selected);
+  assert.ok(samePath(path.dirname(candidate), base), 'Volume QA candidate must be a direct application-owned core target');
+  const info = lstatSync(path.join(candidate, 'desktop-artifacts.json'));
+  assert.ok(info.isFile() && !info.isSymbolicLink(), 'Volume QA requires a regular application artifact index');
+  const index = JSON.parse(readFileSync(path.join(candidate, 'desktop-artifacts.json'), 'utf8'));
+  assert.equal(index.schemaVersion, 1, 'Unknown volume QA artifact index');
+  assert.equal(index.profile, 'core', 'Volume QA candidate must retain the core profile');
+  assert.equal(index.platform, process.platform, 'Volume QA candidate platform differs from its native host');
+  assert.equal(index.arch, process.arch, 'Volume QA candidate architecture differs from its native host');
+  assert.equal(path.basename(candidate), `${index.platform}-${index.arch}`, 'Volume QA candidate target differs from its artifact index');
+  const sourcePackage = JSON.parse(readFileSync(path.join(locations.sourceReader, 'package.json'), 'utf8'));
+  assert.equal(index.version, sourcePackage.version, 'Volume QA candidate version differs from application source');
+  assert.match(index.version, /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/, 'Invalid volume QA candidate version');
+  return candidate;
+}
+
+/** No arbitrary scripts or arguments: use one unchanged packaged-volume QA entry. */
+export function runVolumeQa(options, entryName, selectedCandidate) {
+  assert.ok(volumeQaEntries.includes(entryName), 'Only fixed packaged volume QA entries may run');
+  const binding = verifyQaSource(options);
+  const locations = sharedDependencies(binding);
+  const candidate = applicationCandidate(locations, selectedCandidate);
+  runFixedQa(options, entryName, { before: [], after: [candidate] });
+}
+
 export function recordQaSource(options, output) {
   const binding = verifyQaSource(options);
   sharedDependencies(binding);
@@ -133,8 +192,10 @@ export function recordQaSource(options, output) {
     schemaVersion: 1,
     applicationSourceSha: binding.application.head,
     qaSourceSha: binding.qa.head,
+    allowedChangedPaths: [...allowedQaChangedPaths],
+    changedPaths: [...binding.changedPaths],
     allowedChangedPath: allowedQaChangedPath,
-    allowedTestDiffers: binding.changedPaths.length === 1,
+    allowedTestDiffers: binding.changedPaths.includes(allowedQaChangedPath),
   };
   writeFileSync(path.join(parent, 'desktop-qa-source.json'), `${JSON.stringify(receipt, null, 2)}\n`, { flag: 'wx', mode: 0o600 });
   return receipt;
@@ -142,7 +203,7 @@ export function recordQaSource(options, output) {
 
 function main() {
   const [action, ...raw] = process.argv.slice(2);
-  assert.ok(['verify', 'link', 'check-clean', 'run-host-contracts', 'record'].includes(action), 'Unknown QA source verification operation');
+  assert.ok(['verify', 'link', 'check-clean', 'run-host-contracts', 'run-volume-contracts', 'run-volume-qa', 'record'].includes(action), 'Unknown QA source verification operation');
   const separator = raw.indexOf('--');
   const flags = separator < 0 ? raw : raw.slice(0, separator);
   const args = separator < 0 ? [] : raw.slice(separator + 1);
@@ -150,15 +211,19 @@ function main() {
     source: { type: 'string' }, 'source-ref': { type: 'string' },
     'qa-source': { type: 'string' }, 'qa-ref': { type: 'string' },
     vitest: { type: 'string' }, output: { type: 'string' },
+    entry: { type: 'string' }, candidate: { type: 'string' },
   } });
   const options = { source: values.source, sourceRef: values['source-ref'], qaSource: values['qa-source'] || undefined, qaRef: values['qa-ref'] || undefined };
   assert.ok(action === 'run-host-contracts' || (!values.vitest && !args.length), 'Only host contracts accept a Vitest entry and arguments');
   assert.ok(action === 'record' || !values.output, 'Only provenance recording accepts an output path');
+  assert.ok(action === 'run-volume-qa' || (!values.entry && !values.candidate), 'Only packaged volume QA accepts an entry and candidate');
   if (action === 'link') linkQaDependencies(options);
   else if (action === 'run-host-contracts') runHostContracts(options, values.vitest, args);
+  else if (action === 'run-volume-contracts') runVolumeContracts(options);
+  else if (action === 'run-volume-qa') runVolumeQa(options, values.entry, values.candidate);
   else if (action === 'record') recordQaSource(options, values.output);
   else verifyQaSource(options);
-  console.log(action === 'record' ? 'Recorded separate application and host-test source provenance' : 'Verified immutable application and limited host-test source without changing build inputs');
+  console.log(action === 'record' ? 'Recorded separate application and reviewed QA source provenance' : 'Verified immutable application and limited host-test source without changing build inputs');
 }
 
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {

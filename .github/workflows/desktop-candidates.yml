@@ -10,7 +10,7 @@ on:
         type: string
 
       qa_source_ref:
-        description: Optional immutable host-test correction SHA; only the reviewed AppImage test may differ from application source
+        description: Optional immutable QA correction SHA; only three fixed existing host-test and owned-volume QA files may differ
         required: false
         default: ''
         type: string
@@ -167,7 +167,7 @@ jobs:
           persist-credentials: false
           submodules: false
 
-      - name: Verify identical compiled inputs and the single allowed host-test difference
+      - name: Verify identical compiled inputs and the fixed reviewed QA allowance
         env:
           SOURCE_REF: ${{ inputs.source_ref }}
           QA_SOURCE_REF: ${{ inputs.qa_source_ref }}
@@ -232,6 +232,16 @@ jobs:
           scripts/collect-local-cargo-notices.test.mjs scripts/unoptimized-image-packaging.test.mjs
           scripts/desktop-installer-target.test.mjs scripts/desktop-profile-storage-probe.test.mjs
           scripts/desktop-upgrade-pair.test.mjs scripts/desktop-network-canary.test.mjs
+
+      - name: Test reviewed owned-volume cleanup contracts
+        if: inputs.qa_source_ref != ''
+        env:
+          SOURCE_REF: ${{ inputs.source_ref }}
+          QA_SOURCE_REF: ${{ inputs.qa_source_ref }}
+        run: >-
+          node ci/private-step.mjs volume-contracts source/apps/reader node ../../../ci/verify-qa-source.mjs run-volume-contracts
+          --source "$GITHUB_WORKSPACE/source" --source-ref "$SOURCE_REF"
+          --qa-source "$GITHUB_WORKSPACE/qa-source" --qa-ref "$QA_SOURCE_REF"
 
       - name: Test desktop lifecycle and browser assets
         env:
@@ -418,38 +428,58 @@ jobs:
         timeout-minutes: 5
         env:
           READER_INSTALLER_TEST_DISPOSABLE: '1'
-        run: >-
-          node ci/private-step.mjs storage source/apps/reader node scripts/smoke-desktop-storage.mjs
-          release/core/${{ matrix.platform }}-${{ matrix.arch }}
-
+          SOURCE_REF: ${{ inputs.source_ref }}
+          QA_SOURCE_REF: ${{ inputs.qa_source_ref }}
+        run: |
+          qa_args=()
+          if [[ -n "$QA_SOURCE_REF" ]]; then qa_args+=(--qa-source "$GITHUB_WORKSPACE/qa-source" --qa-ref "$QA_SOURCE_REF"); fi
+          node ci/private-step.mjs storage source/apps/reader node ../../../ci/verify-qa-source.mjs run-volume-qa \
+            --source "$GITHUB_WORKSPACE/source" --source-ref "$SOURCE_REF" "${qa_args[@]}" \
+            --entry smoke-desktop-storage.mjs --candidate "$GITHUB_WORKSPACE/source/apps/reader/release/core/${{ matrix.platform }}-${{ matrix.arch }}"
       - name: Validate permission denial and bounded-volume exhaustion on Windows
         if: runner.os == 'Windows'
         shell: pwsh
         timeout-minutes: 5
         env:
           READER_INSTALLER_TEST_DISPOSABLE: '1'
+          SOURCE_REF: ${{ inputs.source_ref }}
+          QA_SOURCE_REF: ${{ inputs.qa_source_ref }}
         run: |
           $env:PSModulePath = "$env:SystemRoot\System32\WindowsPowerShell\v1.0\Modules"
-          node ci/private-step.mjs storage source/apps/reader node scripts/smoke-desktop-storage.mjs release/core/${{ matrix.platform }}-${{ matrix.arch }}
-
+          $qaArgs = @()
+          if ($env:QA_SOURCE_REF) { $qaArgs = @('--qa-source', (Join-Path $env:GITHUB_WORKSPACE 'qa-source'), '--qa-ref', $env:QA_SOURCE_REF) }
+          $sourceRoot = Join-Path $env:GITHUB_WORKSPACE 'source'
+          $candidate = Join-Path $sourceRoot 'apps/reader/release/core/${{ matrix.platform }}-${{ matrix.arch }}'
+          node ci/private-step.mjs storage source/apps/reader node ../../../ci/verify-qa-source.mjs run-volume-qa --source $sourceRoot --source-ref $env:SOURCE_REF @qaArgs --entry smoke-desktop-storage.mjs --candidate $candidate
       - name: Validate library volume exhaustion and same-process recovery
         if: runner.os != 'Windows'
         shell: bash
         timeout-minutes: 5
         env:
           READER_INSTALLER_TEST_DISPOSABLE: '1'
-        run: node ci/private-step.mjs profile-storage source/apps/reader node scripts/smoke-desktop-profile-storage.mjs release/core/${{ matrix.platform }}-${{ matrix.arch }}
-
+          SOURCE_REF: ${{ inputs.source_ref }}
+          QA_SOURCE_REF: ${{ inputs.qa_source_ref }}
+        run: |
+          qa_args=()
+          if [[ -n "$QA_SOURCE_REF" ]]; then qa_args+=(--qa-source "$GITHUB_WORKSPACE/qa-source" --qa-ref "$QA_SOURCE_REF"); fi
+          node ci/private-step.mjs profile-storage source/apps/reader node ../../../ci/verify-qa-source.mjs run-volume-qa \
+            --source "$GITHUB_WORKSPACE/source" --source-ref "$SOURCE_REF" "${qa_args[@]}" \
+            --entry smoke-desktop-profile-storage.mjs --candidate "$GITHUB_WORKSPACE/source/apps/reader/release/core/${{ matrix.platform }}-${{ matrix.arch }}"
       - name: Validate library volume exhaustion and same-process recovery on Windows
         if: runner.os == 'Windows'
         shell: pwsh
         timeout-minutes: 5
         env:
           READER_INSTALLER_TEST_DISPOSABLE: '1'
+          SOURCE_REF: ${{ inputs.source_ref }}
+          QA_SOURCE_REF: ${{ inputs.qa_source_ref }}
         run: |
           $env:PSModulePath = "$env:SystemRoot\System32\WindowsPowerShell\v1.0\Modules"
-          node ci/private-step.mjs profile-storage source/apps/reader node scripts/smoke-desktop-profile-storage.mjs release/core/${{ matrix.platform }}-${{ matrix.arch }}
-
+          $qaArgs = @()
+          if ($env:QA_SOURCE_REF) { $qaArgs = @('--qa-source', (Join-Path $env:GITHUB_WORKSPACE 'qa-source'), '--qa-ref', $env:QA_SOURCE_REF) }
+          $sourceRoot = Join-Path $env:GITHUB_WORKSPACE 'source'
+          $candidate = Join-Path $sourceRoot 'apps/reader/release/core/${{ matrix.platform }}-${{ matrix.arch }}'
+          node ci/private-step.mjs profile-storage source/apps/reader node ../../../ci/verify-qa-source.mjs run-volume-qa --source $sourceRoot --source-ref $env:SOURCE_REF @qaArgs --entry smoke-desktop-profile-storage.mjs --candidate $candidate
       - name: Validate denied reads and retained data recovery
         if: runner.os != 'Windows'
         shell: bash

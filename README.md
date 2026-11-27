@@ -16,18 +16,29 @@ Native candidates verify frozen source-input and original-notice bytes immediate
 checkout, before installing native tools or Reader dependencies; this early integrity check does not
 replace full dependency/notice coverage checks or make a redistribution decision.
 
-The native candidate lane optionally accepts a separate immutable `qa_source_ref` for a reviewed
-host-test correction. Both revision inputs use full lowercase 40-character commit SHAs; empty QA
-means the application source remains the test source. The public verifier
-compares complete tracked path, mode, blob and Gitlink maps and clean HEADs: only
-`apps/reader/electron/main/appimage-install.test.ts` may have different bytes, and its mode must stay
-unchanged. Runtime, notices, dependency locks, metadata and every other compiled input must match.
-Only the lifecycle/browser host-contract step runs in that QA checkout, using the application
-checkout's fixed Vitest executable and dependencies through a newly created directory link (Windows
-junction). It never runs a second install, overlays files or changes the application build source.
-Both tracked trees are checked again after the tests. Final candidates include
-`desktop-qa-source.json`, with separate application/QA SHAs and the one permitted test path; the final
-privacy gate scans it before upload. Other contracts, compilation, packaging and native acceptance
+The native candidate lane optionally accepts a separate immutable `qa_source_ref` for reviewed
+host-test and owned-volume QA corrections. Both revision inputs use full lowercase 40-character
+commit SHAs; empty QA means the application source remains the test source. The public verifier
+compares complete tracked path, mode, blob and Gitlink maps and clean HEADs. Only these three
+existing regular files may differ in bytes, with unchanged modes:
+
+- `apps/reader/electron/main/appimage-install.test.ts`
+- `apps/reader/scripts/desktop-storage-volume.mjs`
+- `apps/reader/scripts/desktop-profile-storage-probe.test.mjs`
+
+Runtime, notices, dependency locks, metadata and every other application input must match.
+The lifecycle/browser host contracts use the application's fixed Vitest entry in the QA checkout.
+Before building, independent QA also runs only its fixed owned-volume Node regression; the original
+application Node contract list stays intact. Packaged config-volume and library/review-volume checks
+use only `smoke-desktop-storage.mjs` and `smoke-desktop-profile-storage.mjs` from the selected QA
+source, with application cwd and an absolute application-owned candidate whose core target and
+version match its artifact index. QA-owned/external candidates and arbitrary entries are rejected.
+The explicit dependency directory link (Windows junction) reuses the application dependencies;
+there is no second install, file overlay or change to the compilation source.
+Both tracked trees are rechecked after execution. Final candidates include `desktop-qa-source.json`
+with separate application/QA SHAs, the fixed `allowedChangedPaths` array and actual `changedPaths`.
+Compatibility fields identify only whether the original AppImage host test differs. The final privacy
+gate scans the receipt before upload. Other contracts, compilation, packaging and native acceptance
 continue to use the application checkout and its original source SHA.
 
 | Lane | Scope | Signing and provenance |
