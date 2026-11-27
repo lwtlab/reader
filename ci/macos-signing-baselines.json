@@ -13,11 +13,14 @@
   },
   "darwin-x64": {
     "os": "macos-15-intel",
-    "run_id": 45826401558,
-    "artifact_id": 15126777881,
+    "run_id": 45944597379,
+    "artifact_id": 15175492974,
     "artifact_name": "reader-darwin-x64-candidate",
-    "archive_digest": "sha256:a71f1a9eb90e44bec51134aa1fcc9efe0a94e6bbd03f5b55fafd9e67a561a012",
-    "source_ref": "df4d7deee21fd3722eabb38a17f5990a1872c870",
-    "workflow_ref": "0d0f62b3598a22bbe9b6713ff3cc51ef47fb8730"
+    "archive_digest": "sha256:5b3ed868b60a47d7f8712a05a2562a15cb396e275930269bee8df401bf1e137e",
+    "source_ref": "80f695c4ac2c28b5059f77b9fe72d0201ace3060",
+    "workflow_ref": "b64010df61120bb30223a1af01c15e45299c9a38",
+    "version": "0.26.2",
+    "profile": "core",
+    "update_policy": "signed-stable-v1"
   }
 }

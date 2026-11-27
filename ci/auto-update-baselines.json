@@ -1,1 +1,29 @@
-{}
+{
+  "linux-x64": {
+    "qa_source_ref": "bc6e51642912baa56badfc07819e8c9dadf098f5",
+    "from": {
+      "os": "ubuntu-22.04",
+      "run_id": 45948461191,
+      "artifact_id": 15176326107,
+      "artifact_name": "reader-linux-x64-authenticated-candidate",
+      "archive_digest": "sha256:73804a337e6de2a511ade64eeecdcd1d94bdaec77c2cf912ba373004faf0ce83",
+      "source_ref": "ecb4a655deafa8d3150e6618cd50ac76fd5457cb",
+      "workflow_ref": "55d3340e53e93a41cf50dc466278b46bfa8f4843",
+      "version": "0.26.1",
+      "profile": "core",
+      "update_policy": "project-authenticated-v1"
+    },
+    "to": {
+      "os": "ubuntu-22.04",
+      "run_id": 45948931495,
+      "artifact_id": 15175777404,
+      "artifact_name": "reader-linux-x64-authenticated-candidate",
+      "archive_digest": "sha256:f82a63cc936c85ddbb6ba219d3033d764ec32bbec968ea4397175ac89efd68e8",
+      "source_ref": "80f695c4ac2c28b5059f77b9fe72d0201ace3060",
+      "workflow_ref": "7c038a0b9a6a81e87b3efe44e52b5c08d6adce8f",
+      "version": "0.26.2",
+      "profile": "core",
+      "update_policy": "project-authenticated-v1"
+    }
+  }
+}
