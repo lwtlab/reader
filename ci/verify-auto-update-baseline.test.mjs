@@ -102,10 +102,10 @@ test('online verification reads and validates both complete immutable producer s
   await assert.rejects(verifyAutoUpdatePairOnline(target, pair.qa_source_ref, { approved, env, fetcher: async () => ({ ok: false, status: 403 }) }), /API: 403/);
 });
 
-test('actual QA workflow separates read-only runner source, signing-free execution and scanned receipt publication', () => {
-  const workflow = readFileSync(new URL('../.github/workflows/desktop-auto-update-acceptance.yml', import.meta.url), 'utf8');
+for (const [lineEnding, newline] of [['LF', '\n'], ['CRLF', '\r\n']]) test(`actual QA workflow separates read-only runner source, signing-free execution and scanned receipt publication (${lineEnding})`, () => {
+  const workflow = readFileSync(new URL('../.github/workflows/desktop-auto-update-acceptance.yml', import.meta.url), 'utf8').replace(/\r?\n/gu, newline);
   assert.equal((workflow.match(/if: github\.ref == 'refs\/heads\/main'/g) ?? []).length, 2);
-  assert.match(workflow, /contents: read\n  actions: read/);
+  assert.match(workflow, /contents: read\r?\n  actions: read/);
   assert.ok(!workflow.includes('SIGNING_KEY') && !workflow.includes('macos-signing') && !workflow.includes('secrets.GITHUB_TOKEN'));
   assert.ok(!workflow.includes('READER_TEST_NO_SANDBOX') && !workflow.includes('READER_DESKTOP_USER_DATA_DIR'));
   assert.match(workflow, /ref: \$\{\{ inputs\.source_ref \}\}/);
