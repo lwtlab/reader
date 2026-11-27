@@ -145,6 +145,9 @@ jobs:
           -c submodule.srtparse.url=https://github.com/XUJiahua/srtparse.git
           submodule update --init aspeak srtparse
 
+      - name: Verify frozen source inputs and original notice bytes before native tools
+        run: node ci/private-step.mjs frozen-inputs source node ../ci/verify-release-inputs.mjs .
+
       - uses: dtolnay/rust-toolchain@stable
         with:
           toolchain: 1.100.0

@@ -12,6 +12,10 @@ The application and QA source for this material correction is `df4d7deee21fd3722
 
 Workflow names alone do not identify a build lane:
 
+Native candidates verify frozen source-input and original-notice bytes immediately after submodule
+checkout, before installing native tools or Reader dependencies; this early integrity check does not
+replace full dependency/notice coverage checks or make a redistribution decision.
+
 | Lane | Scope | Signing and provenance |
 | --- | --- | --- |
 | `desktop-candidates.yml` on main | Four native core targets, one immutable private source SHA, synthetic QA; unsigned engineering packages | No Release; seven-day retention. This first-release replacement uses explicit `verify_upgrade=false`, continuing baseline rebuilding without claiming cross-version upgrade acceptance. Future `verify_upgrade=true` requires reviewed, available immutable [upgrade baselines](ci/upgrade-baselines.json) and a strictly increasing version. |
