@@ -8,6 +8,8 @@ import { parseArgs } from 'node:util';
 // An independently reviewed host-test correction may not change compiled inputs.
 export const allowedQaChangedPath = 'apps/reader/electron/main/appimage-install.test.ts';
 const revision = /^[a-f0-9]{40}$/;
+// Git for Windows expands 8.3 temporary-directory aliases. Use the native
+// filesystem result on both sides, including junction and Reader path checks.
 const samePath = (left, right) => process.platform === 'win32'
   ? path.resolve(left).toLowerCase() === path.resolve(right).toLowerCase()
   : path.resolve(left) === path.resolve(right);
@@ -24,8 +26,8 @@ function git(root, args) {
 
 function checkout(root, expected) {
   assert.match(expected ?? '', revision, 'A full immutable checkout SHA is required');
-  const actualRoot = realpathSync(path.resolve(root));
-  assert.ok(samePath(realpathSync(git(actualRoot, ['rev-parse', '--show-toplevel']).trim()), actualRoot), 'The selected directory must be the checkout root');
+  const actualRoot = realpathSync.native(path.resolve(root));
+  assert.ok(samePath(realpathSync.native(git(actualRoot, ['rev-parse', '--show-toplevel']).trim()), actualRoot), 'The selected directory must be the checkout root');
   const head = git(actualRoot, ['rev-parse', '--verify', 'HEAD']).trim();
   assert.equal(head, expected, 'Checkout HEAD differs from its declared immutable source');
   assert.equal(
@@ -67,8 +69,8 @@ export function verifyQaSource({ source, sourceRef, qaSource, qaRef } = {}) {
 function dependencyPaths(binding) {
   const sourceReader = path.join(binding.application.root, 'apps', 'reader');
   const qaReader = path.join(binding.qa.root, 'apps', 'reader');
-  assert.ok(samePath(realpathSync(sourceReader), sourceReader), 'Application Reader directory must not be redirected');
-  assert.ok(samePath(realpathSync(qaReader), qaReader), 'QA Reader directory must not be redirected');
+  assert.ok(samePath(realpathSync.native(sourceReader), sourceReader), 'Application Reader directory must not be redirected');
+  assert.ok(samePath(realpathSync.native(qaReader), qaReader), 'QA Reader directory must not be redirected');
   const sourceModules = path.join(sourceReader, 'node_modules');
   const modules = lstatSync(sourceModules);
   assert.ok(modules.isDirectory() && !modules.isSymbolicLink(), 'Application dependencies must belong to the application checkout');
@@ -85,7 +87,7 @@ export function linkQaDependencies(options) {
   try { existing = lstatSync(locations.qaModules); } catch (error) { if (error.code !== 'ENOENT') throw error; }
   assert.equal(existing, undefined, 'Refusing an existing QA node_modules path or link');
   symlinkSync(locations.sourceModules, locations.qaModules, process.platform === 'win32' ? 'junction' : 'dir');
-  assert.ok(samePath(realpathSync(locations.qaModules), realpathSync(locations.sourceModules)), 'QA dependencies must resolve to the selected application dependencies');
+  assert.ok(samePath(realpathSync.native(locations.qaModules), realpathSync.native(locations.sourceModules)), 'QA dependencies must resolve to the selected application dependencies');
   verifyQaSource(options);
   return binding;
 }
@@ -94,7 +96,7 @@ function sharedDependencies(binding) {
   const locations = dependencyPaths(binding);
   if (!samePath(binding.application.root, binding.qa.root)) {
     assert.ok(lstatSync(locations.qaModules).isSymbolicLink(), 'Separate QA must use the explicit application dependency link');
-    assert.ok(samePath(realpathSync(locations.qaModules), realpathSync(locations.sourceModules)), 'QA dependency link changed');
+    assert.ok(samePath(realpathSync.native(locations.qaModules), realpathSync.native(locations.sourceModules)), 'QA dependency link changed');
   }
   return locations;
 }
@@ -105,8 +107,8 @@ export function runHostContracts(options, vitest, args) {
   const locations = sharedDependencies(binding);
   const entry = path.join(locations.sourceModules, 'vitest', 'vitest.mjs');
   let selected;
-  try { if (vitest && path.isAbsolute(vitest)) selected = realpathSync(vitest); } catch { /* Invalid caller-selected entry is never executed. */ }
-  assert.ok(selected && samePath(selected, realpathSync(entry)), 'Only the selected application Vitest entry may run');
+  try { if (vitest && path.isAbsolute(vitest)) selected = realpathSync.native(vitest); } catch { /* Invalid caller-selected entry is never executed. */ }
+  assert.ok(selected && samePath(selected, realpathSync.native(entry)), 'Only the selected application Vitest entry may run');
   assert.ok(statSync(entry).isFile(), 'Application Vitest entry is unavailable');
   try {
     execFileSync(process.execPath, [entry, 'run', ...args], { cwd: locations.qaReader, stdio: 'inherit', env: process.env });
@@ -121,8 +123,8 @@ export function recordQaSource(options, output) {
   const binding = verifyQaSource(options);
   sharedDependencies(binding);
   assert.equal(path.basename(output), 'desktop-qa-source.json', 'Use the fixed candidate QA provenance filename');
-  const base = realpathSync(path.join(binding.application.root, 'apps', 'reader', 'release', 'core'));
-  const parent = realpathSync(path.dirname(path.resolve(output)));
+  const base = realpathSync.native(path.join(binding.application.root, 'apps', 'reader', 'release', 'core'));
+  const parent = realpathSync.native(path.dirname(path.resolve(output)));
   const relative = path.relative(base, parent);
   assert.ok(relative && !relative.startsWith(`..${path.sep}`) && relative !== '..' && !path.isAbsolute(relative), 'QA provenance must be written inside the application candidate directory');
   const index = JSON.parse(readFileSync(path.join(parent, 'desktop-artifacts.json'), 'utf8'));

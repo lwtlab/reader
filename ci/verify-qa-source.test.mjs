@@ -30,7 +30,7 @@ function commit(root, message = 'Authored synthetic fixture') {
   git(root, 'commit', '-qm', message);
   return git(root, 'rev-parse', 'HEAD');
 }
-function fixture(t, { gitlink = false } = {}) {
+function fixture(t, { gitlink = false, inheritedAutoCrlf = false } = {}) {
   const directory = mkdtempSync(path.join(os.tmpdir(), 'reader-independent-qa-fixture-'));
   t.after(() => rmSync(directory, { recursive: true, force: true }));
   const source = path.join(directory, 'application source 中文');
@@ -51,7 +51,17 @@ function fixture(t, { gitlink = false } = {}) {
     git(source, 'add', 'aspeak');
   }
   const sourceRef = commit(source);
-  git(directory, 'clone', '-q', '--no-hardlinks', source, qaSource);
+  // Configure before clone's initial checkout; setting this afterward leaves
+  // Windows' globally converted CRLF bytes dirty against the reviewed index.
+  const cloneArgs = ['clone', '-q', '--no-hardlinks', '--config', 'core.autocrlf=false', source, qaSource];
+  if (inheritedAutoCrlf) {
+    const config = path.join(directory, 'synthetic-global.gitconfig');
+    writeFileSync(config, '[core]\n\tautocrlf = true\n');
+    execFileSync('git', ['-C', directory, ...cloneArgs], {
+      stdio: ['ignore', 'pipe', 'pipe'],
+      env: { ...process.env, GIT_CONFIG_GLOBAL: config, GIT_CONFIG_NOSYSTEM: '1' },
+    });
+  } else git(directory, ...cloneArgs);
   git(qaSource, 'config', 'user.name', 'Synthetic QA fixture');
   git(qaSource, 'config', 'user.email', 'qa@example.invalid');
   git(qaSource, 'config', 'commit.gpgsign', 'false');
@@ -82,6 +92,25 @@ test('default source needs no second checkout and never changes application iden
   assert.deepEqual(selected.changedPaths, []);
   f.dependencies();
   assert.equal(linkQaDependencies({ source: f.source, sourceRef: f.sourceRef }).qa.head, f.sourceRef);
+});
+
+test('temporary-directory and native aliases select the same physical checkout root', (t) => {
+  const f = fixture(t);
+  const nativeRoot = realpathSync.native(f.source);
+  const fromTemporaryPath = verifyQaSource({ source: f.source, sourceRef: f.sourceRef });
+  const fromNativePath = verifyQaSource({ source: nativeRoot, sourceRef: f.sourceRef });
+  assert.equal(fromTemporaryPath.application.root, nativeRoot);
+  assert.equal(fromNativePath.application.root, nativeRoot);
+  assert.deepEqual(fromTemporaryPath.changedPaths, []);
+  assert.throws(() => verifyQaSource({ source: path.join(nativeRoot, 'apps/reader'), sourceRef: f.sourceRef }), /checkout root/);
+});
+
+test('fixture clone keeps reviewed blobs unchanged under inherited autocrlf', (t) => {
+  const f = fixture(t, { inheritedAutoCrlf: true });
+  assert.deepEqual(verifyQaSource(f.options).changedPaths, []);
+  f.correctTest();
+  assert.deepEqual(verifyQaSource(f.options).changedPaths, [allowedQaChangedPath]);
+  assert.equal(git(f.qaSource, 'config', '--get', 'core.autocrlf'), 'false');
 });
 
 test('allows only the reviewed test blob while retaining the original compiled source SHA', (t) => {
@@ -188,8 +217,8 @@ test('runs the fixed actual application entry in QA cwd with the original worker
   const args = ['--maxWorkers=2', 'electron/main', 'lib/desktop', 'app/api/articles/[slug]/route.test.ts'];
   runHostContracts(f.options, entry, args);
   const call = JSON.parse(readFileSync(marker, 'utf8'));
-  assert.equal(call.cwd, realpathSync(path.join(f.qaSource, 'apps/reader')));
-  assert.equal(call.entry, realpathSync(entry));
+  assert.equal(call.cwd, realpathSync.native(path.join(f.qaSource, 'apps/reader')));
+  assert.equal(call.entry, realpathSync.native(entry));
   assert.deepEqual(call.args, ['run', ...args]);
   assert.throws(() => runHostContracts(f.options, path.join(f.directory, 'arbitrary-runner.mjs'), []), /Only the selected application Vitest entry/);
 });
@@ -199,7 +228,7 @@ test('the unchanged default executes application cwd without creating a QA depen
   const marker = path.join(f.directory, 'default-host-contract-call.json');
   const entry = f.dependencies(`import { writeFileSync } from 'node:fs'; writeFileSync(${JSON.stringify(marker)}, process.cwd());\n`);
   runHostContracts({ source: f.source, sourceRef: f.sourceRef }, entry, ['electron/main']);
-  assert.equal(readFileSync(marker, 'utf8'), realpathSync(path.join(f.source, 'apps/reader')));
+  assert.equal(readFileSync(marker, 'utf8'), realpathSync.native(path.join(f.source, 'apps/reader')));
   assert.equal(existsSync(path.join(f.qaSource, 'apps/reader/node_modules')), false);
 });
 
@@ -215,7 +244,7 @@ test('real private-step wrapper retains its cwd allowlist and encrypted-log boun
   const stdout = execFileSync(process.execPath, [wrapper, 'host-contracts', 'source/apps/reader', process.execPath, helper, 'run-host-contracts', '--source', f.source, '--source-ref', f.sourceRef, '--qa-source', f.qaSource, '--qa-ref', f.options.qaRef, '--vitest', entry, '--', '--maxWorkers=1', 'electron/main'], { cwd: f.directory, env: { ...process.env, RUNNER_TEMP: f.directory }, encoding: 'utf8' });
   assert.match(stdout, /host-contracts passed/);
   const call = JSON.parse(readFileSync(marker, 'utf8'));
-  assert.equal(call.cwd, realpathSync(path.join(f.qaSource, 'apps/reader')));
+  assert.equal(call.cwd, realpathSync.native(path.join(f.qaSource, 'apps/reader')));
   assert.deepEqual(call.args, ['run', '--maxWorkers=1', 'electron/main']);
   const log = readFileSync(path.join(f.directory, 'reader-private-build.log'), 'utf8');
   assert.match(log, /Verified immutable application and limited host-test source/);
