@@ -25,5 +25,32 @@
       "profile": "core",
       "update_policy": "project-authenticated-v1"
     }
+  },
+  "darwin-arm64": {
+    "qa_source_ref": "84844f9aaa185fc7e1d1e42f04b6cf44157d247a",
+    "from": {
+      "os": "macos-15",
+      "run_id": 45952543812,
+      "artifact_id": 15177915551,
+      "artifact_name": "reader-darwin-arm64-authenticated-candidate",
+      "archive_digest": "sha256:26de6ba54429a2eb5c7dfea416aa743543fbd791286fa389e155f7dcfb78b4ea",
+      "source_ref": "ecb4a655deafa8d3150e6618cd50ac76fd5457cb",
+      "workflow_ref": "ec82c62a6c3c4826fe0241e21aa62f98350b41d6",
+      "version": "0.26.1",
+      "profile": "core",
+      "update_policy": "signed-stable-v1"
+    },
+    "to": {
+      "os": "macos-15",
+      "run_id": 45954990138,
+      "artifact_id": 15178293316,
+      "artifact_name": "reader-darwin-arm64-authenticated-candidate",
+      "archive_digest": "sha256:307f16e8145c73f85ecda0054819fae277d7df815c64dc990a2e184eca4139ec",
+      "source_ref": "80f695c4ac2c28b5059f77b9fe72d0201ace3060",
+      "workflow_ref": "2dc3a4acaa2f5c276fe4a1eb4293c54c3232e7b2",
+      "version": "0.26.2",
+      "profile": "core",
+      "update_policy": "signed-stable-v1"
+    }
   }
 }
