@@ -30,7 +30,7 @@ function commit(root, message = 'Authored synthetic fixture') {
   git(root, 'commit', '-qm', message);
   return git(root, 'rev-parse', 'HEAD');
 }
-function fixture(t, { gitlink = false } = {}) {
+function fixture(t, { gitlink = false, inheritedAutoCrlf = false } = {}) {
   const directory = mkdtempSync(path.join(os.tmpdir(), 'reader-independent-qa-fixture-'));
   t.after(() => rmSync(directory, { recursive: true, force: true }));
   const source = path.join(directory, 'application source 中文');
@@ -51,7 +51,17 @@ function fixture(t, { gitlink = false } = {}) {
     git(source, 'add', 'aspeak');
   }
   const sourceRef = commit(source);
-  git(directory, 'clone', '-q', '--no-hardlinks', source, qaSource);
+  // Configure before clone's initial checkout; setting this afterward leaves
+  // Windows' globally converted CRLF bytes dirty against the reviewed index.
+  const cloneArgs = ['clone', '-q', '--no-hardlinks', '--config', 'core.autocrlf=false', source, qaSource];
+  if (inheritedAutoCrlf) {
+    const config = path.join(directory, 'synthetic-global.gitconfig');
+    writeFileSync(config, '[core]\n\tautocrlf = true\n');
+    execFileSync('git', ['-C', directory, ...cloneArgs], {
+      stdio: ['ignore', 'pipe', 'pipe'],
+      env: { ...process.env, GIT_CONFIG_GLOBAL: config, GIT_CONFIG_NOSYSTEM: '1' },
+    });
+  } else git(directory, ...cloneArgs);
   git(qaSource, 'config', 'user.name', 'Synthetic QA fixture');
   git(qaSource, 'config', 'user.email', 'qa@example.invalid');
   git(qaSource, 'config', 'commit.gpgsign', 'false');
@@ -93,6 +103,14 @@ test('temporary-directory and native aliases select the same physical checkout r
   assert.equal(fromNativePath.application.root, nativeRoot);
   assert.deepEqual(fromTemporaryPath.changedPaths, []);
   assert.throws(() => verifyQaSource({ source: path.join(nativeRoot, 'apps/reader'), sourceRef: f.sourceRef }), /checkout root/);
+});
+
+test('fixture clone keeps reviewed blobs unchanged under inherited autocrlf', (t) => {
+  const f = fixture(t, { inheritedAutoCrlf: true });
+  assert.deepEqual(verifyQaSource(f.options).changedPaths, []);
+  f.correctTest();
+  assert.deepEqual(verifyQaSource(f.options).changedPaths, [allowedQaChangedPath]);
+  assert.equal(git(f.qaSource, 'config', '--get', 'core.autocrlf'), 'false');
 });
 
 test('allows only the reviewed test blob while retaining the original compiled source SHA', (t) => {
