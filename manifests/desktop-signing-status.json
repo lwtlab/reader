@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
-  "version": "0.26.0",
-  "releaseUrl": "https://github.com/lwtlab/reader/releases/tag/desktop/v0.26.0",
+  "version": "0.26.1",
+  "releaseUrl": "https://github.com/lwtlab/reader/releases/tag/desktop/v0.26.1",
   "platforms": {
     "darwin": {
       "architectures": ["arm64", "x64"],

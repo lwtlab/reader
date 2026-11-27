@@ -42,7 +42,7 @@ Windows 安装版与 Portable 目前**不提供代码签名**，系统可能显�
 
 <h2 id="linux">Linux：DEB 与 AppImage</h2>
 
-正式版本和文件名以下载页为准。下面的 0.26.0 文件名是命令示例，请替换成实际下载的版本。
+正式版本和文件名以下载页为准。下面的 0.26.1 文件名是命令示例，请替换成实际下载的版本。
 
 Ubuntu / Debian 用户可选择 DEB，按系统软件安装器的提示安装后，从应用菜单启动 Reader。
 DEB 的正常启动保留 Chromium 沙箱；AppImage 不需要先安装 DEB。
@@ -50,8 +50,8 @@ DEB 的正常启动保留 Chromium 沙箱；AppImage 不需要先安装 DEB。
 使用 AppImage 时，在下载目录打开终端，先赋予运行权限，再正常启动：
 
 ```bash
-chmod u+x Reader-0.26.0-linux-x64-core.AppImage
-./Reader-0.26.0-linux-x64-core.AppImage
+chmod u+x Reader-0.26.1-linux-x64-core.AppImage
+./Reader-0.26.1-linux-x64-core.AppImage
 ```
 
 如果 Ubuntu 24.04 等系统提示 sandbox helper 或用户命名空间权限错误，可选择 DEB；
@@ -63,7 +63,7 @@ chmod u+x Reader-0.26.0-linux-x64-core.AppImage
 Reader 不会自动添加此参数。希望保留这层保护的用户应选择 DEB 的正常启动方式。
 
 ```bash
-./Reader-0.26.0-linux-x64-core.AppImage --no-sandbox
+./Reader-0.26.1-linux-x64-core.AppImage --no-sandbox
 ```
 
 兼容启动不需要 `sudo`、FUSE2 或修改系统 AppArmor/sysctl 设置。不要以 root 身份运行 Reader。
@@ -81,16 +81,16 @@ Reader 不会自动添加此参数。希望保留这层保护的用户应选择 
 
 ```bash
 # macOS：将文件名替换成实际下载的文件
-shasum -a 256 Reader-0.26.0-mac-arm64-core.dmg
+shasum -a 256 Reader-0.26.1-mac-arm64-core.dmg
 
 # Linux
-sha256sum Reader-0.26.0-linux-x64-core.AppImage
+sha256sum Reader-0.26.1-linux-x64-core.AppImage
 ```
 
 Windows PowerShell 示例：
 
 ```powershell
-Get-FileHash .\Reader-0.26.0-win-x64-core-setup.exe -Algorithm SHA256
+Get-FileHash .\Reader-0.26.1-win-x64-core-setup.exe -Algorithm SHA256
 ```
 
 摘要必须与正式版本的记录完全一致。SHA-256 用于核对文件字节，不能代替发布者签名或确认来源可信。
