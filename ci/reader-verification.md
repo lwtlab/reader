@@ -3,6 +3,11 @@
 `reader-private-verify.yml` runs the private repository's unchanged 33-task full
 graph on a standard public Ubuntu runner. It does not publish applications.
 
+Runner preparation installs Gitleaks 8.30.1 with Go 1.25.0 and verifies its
+reported version before checking out private source. The full graph includes
+native-byte privacy controls that execute the real scanner; an absent scanner
+is an environment failure, never a skipped or successful privacy check.
+
 The controller accepts only current private main or an open same-repository PR
 from an OWNER, MEMBER or COLLABORATOR targeting main. A PR execution checks the
 immutable GitHub merge commit and verifies its parents against the exact base and
