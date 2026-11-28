@@ -53,7 +53,7 @@ test('reporter validates actual job, provenance, profile, current source and rec
   const newer=reportingFixture({newer:true});assert.equal(await newer.run(),'SUPERSEDED');assert.equal(newer.posts.length,0);
 });
 
-const {mkdtempSync,mkdirSync,writeFileSync,readFileSync,rmSync,copyFileSync,existsSync,symlinkSync}=await import('node:fs');
+const {realpathSync,mkdtempSync,mkdirSync,writeFileSync,readFileSync,rmSync,copyFileSync,existsSync,symlinkSync}=await import('node:fs');
 const {tmpdir}=await import('node:os');
 const path=await import('node:path');
 const {spawnSync,execFileSync}=await import('node:child_process');
@@ -61,7 +61,7 @@ const {generateKeyPairSync}=await import('node:crypto');
 const {decryptLog}=await import('./log-crypto.mjs');
 
 test('real runner captures private output, checks source stability and seals diagnostics before issuing a result',()=>{
-  const directory=mkdtempSync(path.join(tmpdir(),'reader-reliability-cli-'));
+  const directory=realpathSync(mkdtempSync(path.join(tmpdir(),'reader-reliability-cli-')));
   try{
     const source=path.join(directory,'source'),app=path.join(source,'apps/reader'),ci=path.join(directory,'ci'),temp=path.join(directory,'temp');
     for(const folder of [app,ci,temp])mkdirSync(folder,{recursive:true});

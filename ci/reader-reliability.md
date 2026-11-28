@@ -12,6 +12,12 @@ PR execution uses the verified immutable merge commit and its two exact parents.
 | `playback-soak` | `reader-public/playback-soak` | 180 minutes |
 
 The source checkout fetches complete history for archived-version compatibility.
+For `sync-journey`, runner preparation invokes the fixed
+`prepare:sync-compatibility` entry when declared by that source. Its historical
+source and frozen dependency lock stay fixed; old install scripts are disabled.
+Earlier inputs keep their original complete graph and lock guards. Normal checks
+do not install or share candidate dependencies across different locks. The other
+reliability scopes, task commands and runtime limits are unchanged.
 Commands are a fixed reviewed catalog; dispatch cannot supply shell commands,
 paths, timeout overrides, soak duration or playback speed. The soak always
 requires 7,200 active seconds at normal speed. Missing prerequisites fail the job.

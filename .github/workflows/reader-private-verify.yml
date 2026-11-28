@@ -360,6 +360,9 @@ jobs:
         run: node ci/private-step.mjs dependencies source bash apps/reader/scripts/install.sh --frozen-lockfile
       - name: Install real Chrome
         run: node ci/private-step.mjs browsers source pnpm --dir apps/reader exec playwright install --with-deps chrome
+      - name: Prepare independent historical browser dependencies
+        if: inputs.scope == 'sync-journey'
+        run: node ci/private-step.mjs compatibility-dependencies source node ../ci/prepare-reader-compatibility.mjs
       - id: verify
         name: Execute fixed reliability profile
         run: node ci/reader-reliability-run.mjs verify
