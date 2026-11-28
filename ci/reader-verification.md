@@ -8,6 +8,14 @@ reported version before checking out private source. The full graph includes
 native-byte privacy controls that execute the real scanner; an absent scanner
 is an environment failure, never a skipped or successful privacy check.
 
+After frozen dependencies and browsers, runner preparation invokes the fixed
+`prepare:sync-compatibility` entry when declared by the private source. Earlier
+inputs keep their original complete graph and checks. The unchanged
+cross-version tests retain their fixed historical source and lock. Verification
+does not install dependencies or fall back to candidate dependencies when locks
+differ. Historical install scripts are disabled; these inputs are test controls,
+not application delivery payloads.
+
 The controller accepts only current private main or an open same-repository PR
 from an OWNER, MEMBER or COLLABORATOR targeting main. A PR execution checks the
 immutable GitHub merge commit and verifies its parents against the exact base and

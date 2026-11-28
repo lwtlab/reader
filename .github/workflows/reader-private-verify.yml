@@ -153,6 +153,8 @@ jobs:
         run: node ci/private-step.mjs mobile-dependencies source npm --prefix apps/reader-mobile ci --include=dev --legacy-peer-deps
       - name: Install browser runtimes
         run: node ci/private-step.mjs browsers source pnpm --dir apps/reader exec playwright install --with-deps chromium firefox webkit chrome
+      - name: Prepare independent historical browser dependencies
+        run: node ci/private-step.mjs compatibility-dependencies source node ../ci/prepare-reader-compatibility.mjs
       - id: full
         name: Run the unchanged complete task graph
         run: node ci/private-step.mjs full-verification source node scripts/verify.mjs --profile full
